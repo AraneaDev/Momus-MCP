@@ -1,0 +1,24 @@
+{
+  "name": "momus-experiments",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e1": "tsx spikes/e1-ts-symbols.ts",
+    "e2": "tsx spikes/e2-ts-mock-detection.ts",
+    "e3": "tsx spikes/e3-taut002-dataflow.ts",
+    "e4": "tsx spikes/e4-type-aware.ts",
+    "e5": "tsx spikes/e5-import-resolution.ts",
+    "e6": "tsx spikes/e6-php-parsing.ts",
+    "e7": "tsx spikes/e7-mcp-server.ts",
+    "e8": "tsx spikes/e8-suppressions.ts",
+    "all": "npm run e1 && npm run e2 && npm run e3 && npm run e4 && npm run e5 && npm run e6 && npm run e7 && npm run e8"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@types/node": "^26.2.0",
+    "php-parser": "^3.7.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.3",
+    "zod": "^4.4.3"
+  }
+}

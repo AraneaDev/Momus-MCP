@@ -1,0 +1,15 @@
+{
+  "name": "@momus/parser-typescript",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "TypeScript/JavaScript parser plugin for Momus (TS compiler API → IR)",
+  "files": ["src"],
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@momus/core": "0.1.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,258 @@
+# 6. Repository Layout & Tech Stack
+
+> Normative. The physical layout of the `momus-mcp` repository, dependency choices, build
+> setup, CI/CD, and the test strategy (including the anti-pattern fixture gallery).
+
+## 6.1 Tech stack decision
+
+| Concern | Choice | Rationale |
+|---|---|---|
+| Language | TypeScript (strict), Node.js ≥ 20, ESM | Shares ecosystem with the Phase-1 target language; the MCP SDK is TS-first; fastest iteration for a rules engine. Rust was evaluated: better perf, but plugin model + MCP SDK maturity favor TS; performance-critical paths are isolated behind `SymbolIndex` and can be swapped to native later without API change. |
+| Monorepo | `npm` workspaces (confirmed in env; pnpm was unconfirmed, so the spec now mandates npm — swap is a drop-in if a project prefers pnpm) | Zero extra tooling; `npm ci` everywhere (CI, contributors). |
+| MCP SDK | `@modelcontextprotocol/sdk@^1.29` via **subpath imports** | Canonical; stdio + Streamable HTTP; `McpServer` class. The published tarball has never shipped the root `index.js` its exports map points at (validated 1.12–1.30 — `09-validation-report.md` F2): import `@modelcontextprotocol/sdk/server/mcp.js`, `/server/stdio.js`, `/client/index.js`, `/client/stdio.js`. `zod` is a required peer for tool schemas. |
+| TS parsing | `typescript@^5.9` (compiler API) | Type-aware analysis, zero extra deps (§2.2.2). Pin `^5.9`: TS7's npm package exposes no programmatic API from ESM (F1). |
+| PHP parsing | `php-parser` (glayzzle) | Pure JS, no PHP runtime (§2.2.3). |
+| Index cache | `better-sqlite3` (deferred — not needed for Phase 1; in-memory `SymbolIndex` only) | Synchronous, embedded, fast for IR cache. |
+| Watcher | `chokidar` (deferred — Phase 3; `momus serve` starts a fresh audit per tool call) | File watching for `momus serve`. |
+| CLI framework | none (hand-rolled arg parsing, implemented) | Only 7 subcommands; avoids a dep. |
+| Test runner | `vitest` | Same ecosystem; fast; snapshot support. |
+| Lint/format | deferred — `typecheck` + `test` + `audit-self` gate in CI (eslint/prettier optional later) | Standard, but not a Phase-1 blocker. |
+| Releases | `changesets` | Monorepo versioning + changelogs. |
+| CI | GitHub Actions | Free, ubiquitous; action artifact in-repo. |
+| License | MIT | Chosen in §1.7. |
+
+**Explicit non-dependencies (all confirmed in the build):** no test framework is ever imported
+at runtime (P4). No `tree-sitter` in v1 (see §2.2.2 rationale). **`@momus/core` has ZERO runtime
+dependencies** — a built-in glob matcher replaced picomatch (whose `types` are untyped and whose
+ambient shim is ignored when the module resolves to real JS), and JSONC stripping is built in.
+`server` is the only package that brings the MCP SDK + `zod`. No network client in core; only
+`server` optionally brings the HTTP transport.
+
+**Node ≥ 20 note (confirmed on Node 25):** `momus`/`momus-mcp` bins execute raw `.ts` via Node's
+native strip-only mode, which does **not** support TS parameter properties (`constructor(public x)`)
+— the codebase avoids them (see `packages/core/src/config.ts`).
+
+## 6.2 Repository tree
+
+```
+momus-mcp/
+├─ package.json                     # root: workspaces, scripts, engines
+├─ tsconfig.base.json               # strict: true, verbatimModuleSyntax, etc.
+├─ .momusrc                         # Momus configures Momus (self-audit)
+├─ eslint.config.js
+├─ .prettierrc
+├─ .github/
+│  ├─ workflows/
+│  │  ├─ ci.yml                     # unit + integration + self-audit + benchmarks (smoke)
+│  │  └─ release.yml                # changesets → npm publish + GitHub Release
+│  └─ actions/momus/                # the Phase-4 GitHub Action (composite)
+├─ packages/
+│  ├─ core/                         # @momus/core — engine (no MCP, no CLI)
+│  │  ├─ src/
+│  │  │  ├─ ir.ts                   # §2.3 IR types
+│  │  │  ├─ parser.ts               # LanguageParser, ParseContext
+│  │  │  ├─ index.ts                # SymbolIndex, resolution, incremental updates
+│  │  │  ├─ discovery.ts            # file walk, .gitignore, caps
+│  │  │  ├─ rules/
+│  │  │  │  ├─ rule.ts              # Rule, RuleContext, engine
+│  │  │  │  ├─ tautology/           # TAUT-001…006
+│  │  │  │  ├─ drift/               # DRIFT-000…006
+│  │  │  │  ├─ hygiene/             # MOCK-001…002
+│  │  │  │  └─ dataflow.ts          # §3.2 provenance pass
+│  │  │  ├─ assignability.ts        # §3.4 structural comparison
+│  │  │  ├─ suppress.ts             # §3.5 suppression parsing & filtering
+│  │  │  ├─ config.ts               # .momusrc load + schema validation
+│  │  │  ├─ format/
+│  │  │  │  ├─ markdown.ts          # §5.3
+│  │  │  │  └─ json.ts              # §5.4 envelope
+│  │  │  └─ audit.ts                # AuditEngine: discovery→parse→index→rules→format
+│  │  └─ test/                      # unit tests per module
+│  ├─ parser-typescript/            # @momus/parser-typescript — TS API → IR
+│  │  ├─ src/index.ts               # implements LanguageParser
+│  │  └─ test/
+│  ├─ parser-php/                   # @momus/parser-php — php-parser → IR
+│  │  ├─ src/index.ts
+│  │  └─ test/
+│  ├─ server/                       # @momus/mcp-server — the MCP daemon
+│  │  ├─ src/
+│  │  │  ├─ index.ts                # McpServer wiring, capabilities, tool registry
+│  │  │  ├─ tools/                  # one module per tool (§4.2)
+│  │  │  └─ session.ts              # warm SymbolIndex + watcher lifecycle
+│  │  └─ test/
+│  ├─ cli/                          # @momus/cli — `momus` binary
+│  │  ├─ src/
+│  │  │  ├─ index.ts                # command dispatch (audit, drift, contract, rules, serve, hook, doctor, init)
+│  │  │  └─ commands/
+│  │  └─ test/
+│  └─ action/                       # @momus/action — composite GitHub Action (Phase 4)
+│     └─ action.yml
+├─ test/
+│  ├─ fixtures/
+│  │  ├─ clean/                     # must produce ZERO findings (false-positive gate)
+│  │  │  ├─ ts-vitest/  ts-jest/  php-phpunit/  php-pest/
+│  │  ├─ gallery/                   # anti-pattern gallery: one deliberate violation per fixture
+│  │  │  ├─ taut-001-self-compare/  … per rule per framework
+│  │  │  └─ drift-001-missing-member/
+│  │  └─ synth/                     # fixtures for synthesize_mock_contract goldens
+│  ├─ golden/                       # expected outputs (markdown + json) per fixture
+│  ├─ integration/                  # end-to-end: CLI invocations + MCP client sessions
+│  └─ corpus/                       # optional: real-world OSS repos for perf/precision soak (git submodule, CI-only)
+├─ bench/                           # perf budgets §2.7
+├─ schemas/
+│  └─ momusrc.schema.json
+└─ docs/                            # this specification
+```
+
+## 6.3 Package boundaries & dependency direction
+
+```
+cli ──▶ core · server
+server ──▶ core, parser-typescript, parser-php, @modelcontextprotocol/sdk
+core ──▶ (no package deps; parsers injected)
+parser-typescript ──▶ core (types only)
+parser-php ──▶ core (types only)
+action ──▶ (wraps cli via npx)
+```
+
+Rules:
+
+1. `core` never imports parsers or the SDK; language plugins are registered at composition
+   root (server/cli). This keeps rules language-agnostic (IR-only, invariant §2.3.3.3).
+2. `server` holds all MCP-specific code; `core` knows nothing about MCP. The same
+   `AuditEngine` serves CLI and MCP — guaranteed identical output (P2).
+3. `parser-typescript`/`parser-php` depend on `core` **types only** (`import type`), so the
+   engine can't accidentally leak parser-specific behavior.
+
+## 6.4 Build & dev scripts
+
+Root `package.json` scripts (normative — **the implemented scripts**):
+
+```jsonc
+{
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "audit-self": "tsx packages/cli/src/index.ts audit . --max-issues 0",
+    "serve": "tsx packages/cli/src/index.ts serve"
+  }
+}
+```
+
+Packages run **directly from `src/`** via `tsx` and Node's native TS support (no `dist/` build
+in Phase 1 — `exports` maps point at `./src/index.ts`). `engines: { node: ">=20" }`.
+
+### 6.4.1 Exit codes and CI honesty
+
+`momus audit`/`momus drift` exit `1` when **errors** exist, `0` when clean, `2` usage/config
+error, `3` internal. Exit codes and the report's `CLEAN:` flag use the **pre-truncation**
+counts (`summary.totalErrors`), so `--max-issues 0` (summary-only) never masks findings.
+
+## 6.5 CI/CD
+
+### 6.5.1 `ci.yml` (every PR)
+
+| Job | Runs | Gate |
+|---|---|---|
+| `unit` | node 22 × ubuntu; vitest unit suites (94+ tests, all packages) | all green |
+| `integration` | node 22 × ubuntu (in-memory MCP client round-trip: all 5 tools) | all green |
+| `golden` | planted-violation fixture gallery: exact rule/line/severity assertions | no drift |
+| `self-audit` | `npm run audit-self` on the Momus repo (fixture galleries excluded via `.momusrc` ignorePatterns — they hold intentional anti-patterns) | **zero findings** (P9) |
+| `fixture-smoke` | copy fixture gallery to a temp dir (no `.momusrc`), audit it: exit code must be 1 and the report must contain `TAUT-002`/`DRIFT-001` | exit 1 (anti-patterns caught) |
+| `lint` | deferred (authoring lints: message ≤ 80 chars, token budget §5.1 are asserted in unit tests) | clean when added |
+| `bench-smoke` | deferred until Phase 2 (perf budgets §2.7) | under budget |
+| `coverage` | deferred | ≥ 85% lines |
+
+### 6.5.2 `release.yml`
+
+`changesets` version bump → `npm publish --workspaces` (npm, `--provenance` when available) → tag
+`v*` + GitHub Release with changelog. The action (`momus-mcp/action`) is published as a
+separate release artifact pointing at `@momus/cli@<tag>`.
+
+### 6.5.3 The GitHub Action (Phase 4, spec now)
+
+`packages/action/action.yml` — composite action:
+
+```yaml
+name: 'Momus Mock & Test Integrity Audit'
+description: 'Run Momus-MCP static audit on the diff and annotate the PR.'
+inputs:
+  base:
+    description: 'Base ref for diff-scoped audit (default: merge base with default branch).'
+    required: false
+  fail-on:
+    description: 'error | warning | none'
+    default: 'error'
+    required: false
+runs:
+  using: 'composite'
+  steps:
+    - run: npx -y @momus/cli@latest audit --git-diff --base "${{ inputs.base }}"
+      shell: bash
+    - run: npx -y @momus/cli@latest annotate-pr   # posts findings as PR comments/checks
+      shell: bash
+```
+
+Behavior contract: reads `GITHUB_TOKEN`, posts check annotations at exact file:line, fails the
+check when `error`-severity findings exist on changed lines (configurable), and never writes
+to the user's repo beyond its own action artifacts.
+
+## 6.6 Testing strategy
+
+### 6.6.1 Unit tests
+
+- Per module: IR builders, resolution (tsconfig paths, composer `use`), dataflow provenance
+  (each `SourceKind`), assignability table (§3.4 every row), suppression parser (regex table),
+  formatters (grammar invariants §5.4.2).
+- **Table-driven:** each rule gets a table of (input snippet → expected rule/severity/span).
+
+### 6.6.2 Fixture gallery (integration)
+
+`test/fixtures/gallery/<rule-id>/` contains a minimal but realistic pair: production module +
+test file with **exactly one** deliberate anti-pattern. `test/golden/<rule-id>/*.md|*.json`
+pins byte-exact expected output. Adding a rule ⇒ adding its gallery fixture is mandatory.
+
+The `clean/` corpus mirrors the gallery structure but with correct tests — the false-positive
+gate: `audit` must return zero issues.
+
+**Mutation-style drift tests:** the drift fixtures are run twice — once against a
+"current" production tree and once against a tree where the production API was mutated
+(member renamed, param added, return type changed); the second run must report the
+corresponding DRIFT rule. This proves the detector tracks *changes*, not just static mismatches.
+
+### 6.6.3 MCP integration tests
+
+Drive the server over its stdio transport with a real MCP client (`@modelcontextprotocol/sdk`
+client) against fixture workspaces:
+
+- `tools/list` returns exactly the 5 tools, deterministic order, < 4 KB.
+- Each tool's happy path, error path (`NOT_FOUND`, `INVALID_BASE_REF`), and annotation fields
+  (`readOnlyHint` etc.) match §4.2.
+- Statelessness: two identical `tools/call` sequences return identical results.
+
+### 6.6.4 Golden determinism
+
+Byte-exact snapshot tests run on linux CI (line endings normalized on Windows/macOS jobs via
+`.gitattributes`). Golden files are updated only by explicit `vitest -u` commits with review.
+
+### 6.6.5 Soak & precision (optional, CI-only)
+
+`test/corpus/` clones 2–3 well-known OSS repos (e.g. a mid-size vitest project) and asserts:
+(a) perf budgets §2.7 hold; (b) findings on the corpus are triaged into a tracked
+`corpus-expected.json` so regressions in precision are visible diffs, not silent changes.
+
+## 6.7 Release process (normative)
+
+1. PRs merge to `main`; `changesets` files accompany rule/API changes.
+2. `release.yml` on `main`: version bump → changelogs → publish `@momus/core`,
+   `@momus/parser-typescript`, `@momus/parser-php`, `@momus/mcp-server`, `@momus/cli`
+   (version-locked together via changesets) → tag `vX.Y.Z`.
+3. `@momus/cli` is the only package with a `bin` (`momus`).
+4. The MCP server is registered on public registries (Phase 4) with install command
+   `npx -y @momus/mcp-server@latest` (stdio) and a documented `claude_desktop_config.json` /
+   equivalent snippet for the major MCP clients.
+
+---
+
+**Next:** [`07-roadmap.md`](./07-roadmap.md) — phased implementation plan.

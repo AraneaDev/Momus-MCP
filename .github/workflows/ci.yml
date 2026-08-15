@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Self-audit gate (Momus audits its own tests)
+        run: npm run audit-self
+
+      - name: CLI smoke (fixture must fail, exit code 1)
+        run: |
+          # copy the fixture gallery to a temp dir (no .momusrc) so planted
+          # violations are audited, then verify the exit-code contract
+          rm -rf /tmp/momus-fixture && cp -r packages/parser-typescript/test/fixtures /tmp/momus-fixture
+          set +e
+          npx tsx packages/cli/src/index.ts audit /tmp/momus-fixture --max-issues 0 >/tmp/fixture-audit.txt 2>&1
+          code=$?
+          set -e
+          if [ "$code" -ne 1 ]; then
+            echo "expected exit code 1 for planted-violation fixture, got $code"
+            cat /tmp/fixture-audit.txt
+            exit 1
+          fi
+          grep -q "CLEAN:false" /tmp/fixture-audit.txt
+          grep -q "TAUT-002" /tmp/fixture-audit.txt
+          grep -q "DRIFT-001" /tmp/fixture-audit.txt

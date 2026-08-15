@@ -1,0 +1,93 @@
+import { describe, expect, it } from 'vitest';
+import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { TypeScriptParser } from '../src/index.ts';
+
+const FIXTURES = join(import.meta.dirname, 'fixtures');
+const parser = new TypeScriptParser();
+
+function parseTestFile() {
+  const p = join(FIXTURES, 'tests', 'ledger.test.ts');
+  return parser.parseModule(p, readFileSync(p, 'utf8'), {
+    config: undefined,
+    resolveImport: (spec) => parser.resolveImport(spec, p),
+  });
+}
+
+describe('assertion extraction', () => {
+  const test = parseTestFile();
+
+  it('extracts matcher calls with operands', () => {
+    const tBe = test.assertions.find((a) => a.api === 'toBe');
+    expect(tBe).toBeDefined();
+    expect(tBe!.operands.map((o) => o.text)).toEqual(['mocked.getTotal()', '42']);
+  });
+
+  it('marks the echo operand as mock-config with the configured value', () => {
+    const tBe = test.assertions.find((a) => a.api === 'toBe')!;
+    expect(tBe.operands[0]!.provenance).toBe('mock-config');
+    expect(tBe.operands[0]!.configuredValue).toBe('42');
+    expect(tBe.operands[1]!.provenance).toBe('literal');
+  });
+
+  it('marks production flows as production', () => {
+    const healthy = test.assertions.find((a) => a.operands.some((o) => o.text === 'invoice.totalCents'))!;
+    expect(healthy.operands[0]!.provenance).toBe('production');
+  });
+
+  it('links assertions to their enclosing test function', () => {
+    const fnIds = new Set(test.assertions.map((a) => a.fnId).filter(Boolean));
+    expect(fnIds.size).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('mutability tracking (regression: let/var are never constant-provable)', () => {
+  it('treats a mutated let counter as unknown, not constant', () => {
+    const src = [
+      "import { expect, it } from 'vitest';",
+      'it("counter", () => {',
+      '  let orphans = 0;',
+      '  orphans++;',
+      '  expect(orphans).toBe(0);',
+      '});',
+      '',
+    ].join('\n');
+    const p = join(FIXTURES, 'tests', 'scratch.test.ts');
+    const mod = parser.parseModule(p, src, { config: undefined, resolveImport: () => null });
+    const a = mod.assertions.find((x) => x.api === 'toBe')!;
+    expect(a.operands[0]!.provenance).toBe('unknown');
+    expect(a.operands[0]!.constant).toBe(false);
+  });
+
+  it('keeps const bindings constant-provable', () => {
+    const src = [
+      "import { expect, it } from 'vitest';",
+      'it("const", () => {',
+      '  const orphans = 0;',
+      '  expect(orphans).toBe(0);',
+      '});',
+      '',
+    ].join('\n');
+    const p = join(FIXTURES, 'tests', 'scratch.test.ts');
+    const mod = parser.parseModule(p, src, { config: undefined, resolveImport: () => null });
+    const a = mod.assertions.find((x) => x.api === 'toBe')!;
+    expect(a.operands[0]!.provenance).toBe('literal');
+    expect(a.operands[0]!.constant).toBe(true);
+  });
+});
+
+describe('test function statistics', () => {
+  const test = parseTestFile();
+
+  it('marks production-touching tests', () => {
+    const healthy = test.functions.find((f) => f.productionCallCount > 0);
+    expect(healthy?.hasProductionCalls).toBe(true);
+    const mockOnly = test.functions.find((f) => f.productionCallCount === 0);
+    expect(mockOnly?.hasProductionCalls).toBe(false);
+  });
+
+  it('counts assertions per function', () => {
+    const total = test.functions.reduce((n, f) => n + f.assertionCount, 0);
+    expect(total).toBe(test.assertions.length);
+  });
+});

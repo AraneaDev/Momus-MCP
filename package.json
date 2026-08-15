@@ -1,0 +1,23 @@
+{
+  "name": "momus-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Momus-MCP — unsparing mock & test integrity auditor for coding agents",
+  "engines": { "node": ">=20" },
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "audit-self": "tsx packages/cli/src/index.ts audit . --max-issues 0",
+    "serve": "tsx packages/cli/src/index.ts serve"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  }
+}
