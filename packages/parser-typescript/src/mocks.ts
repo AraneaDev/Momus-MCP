@@ -177,7 +177,12 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
     }
 
     // ---- module automocks loaded through helper APIs
-    if (name === 'vi.importMock' || name === 'jest.requireMock' || name === 'jest.createMockFromModule') {
+    if (
+      name === 'vi.importMock' ||
+      name === 'jest.requireMock' ||
+      name === 'jest.createMockFromModule' ||
+      name === 'jest.genMockFromModule'
+    ) {
       const specifier = node.arguments[0] && ts.isStringLiteral(node.arguments[0]) ? node.arguments[0].text : undefined;
       const resolvedPath = specifier ? ctx.resolveImport(specifier) : undefined;
       const id = mockId(node);

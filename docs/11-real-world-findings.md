@@ -65,6 +65,8 @@
 | 44 | *(dogfood, git-diff on temp Chaos clone)* | module-target mocks (`vi.mock` factories) have no `symbolId`, and `diffRelevant` required one — in precommit/`--git-diff` mode they were **silently out of scope**: a renamed export left the factory key dangling and `momus precommit` reported CLEAN (exit 0) while a plain audit fired DRIFT-005 | `diffRelevant` now resolves module-target mocks via their changed `modulePath`; DRIFT-006 gained a module-target branch (module file changed + mock file untouched → stale, message lists module basename + exports, budget-fitted). Planted rename on the temp clone fires DRIFT-005 errors + DRIFT-006 warnings with exit 1; healthy twin clears. Rule-level + CLI e2e regression tests |
 | 45 | *(dogfood, MCP git-diff on temp Knossos clone)* | PHP class-target mocks in the MCP `verify_mock_drift` git-diff scope had no regression coverage | planted `client()` → `clientRenamed()` fired 8 DRIFT-001 + 11 DRIFT-006 via the MCP tool; healthy twin → 0. New PHP git-diff MCP integration test (`.momusrc` php:true fixture repo) pins the path |
 | 46 | *(Jest probe)* | `jest.doMock('mod', factory)` — Jest's one-off module mock with identical factory semantics — was invisible (only its inner `jest.fn` was extracted) | matched as its own `jest.doMock` pattern with `mockFactoryKey` members; `MockPattern` union extended; regression test pins factory-key extraction |
+| 47 | *(Jest probe, 2nd pass)* | `jest.genMockFromModule` (deprecated alias of `jest.createMockFromModule`) was invisible | now matched as an automock pattern; `jest.unmock`/`requireActual`/`isolateModules`/`replaceProperty` verified as correctly-non-mocks by probe |
+| 48 | *(perf budget)* | §2.7 time/memory budgets were asserted nowhere; the workspace-time budget was documented-only | `packages/core/test/perf.test.ts` generates a 100k-LOC PHP workspace and asserts 15s/500 MB ceilings (normative 2s/200 MB; probe measured 169ms/45 MB) + correct findings at scale; a lazy `require('@momus/parser-php')` in the test initially tanked coverage (91.6→85%) via a second module-graph copy — top-level import fixes it |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -246,4 +248,16 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
 24. ✅ Jest probe: `jest.doMock('mod', () => ({...}))` (one-off module mock, same factory semantics as
     `jest.mock`) was invisible — only its inner `jest.fn` was caught. Now matched as its own `jest.doMock`
     pattern with `mockFactoryKey` members; `MockPattern` union extended. Regression test pins the factory-key
-    extraction (row 46).
+    extraction (row 46). Second pass: `jest.genMockFromModule` (deprecated alias of
+    `jest.createMockFromModule`) was also invisible — now matched as an automock. `jest.unmock`/
+    `jest.requireActual`/`jest.isolateModules`/`jest.replaceProperty` are correctly **not** mocks
+    (verified by probe, no change).
+25. ✅ **§2.7 perf budgets now asserted** (row 47): `packages/core/test/perf.test.ts` generates a
+    deterministic 100k-LOC PHP workspace (500 classes × 100 methods) in a temp dir, audits it, and asserts
+    the time/memory budgets with CI-tolerant ceilings (15s / 500 MB vs normative 2s / 200 MB — the real
+    signal is no order-of-magnitude regression, and the probe measured **169ms / 45 MB**). It also asserts
+    the planted 500 TAUT-002 echoes still fire at scale (`totalIssues`, since `maxIssues: 0` truncates
+    `issues`). Gotcha found while writing it: a **lazy `require('@momus/parser-php')` inside the test
+    function** loaded a second copy of the module graph (parser-php's own `@momus/core` dependency) and
+    confused v8 coverage — dropping `All files` from 91.6% → 85%; top-level `import { PhpParser }` fixed
+    it (and `config.ts`/`audit.ts` etc. returned to their real numbers).

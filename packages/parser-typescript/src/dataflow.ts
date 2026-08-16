@@ -479,4 +479,3 @@ function ownerOf(e: ts.Expression, sf: ts.SourceFile): string | undefined {
   const text = e.getText(sf);
   return text.match(/^([A-Za-z_$][\w$]*)/)?.[1];
 }
-

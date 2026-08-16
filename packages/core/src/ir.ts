@@ -158,6 +158,7 @@ export type MockPattern =
   | 'vi.importMock'
   | 'jest.requireMock'
   | 'jest.createMockFromModule'
+  | 'jest.genMockFromModule'
   | 'vi.stubGlobal'
   | 'createMock'
   | 'createStub'

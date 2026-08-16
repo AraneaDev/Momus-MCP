@@ -1,6 +1,6 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 300 tests passing, ~91.6% statements / ~86.9% branches / ~95.3% functions,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 303 tests passing, ~91.6% statements / ~87.1% branches / ~95.3% functions,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials (Phase 4 deferred indefinitely). Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
@@ -464,6 +464,17 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   300 tests; coverage 91.6% stmts / 86.92% branches / 95.26% funcs; self-audit CLEAN.
   Chaos re-audit unchanged (4 MOCK-001 / 0 errors); temp clone removed; both test repos
   working trees clean.
+- **Last verified (round 24):** Jest probe second pass + **§2.7 perf budgets now asserted**.
+  `jest.genMockFromModule` (deprecated alias of `jest.createMockFromModule`) was invisible —
+  now matched as an automock; `jest.unmock`/`requireActual`/`isolateModules`/`replaceProperty`
+  verified by probe as correctly-non-mocks (no change). New `packages/core/test/perf.test.ts`
+  generates a deterministic 100k-LOC PHP workspace (500 classes × 100 methods) in a temp
+  dir, audits it, and asserts CI-tolerant ceilings (15s / 500 MB vs normative §2.7 2s /
+  200 MB; probe measured **169ms / 45 MB**) plus 500 planted TAUT-002 echoes still firing at
+  scale. Gotcha: a lazy `require('@momus/parser-php')` inside the test loaded a second
+  module-graph copy and tanked coverage 91.6% → 85%; top-level `import { PhpParser }` fixed
+  it. 303 tests; coverage 91.61% stmts / 87.06% branches / 95.26% funcs; self-audit CLEAN.
+  Chaos unchanged (4 MOCK-001 / 0 errors); both test repos clean.
   Self-audit CLEAN; Chaos 0 errors / 4 MOCK-001 and Knossos 6 sentinel errors — both
   unchanged; precommit on the working tree is CLEAN.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
@@ -489,6 +500,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   round-22 items (module-target diff relevance — diffRelevant + DRIFT-006 module branch,
   precommit git-diff dogfood on temp Chaos clone),
   round-23 items (PHP MCP git-diff dogfood + regression test, jest.doMock pattern),
+  round-24 items (jest.genMockFromModule alias, perf.test.ts §2.7 budget asserts, lazy
+  require coverage gotcha),
   PHP function-scoped mock bindings, PHP setUp/property mock bindings, PHP same-variable
   reassignment, the test-coverage tooling, the contract-synthesis public-member/`?`-ordering
   fixes, the persistent IR cache, the ESLint/Prettier setup, the real-codebase Chaos-MCP
@@ -544,7 +557,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 26 files, 300 tests, all pass
+npm test                 # 27 files, 303 tests, all pass
 npm run test:coverage    # v8: ~91.6% statements / ~86.9% branches / ~95.3% functions (floors 80/75/90/80)
 npm run lint             # eslint .  — clean
 npm run format:check     # prettier --check .  — clean

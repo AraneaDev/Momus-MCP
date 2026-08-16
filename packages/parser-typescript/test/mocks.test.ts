@@ -150,6 +150,27 @@ describe('mock detection (fixture test file)', () => {
       'jest.requireMock',
       'jest.createMockFromModule',
     ]);
+  });
+
+  it('detects the deprecated jest.genMockFromModule automock alias', () => {
+    const src = [
+      "import { jest } from '@jest/globals';",
+      "const gen = jest.genMockFromModule('../src/services/db');",
+      '',
+    ].join('\n');
+    const p = join(FIXTURES, 'tests', 'jest-genmock.test.ts');
+    const mod = parser.parseModule(p, src, { config: undefined, resolveImport: () => null });
+    const gen = mod.mocks.find((m) => m.pattern === 'jest.genMockFromModule');
+    expect(gen?.target?.specifier).toBe('../src/services/db');
+    expect(gen?.isAutomock).toBe(true);
+  });
+
+  it('detects the stubGlobal and vi.fn members inside the automock fixture', () => {
+    const p = join(FIXTURES, 'tests', 'automock.fixture.ts');
+    const automock = parser.parseModule(p, readFileSync(p, 'utf8'), {
+      config: undefined,
+      resolveImport: (spec) => parser.resolveImport(spec, p),
+    });
     const global = automock.mocks.find((m) => m.pattern === 'vi.stubGlobal');
     expect(global?.target?.kind).toBe('global');
     expect(global?.target?.exportName).toBe('fetch');
