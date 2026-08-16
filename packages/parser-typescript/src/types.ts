@@ -99,6 +99,15 @@ export function tsReturnExample(type: ts.TypeNode | undefined): string {
     return 'undefined';
   }
   if (ts.isArrayTypeNode(type) || ts.isTupleTypeNode(type)) return '[]';
+  if (ts.isTypeLiteralNode(type)) {
+    const props = type.members
+      .filter(
+        (m): m is ts.PropertySignature =>
+          ts.isPropertySignature(m) && !!m.name && ts.isIdentifier(m.name) && m.type !== undefined,
+      )
+      .map((m) => `${m.name.getText()}: ${tsReturnExample(m.type)}`);
+    return props.length > 0 ? `{ ${props.join(', ')} }` : '{}';
+  }
   if (ts.isUnionTypeNode(type)) {
     const nonNullish = type.types.find((t) => t.kind !== K.NullKeyword && t.kind !== K.UndefinedKeyword);
     return nonNullish ? tsReturnExample(nonNullish) : 'undefined';

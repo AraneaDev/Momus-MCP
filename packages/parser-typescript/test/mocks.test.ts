@@ -182,6 +182,12 @@ describe('mock hand-off reachability (TAUT-005 scope isolation)', () => {
     const arr = handoff.mocks.find((m) => m.pattern === 'vi.fn' && m.span.startLine === 31);
     expect(arr?.invocationSites.map((s) => s.startLine)).toEqual([32]);
   });
+
+  it('marks a spy reachable when its spied-on object is handed off (TAUT-006)', () => {
+    const spy = handoff.mocks.find((m) => m.pattern === 'vi.spyOn');
+    expect(spy?.stubbedMembers[0]?.name).toBe('removeEventListener');
+    expect(spy?.invocationSites.map((s) => s.startLine)).toEqual([39]);
+  });
 });
 
 describe('suppression comments', () => {

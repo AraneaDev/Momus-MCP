@@ -78,6 +78,10 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
     }
     return best;
   };
+  // Spied-on object source text → spy mock ids. When the spied object itself is handed to
+  // the SUT (`createTestSession(..., controller.signal)`), the spy member may be invoked inside
+  // the SUT, so TAUT-006 must not treat it as having no production call path.
+  const spiedObjects = new Map<string, string[]>();
   const pos = (n: ts.Node) => sf.getLineAndCharacterOfPosition(n.getStart());
   const endPos = (n: ts.Node) => sf.getLineAndCharacterOfPosition(n.getEnd());
   const mkSpan = (n: ts.Node): SourceSpan =>
@@ -255,6 +259,9 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
         // spy result bound to an identifier
         const binding = findBinding(node, sf);
         if (binding) bindInstance(binding, id);
+        // remember the spied-on object so a hand-off of that object marks the spy reachable
+        const spiedText = objExpr.getText(sf);
+        spiedObjects.set(spiedText, [...(spiedObjects.get(spiedText) ?? []), id]);
       }
     }
 
@@ -536,6 +543,28 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
   const CALLER_HELPER =
     /^(expect|vi|jest|it|test|describe|beforeEach|afterEach|beforeAll|afterAll|xit|xtest|fit|fdescribe|it\.|test\.|describe\.)/;
   const reachable = (n: ts.Node) => {
+    // Mark every mock this expression hands off to production code: a bound identifier, an
+    // inline vi.fn()/jest.fn() factory, or a spied-on object (whose member the SUT may call).
+    const markReachable = (expr: ts.Expression | undefined) => {
+      if (!expr) return;
+      const a = stripCast(expr);
+      const ids: string[] = [];
+      if (ts.isIdentifier(a)) {
+        const id = resolveInstance(a.text, pos(a).line + 1);
+        if (id) ids.push(id);
+      }
+      const factory = findMockFactoryCall(a);
+      if (factory) ids.push(mockId(factory));
+      const spies = spiedObjects.get(a.getText(sf));
+      if (spies) ids.push(...spies);
+      for (const id of ids) {
+        const mock = mocks.find((m) => m.id === id);
+        if (mock && !mock.invocationSites.some((s) => s.startLine === pos(n).line + 1)) {
+          mock.invocationSites.push(mkSpan(n));
+        }
+      }
+    };
+
     if (ts.isCallExpression(n)) {
       const calleeText = n.expression.getText(sf);
       const isConfigCall =
@@ -545,14 +574,7 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
       const calleeRoot = rootOfCall(n.expression);
       const isHelperCall = calleeRoot !== undefined && CALLER_HELPER.test(calleeRoot);
       if (!isConfigCall && !isHelperCall) {
-        for (const arg of n.arguments) {
-          const a = stripCast(arg);
-          const aid = ts.isIdentifier(a) ? resolveInstance(a.text, pos(a).line + 1) : undefined;
-          const mock = aid ? mocks.find((m) => m.id === aid) : undefined;
-          if (mock && !mock.invocationSites.some((s) => s.startLine === pos(n).line + 1)) {
-            mock.invocationSites.push(mkSpan(n));
-          }
-        }
+        for (const arg of n.arguments) markReachable(arg);
       }
       if (!isConfigCall) {
         const base = ts.isPropertyAccessExpression(n.expression) ? n.expression.expression : n.expression;
@@ -567,43 +589,19 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
       }
     }
     if (ts.isNewExpression(n)) {
-      for (const arg of n.arguments ?? []) {
-        const a = stripCast(arg);
-        if (ts.isIdentifier(a) && instanceIds.has(a.text)) {
-          const mock = mocks.find((m) => m.id === instanceIds.get(a.text));
-          if (mock && !mock.invocationSites.some((s) => s.startLine === pos(n).line + 1)) {
-            mock.invocationSites.push(mkSpan(n));
-          }
-        }
-      }
+      for (const arg of n.arguments ?? []) markReachable(arg);
     }
     // A mock embedded as an object-literal value / array element is handed off to the SUT
     // (`{ run: mockRun }`, `{ deadline }`, `{ run: vi.fn().mockResolvedValue(x) }`). Treat it
     // as reachable even though it is never directly invoked in-file — otherwise TAUT-005
     // flags these as zero-reach stubs.
-    const markHandedOff = (expr: ts.Expression | undefined) => {
-      if (!expr) return;
-      const a = stripCast(expr);
-      let id: string | undefined;
-      if (ts.isIdentifier(a)) {
-        id = resolveInstance(a.text, pos(a).line + 1);
-      } else {
-        const factory = findMockFactoryCall(a);
-        if (factory) id = mockId(factory);
-      }
-      if (!id) return;
-      const mock = mocks.find((m) => m.id === id);
-      if (mock && !mock.invocationSites.some((s) => s.startLine === pos(n).line + 1)) {
-        mock.invocationSites.push(mkSpan(n));
-      }
-    };
     if (ts.isObjectLiteralExpression(n)) {
       for (const prop of n.properties) {
-        if (ts.isPropertyAssignment(prop)) markHandedOff(prop.initializer);
-        else if (ts.isShorthandPropertyAssignment(prop)) markHandedOff(prop.name);
+        if (ts.isPropertyAssignment(prop)) markReachable(prop.initializer);
+        else if (ts.isShorthandPropertyAssignment(prop)) markReachable(prop.name);
       }
     } else if (ts.isArrayLiteralExpression(n)) {
-      for (const el of n.elements) markHandedOff(el);
+      for (const el of n.elements) markReachable(el);
     }
     ts.forEachChild(n, reachable);
   };

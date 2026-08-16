@@ -116,6 +116,25 @@ describe('PHP parser', () => {
     // distinct variables must NOT collapse to the same text (regression: valueText fell back to node.kind)
     expect(assertions[0]!.operands.map((o) => o.text)).toEqual(['$a', '$b']);
     expect(assertions[1]!.operands.map((o) => o.text)).toEqual(['$a', '$a']);
+    // a variable operand must classify as 'identifier' so TAUT-001 still flags `$a` vs `$a`
+    expect(assertions[1]!.operands.map((o) => o.kind)).toEqual(['identifier', 'identifier']);
+  });
+
+  it('classifies a call operand as call so identical method calls are a determinism test, not a self-comparison', () => {
+    const src = [
+      '<?php',
+      'final class CallDeterminismTest extends \\PHPUnit\\Framework\\TestCase {',
+      '  public function testDeterministic(): void {',
+      '    assertSame($this->cacheKey(), $this->cacheKey());',
+      '  }',
+      '}',
+    ].join('\n');
+    const module = parser.parseModule('/ws/tests/CallDeterminismTest.php', src, {
+      config: undefined,
+      resolveImport: () => null,
+    });
+    const assertion = module.assertions.find((a) => a.api === 'assertSame');
+    expect(assertion?.operands.map((o) => o.kind)).toEqual(['call', 'call']);
   });
 
   it('detects Mockery and Pest mock factories with chained and closure-form configuration', () => {

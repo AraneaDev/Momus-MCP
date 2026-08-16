@@ -17,6 +17,11 @@ const CONSTANT_API_ALLOWLIST = new Set([
   'assertNotEmpty',
 ]);
 
+/** Operand kinds that re-execute on evaluation: a call or `new` can yield a fresh
+ *  value each time, so `expect(f(x)).toBe(f(x))` is a legitimate determinism check, not
+ *  a self-comparison tautology. */
+const REEVALUATING_KINDS = new Set(['call', 'new']);
+
 abstract class BaseRule implements Rule {
   abstract readonly id: RuleId;
   abstract readonly name: string;
@@ -54,7 +59,7 @@ export class Taut001SelfComparison extends BaseRule {
     const out: Issue[] = [];
     for (const a of module.assertions) {
       const [l, r] = a.operands;
-      if (l && r && l.text === r.text) {
+      if (l && r && l.text === r.text && !REEVALUATING_KINDS.has(l.kind) && !REEVALUATING_KINDS.has(r.kind)) {
         out.push(
           issue(
             { module, config } as RuleContext,

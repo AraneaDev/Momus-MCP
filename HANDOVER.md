@@ -1,6 +1,6 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 221 tests passing, ~84% statements / ~83% branches,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 226 tests passing, ~85% statements / ~83% branches,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials. Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
@@ -262,12 +262,23 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   cutting Knossos TAUT-005 8 → 5; (c) default `ignorePatterns` now excludes `**/vendor/**`
   (Composer deps) — Knossos audit went from scanning 3,808 files (incl. 3,915 vendor `.php`
   files, ~70s) to 403 files (~8.5s).
+- **Last verified (round 6):** (a) **TAUT-001 determinism-test decision** — `expect(f(x)).toBe(f(x))`
+  re-evaluates the callee, so it is a legitimate determinism check, not a self-comparison
+  tautology. TAUT-001 now skips `call`/`new` operand kinds (`REEVALUATING_KINDS`); the PHP parser's
+  `phpExpr` gained an `exprKind` mapper (variable→`identifier`, call→`call`, property/static→
+  `member`, new→`new`) so the rule is consistent across languages. Chaos-MCP's last error is gone
+  (**0 errors**). (b) **TAUT-006 spy hand-off** — `vi.spyOn(obj, 'm')` now records the spied-on
+  object's source text in `spiedObjects`, and `reachable`'s unified `markReachable` marks the spy
+  reachable when that object is handed to the SUT (`createTestSession(..., controller.signal)`);
+  Chaos-MCP TAUT-006: **5 → 0**. (c) **typed-generic + object-shape synthesis** — TS contract
+  templates now emit `vi.fn<[params], Ret>()` generics and `tsReturnExample` builds `{ ok: false,
+  count: 0 }` for inline type literals, so `Promise<{…}>` returns emit `mockResolvedValue({…})`.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
   real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos and fixing every false-positive/perf gap
   they expose, keeping `docs/11-real-world-findings.md` as the live record. Phase 4 publishing
-  (npm/MCP registry) remains blocked on credentials (no `NPM_TOKEN`). Next: TAUT-006 spy-through-
-  SUT tracing, the TAUT-001 determinism-test pattern decision, and `vi.fn<[...]>` typed-generic
-  synthesis.
+  (npm/MCP registry) remains blocked on credentials (no `NPM_TOKEN`). Chaos-MCP is now **0 errors**
+  (25 conservative warnings: 21 TAUT-004 + 4 MOCK-001). Next: TAUT-004/MOCK-001 refinement, and
+  named-interface object-shape synthesis (needs the type checker).
 - **Safe resume point:** if interrupted, resume wherever you stopped; do not revisit PHP
   closure-form/DRIFT-003, docblock typing, synth templates, anonymous-class doubles, git-diff
   plumbing, DRIFT-006, precommit, annotate-pr, the action, the `--fix` mechanism,
@@ -280,8 +291,9 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   type-derived synthesize return values, the `filterResult` drift-summary fix, the
   `promiseTypeArg` `mockResolvedValue` synthesis, the PHP `valueText` `loc.source` self-comparison
   fix, the TS scope-aware `resolveInstance` hand-off reachability, the CLI-contract
-  server-delegation, the PHP `willThrowException` config detection, or the `**/vendor/**` default
-  ignore pattern.
+  server-delegation, the PHP `willThrowException` config detection, the `**/vendor/**` default
+  ignore pattern, the TAUT-001 `REEVALUATING_KINDS` decision + PHP `exprKind` mapper, the
+  TAUT-006 `spiedObjects` hand-off, or the `vi.fn<[...]>` typed-generic/object-shape synthesis.
 
 ---
 

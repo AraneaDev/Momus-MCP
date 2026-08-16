@@ -73,14 +73,36 @@ function ctx(module: ModuleIR, index = new SymbolIndex([])) {
 const rulesOf = (id: string) => [...tautologyRules, ...driftRules, ...hygieneRules].filter((r) => r.id === id);
 
 describe('TAUT-001 self-comparison', () => {
-  it('flags identical operands', () => {
-    const m = testModule({ assertions: [assertion({ operands: [expr({ text: 'a.b()' }), expr({ text: 'a.b()' })] })] });
+  it('flags identical non-reevaluating operands', () => {
+    const m = testModule({
+      assertions: [
+        assertion({
+          operands: [expr({ text: 'total', kind: 'identifier' }), expr({ text: 'total', kind: 'identifier' })],
+        }),
+      ],
+    });
     const issues = runRules(rulesOf('TAUT-001'), ctx(m));
     expect(issues).toHaveLength(1);
     expect(issues[0]!.rule).toBe('TAUT-001');
     // semantic tautology: no safe mechanical rewrite → descriptive-only suggestion
     expect(issues[0]!.fix?.code).toBe('');
     expect(issues[0]!.fix?.description).toBeTruthy();
+  });
+  it('does not flag identical calls (determinism test — the callee re-evaluates)', () => {
+    const m = testModule({
+      assertions: [
+        assertion({ operands: [expr({ text: 'f(x)', kind: 'call' }), expr({ text: 'f(x)', kind: 'call' })] }),
+      ],
+    });
+    expect(runRules(rulesOf('TAUT-001'), ctx(m))).toHaveLength(0);
+  });
+  it('does not flag identical new expressions (fresh instances)', () => {
+    const m = testModule({
+      assertions: [
+        assertion({ operands: [expr({ text: 'new Foo()', kind: 'new' }), expr({ text: 'new Foo()', kind: 'new' })] }),
+      ],
+    });
+    expect(runRules(rulesOf('TAUT-001'), ctx(m))).toHaveLength(0);
   });
   it('ignores different operands', () => {
     const m = testModule({ assertions: [assertion({ operands: [expr({ text: 'a.b()' }), expr({ text: 'c.d()' })] })] });

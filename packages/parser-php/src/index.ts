@@ -779,12 +779,30 @@ function phpExpr(
     };
   }
   return {
-    kind: 'unknown',
+    kind: exprKind(node),
     text: valueText(node),
     mockRefs: mock ? [mock.id] : [],
     provenance: mock ? 'mock-call' : 'unknown',
     constant: false,
   };
+}
+
+/** Classify a php-parser node into an `ExprIR.kind` so cross-language rules can tell
+ *  re-evaluating expressions (calls / `new`) apart from stable reads (variables, literals). */
+function exprKind(node: PhpNode): ExprIR['kind'] {
+  switch (node.kind) {
+    case 'variable':
+      return 'identifier';
+    case 'call':
+      return 'call';
+    case 'propertylookup':
+    case 'staticlookup':
+      return 'member';
+    case 'new':
+      return 'new';
+    default:
+      return 'unknown';
+  }
 }
 
 function configuredValueText(value: TypeIR | undefined): string | undefined {

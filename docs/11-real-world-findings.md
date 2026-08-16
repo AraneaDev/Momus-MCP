@@ -34,20 +34,15 @@
 
 Verified against source after fixes; working tree at commit `a65faae`.
 
-- **TAUT-001** (`src/__tests__/audit-fixes.test.ts:421`): `expect(f(x)).toBe(f(x))` — an
-  intentional determinism test. Technically tautological, practically a deliberate property test.
-  → *Known false-positive class; candidate for a suppression/refinement decision.*
 - **DRIFT-006** (git-diff `HEAD~10`): 6 stale-mock warnings — `estimate-handler.test.ts` and
   `handler-container.test.ts` mock `estimateAudit`/`estimateNeedsSandbox`/`createExecutionSession`
   from `core/estimate.ts`, `estimate-handler.ts`, `utils/execution.ts`, which changed in that
   range while the test files did not. **True positives.**
-- **TAUT-004** (21) + **MOCK-001** (4): mock-only-assertion and over-mocking warnings —
-  conservative but not noise.
-- **TAUT-006** (5): `vi.spyOn(signal, 'removeEventListener')`-style spies asserted through the
-  SUT with no statically-visible call path. Conservative — genuinely exercised, untraceable.
-- **TAUT-005** was the dominant noise source (**107 → 0** after the scope-aware fix): mocks
-  handed off to the SUT via object/array literals (`{ run: mockRun }`, inline
-  `run: vi.fn().mockResolvedValue(...)`) that the flat binding map couldn't resolve.
+- **Remaining warnings (0 errors):** TAUT-004 (21, mock-only-assertion) + MOCK-001 (4,
+  over-mocking). Conservative, not noise.
+- **Resolved false positives:** TAUT-005 (scope-aware hand-off, **107 → 0**), TAUT-006
+  (spied-object hand-off, **5 → 0**), and the TAUT-001 determinism test
+  (`expect(f(x)).toBe(f(x))` — a re-evaluating call, now correctly not flagged).
 
 ## 4. Findings about `/root/Knossos-MCP` (PHP)
 
@@ -67,9 +62,10 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
 
 ## 5. Open / candidate improvements
 
-1. Refine TS TAUT-006 to trace spies through opaque object hand-offs (interprocedural) — the
-   last conservative class after the TAUT-005 scope fix.
-2. Decide the TAUT-001 determinism-test pattern (`expect(f(x)).toBe(f(x))`) — suppression or heuristic.
-3. TS synthesis: `vi.fn<[...]>` typed generics + `mockResolvedValue({...})` object shapes (`docs/04` §4.4.3).
-4. PHP: consider recording `willThrowException`'s exception value in the IR (currently marked
+1. PHP: consider recording `willThrowException`'s exception value in the IR (currently marked
    reachable only, consistent with `willReturnCallback`).
+2. TS synthesis: `mockResolvedValue({...})` object shapes for **named** interface/class returns
+   (currently only inline type literals like `{ ok: boolean }` get a literal; named types still
+   resolve via the checker, which syntax-only synthesis doesn't load).
+3. Refine TAUT-004 (mock-only-assertion) and MOCK-001 (over-mocking) — the last conservative
+   warning classes on Chaos-MCP.

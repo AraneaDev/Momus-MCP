@@ -85,7 +85,7 @@ implements a small, conservative, **intra-procedural** value-flow pass per test 
 
 | ID | Name | Severity | Criteria (all must hold) |
 |---|---|---|---|
-| TAUT-001 | `self-comparison` | error | Assertion compares an expression with itself syntactically (`expect(a).toBe(a)`, `assertSame($x, $x)`) **or** compares a `literal`-provenance operand with an identical `literal` operand on both sides where both flow from the same binding. |
+| TAUT-001 | `self-comparison` | error | Assertion compares an expression with itself syntactically (`expect(a).toBe(a)`, `assertSame($x, $x)`). **Re-evaluating expressions are exempt:** a `call` or `new` operand re-executes on each side, so `expect(f(x)).toBe(f(x))` is a legitimate determinism check, not a tautology. |
 | TAUT-002 | `mock-echo` | error | One operand's provenance is `mock-config` **and** the other operand is the exact configured value (`literal` equality, or same identifier bound to the configured value), **and** no production symbol appears in either operand. |
 | TAUT-003 | `constant-tautology` | error | Both operands are `constant` with no mock and no production involvement (`expect(true).toBe(true)`, `expect(2+2).toBe(4)`). Excluded: `expect(null).toBeNull()` style matcher APIs that are themselves meaningful (see API allowlist). |
 | TAUT-004 | `mock-only-assertion` | warning | **Every** operand of the assertion has provenance exclusively in `mock-config`/`mock-call`, **and** the test function contains **zero** calls resolving to production symbols. I.e., the test exercises nothing real. |

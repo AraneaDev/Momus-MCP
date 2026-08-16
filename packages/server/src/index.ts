@@ -499,10 +499,20 @@ export function synthesizeContract(
       lines.push(`  // ${sig}`);
       if (framework === 'vitest' || framework === 'jest') {
         const fn = framework === 'vitest' ? 'vi' : 'jest';
+        const paramTypes = m.parameters
+          .map((p) => {
+            const pname = p.name.getText(sf);
+            const optional = p.questionToken ? '?' : '';
+            const variadic = p.dotDotDotToken ? '...' : '';
+            const ptype = p.type ? p.type.getText(sf) : 'unknown';
+            return `${variadic}${pname}${optional}: ${ptype}`;
+          })
+          .join(', ');
+        const fnType = `${fn}.fn<[${paramTypes}], ${ret}>()`;
         lines.push(
           promiseArg
-            ? `  ${name}: ${fn}.fn().mockResolvedValue(${tsReturnExample(promiseArg)}),`
-            : `  ${name}: ${fn}.fn().mockReturnValue(${retVal}),`,
+            ? `  ${name}: ${fnType}.mockResolvedValue(${tsReturnExample(promiseArg)}),`
+            : `  ${name}: ${fnType}.mockReturnValue(${retVal}),`,
         );
       } else {
         lines.push(`  ${name}: (${params}) => ${retVal},`);

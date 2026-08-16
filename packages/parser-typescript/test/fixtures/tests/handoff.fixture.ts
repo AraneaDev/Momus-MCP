@@ -32,4 +32,12 @@ describe('handoff scope isolation', () => {
     const list = [mockRun];
     expect(list).toHaveLength(1);
   });
+
+  it('marks a spy reachable when its target object is handed off', async () => {
+    const controller = new AbortController();
+    const removeListener = vi.spyOn(controller.signal, 'removeEventListener');
+    const opts = { signal: controller.signal };
+    expect(opts.signal).toBe(controller.signal);
+    expect(removeListener).toHaveBeenCalled();
+  });
 });

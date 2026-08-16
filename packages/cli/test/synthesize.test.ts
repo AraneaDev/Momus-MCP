@@ -53,7 +53,7 @@ describe('synthesizeForCli', () => {
       expect(out).toHaveProperty('template');
       const template = (out as { template: string }).template;
       expect(template).toContain('const svcMock = {');
-      expect(template).toContain('totalFor: vi.fn().mockReturnValue(0),');
+      expect(template).toContain('totalFor: vi.fn<[id: string, opts?: number], number>().mockReturnValue(0),');
       expect(template).toContain("get label() { return ''; },");
       expect(template).toContain('} satisfies Partial<Svc>;');
       // private members are not surfaced as stubbable surface
@@ -71,7 +71,7 @@ describe('synthesizeForCli', () => {
       expect(out).toHaveProperty('template');
       const template = (out as { template: string }).template;
       expect(template).toContain('const otherMock = {');
-      expect(template).toContain('ping: jest.fn().mockReturnValue(undefined),');
+      expect(template).toContain('ping: jest.fn<[], void>().mockReturnValue(undefined),');
       expect(template).toContain('} satisfies Partial<Other>;');
       expect(template).not.toContain('totalFor');
     } finally {
@@ -126,15 +126,41 @@ describe('synthesizeForCli', () => {
       );
       const out = synthesizeForCli(dir, 'typed.ts', undefined, 'vitest');
       const template = (out as { template: string }).template;
-      expect(template).toContain('num: vi.fn().mockReturnValue(0),');
-      expect(template).toContain("str: vi.fn().mockReturnValue(''),");
-      expect(template).toContain('flag: vi.fn().mockReturnValue(false),');
-      expect(template).toContain('list: vi.fn().mockReturnValue([]),');
-      expect(template).toContain('maybe: vi.fn().mockReturnValue(0),');
-      expect(template).toContain('late: vi.fn().mockResolvedValue(0),');
+      expect(template).toContain('num: vi.fn<[], number>().mockReturnValue(0),');
+      expect(template).toContain("str: vi.fn<[], string>().mockReturnValue(''),");
+      expect(template).toContain('flag: vi.fn<[], boolean>().mockReturnValue(false),');
+      expect(template).toContain('list: vi.fn<[], string[]>().mockReturnValue([]),');
+      expect(template).toContain('maybe: vi.fn<[], number | undefined>().mockReturnValue(0),');
+      expect(template).toContain('late: vi.fn<[], Promise<number>>().mockResolvedValue(0),');
       // custom class/interface types cannot be safely literal-constructed → undefined
-      expect(template).toContain('custom: vi.fn().mockReturnValue(undefined),');
-      expect(template).toContain('voidy: vi.fn().mockReturnValue(undefined),');
+      expect(template).toContain('custom: vi.fn<[], Widget>().mockReturnValue(undefined),');
+      expect(template).toContain('voidy: vi.fn<[], void>().mockReturnValue(undefined),');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('emits typed vi.fn<[...]> generics and object-shape return values', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-synth-shape-'));
+    try {
+      writeFileSync(
+        join(dir, 'shape.ts'),
+        [
+          'export class Shape {',
+          '  build(label: string, n?: number): { ok: boolean; count: number } {',
+          '    return { ok: true, count: n ?? 0 };',
+          '  }',
+          '  pair(): [string, number] { return ["x", 1]; }',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      const out = synthesizeForCli(dir, 'shape.ts', undefined, 'vitest');
+      const template = (out as { template: string }).template;
+      expect(template).toContain(
+        'build: vi.fn<[label: string, n?: number], { ok: boolean; count: number }>().mockReturnValue({ ok: false, count: 0 }),',
+      );
+      expect(template).toContain('pair: vi.fn<[], [string, number]>().mockReturnValue([]),');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
