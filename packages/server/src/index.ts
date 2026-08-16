@@ -24,7 +24,13 @@ import {
   type TypeIR,
   type ParseCache,
 } from '@momus/core';
-import { TypeScriptParser, invalidateProgramCache, tsReturnExample, promiseTypeArg } from '@momus/parser-typescript';
+import {
+  TypeScriptParser,
+  invalidateProgramCache,
+  getProgram,
+  tsReturnExampleChecked,
+  promiseTypeArg,
+} from '@momus/parser-typescript';
 import { PhpParser } from '@momus/parser-php';
 import { openParseCache } from './cache.ts';
 
@@ -477,6 +483,24 @@ export function synthesizeContract(
   const cls = symbolName ? classes.find((s) => s.name?.text === symbolName) : classes[0];
   if (!cls?.name) return { error: `no class found in ${targetPath}` };
   const className = cls.name.text;
+  // Type-aware return examples: resolve named interface/class returns through the checker so
+  // `User` / `Promise<User>` emit a data-shape literal instead of `undefined`. Falls back to
+  // syntax-only `tsReturnExample` when the file isn't in a resolvable program.
+  const handle = getProgram(abs);
+  const checker = handle.program.getTypeChecker();
+  const programSf = handle.program.getSourceFile(abs);
+  const programClass = symbolName
+    ? programSf?.statements.find(
+        (s): s is ts.ClassDeclaration => ts.isClassDeclaration(s) && s.name?.text === symbolName,
+      )
+    : programSf?.statements.find((s): s is ts.ClassDeclaration => ts.isClassDeclaration(s) && !!s.name);
+  const programTypeNodes = new Map<string, ts.TypeNode | undefined>();
+  for (const pm of programClass?.members ?? []) {
+    if ((ts.isMethodDeclaration(pm) || ts.isGetAccessorDeclaration(pm)) && pm.name && pm.type) {
+      programTypeNodes.set(pm.name.getText(programSf), pm.type);
+    }
+  }
+  const exampleFor = (type: ts.TypeNode | undefined): string => tsReturnExampleChecked(checker, type);
   const contract: Array<{ member: string; signature: string; returnType: string }> = [];
   const lines: string[] = [];
   for (const m of cls.members) {
@@ -494,8 +518,9 @@ export function synthesizeContract(
       const ret = m.type ? m.type.getText(sf) : 'unknown';
       const sig = `${name}(${params}): ${ret}`;
       contract.push({ member: name, signature: sig, returnType: ret });
-      const retVal = includeReturnValues ? tsReturnExample(m.type) : 'undefined';
-      const promiseArg = promiseTypeArg(m.type);
+      const programType = programTypeNodes.get(name) ?? m.type;
+      const retVal = includeReturnValues ? exampleFor(programType) : 'undefined';
+      const promiseArg = promiseTypeArg(programType) ?? promiseTypeArg(m.type);
       lines.push(`  // ${sig}`);
       if (framework === 'vitest' || framework === 'jest') {
         const fn = framework === 'vitest' ? 'vi' : 'jest';
@@ -511,7 +536,7 @@ export function synthesizeContract(
         const fnType = `${fn}.fn<[${paramTypes}], ${ret}>()`;
         lines.push(
           promiseArg
-            ? `  ${name}: ${fnType}.mockResolvedValue(${tsReturnExample(promiseArg)}),`
+            ? `  ${name}: ${fnType}.mockResolvedValue(${exampleFor(promiseArg)}),`
             : `  ${name}: ${fnType}.mockReturnValue(${retVal}),`,
         );
       } else {
@@ -519,13 +544,14 @@ export function synthesizeContract(
       }
     } else if (ts.isGetAccessorDeclaration(m)) {
       const name = m.name.getText(sf);
+      const programType = programTypeNodes.get(name) ?? m.type;
       contract.push({
         member: name,
         signature: `get ${name}(): ${m.type?.getText(sf) ?? 'unknown'}`,
         returnType: m.type?.getText(sf) ?? 'unknown',
       });
       lines.push(`  // get ${name}(): ${m.type?.getText(sf) ?? 'unknown'}`);
-      lines.push(`  get ${name}() { return ${tsReturnExample(m.type)}; },`);
+      lines.push(`  get ${name}() { return ${exampleFor(programType)}; },`);
     }
   }
   const template = [

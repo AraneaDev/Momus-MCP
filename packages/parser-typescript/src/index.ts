@@ -4,8 +4,8 @@ import type { ImportIR, LanguageParser, MockFramework, ModuleIR, ParseContext, P
 import { span } from '@momus/core';
 import { getProgram, resolveImport as resolveImportTs } from './program.ts';
 
-export { invalidateProgramCache } from './program.ts';
-export { tsReturnExample, promiseTypeArg } from './types.ts';
+export { invalidateProgramCache, getProgram } from './program.ts';
+export { tsReturnExample, tsReturnExampleChecked, promiseTypeArg } from './types.ts';
 import { extractSymbols } from './symbols.ts';
 import { detectMocks } from './mocks.ts';
 import { analyzeAssertions } from './dataflow.ts';

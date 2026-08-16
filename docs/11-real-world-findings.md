@@ -67,14 +67,23 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
   reachable instead of zero-reach).
 - **Remaining findings are the 6 genuine `assertSame(true, true)` sentinels** — true positives
   (the author's own `// sentinel` comments).
+- **DRIFT-001 / DRIFT-003 drill-down: 0 issues** on the full corpus — the drift rules produce no
+  false positives (and no true positives: Knossos genuinely has no planted drift).
+- **MCP round-trip verified** against Knossos over the MCP transport with all 5 tools
+  (`listTools`, `list_rules` → 14 rules, `verify_mock_drift` → 0, `detect_tautological_assertions`
+  → 6 sentinels, `audit_test_fidelity` on `CliHelpersTest.php` → 6, `synthesize_mock_contract` on
+  `LanguageWorkerPool.php` → correct `phpunit` template). No files were written into Knossos
+  (PHP enabled in-memory, cache disabled).
 
 ## 5. Open / candidate improvements
 
 1. PHP: consider recording `willThrowException`'s exception value in the IR (currently marked
    reachable only, consistent with `willReturnCallback`).
-2. TS synthesis: `mockResolvedValue({...})` object shapes for **named** interface/class returns
-   (currently only inline type literals like `{ ok: boolean }` get a literal; named types still
-   resolve via the checker, which syntax-only synthesis doesn't load).
+2. ✅ TS synthesis now resolves **named** interface/class returns through the type checker
+   (`tsReturnExampleChecked`), so `User` / `Promise<User>` emit data-shape literals
+   (`mockResolvedValue({ id: 0, … })`) instead of `undefined`. Remaining nuance: optional members
+   are included with their example value (`zip?: number` → `zip: 0`), and method-only inline
+   types emit `{}`.
 3. MOCK-001 (over-mocking) remains a heuristic warning — it intentionally flags mock-heavy unit
    tests; tuning its threshold or production-assertion counting is a judgment call, not a bug.
 4. TAUT-004's last survivor is a dynamic-`import()` + indirect signal-handler invocation

@@ -132,8 +132,8 @@ describe('synthesizeForCli', () => {
       expect(template).toContain('list: vi.fn<[], string[]>().mockReturnValue([]),');
       expect(template).toContain('maybe: vi.fn<[], number | undefined>().mockReturnValue(0),');
       expect(template).toContain('late: vi.fn<[], Promise<number>>().mockResolvedValue(0),');
-      // custom class/interface types cannot be safely literal-constructed → undefined
-      expect(template).toContain('custom: vi.fn<[], Widget>().mockReturnValue(undefined),');
+      // named interfaces resolve through the checker → data-shape literal
+      expect(template).toContain('custom: vi.fn<[], Widget>().mockReturnValue({ id: 0 }),');
       expect(template).toContain('voidy: vi.fn<[], void>().mockReturnValue(undefined),');
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -161,6 +161,37 @@ describe('synthesizeForCli', () => {
         'build: vi.fn<[label: string, n?: number], { ok: boolean; count: number }>().mockReturnValue({ ok: false, count: 0 }),',
       );
       expect(template).toContain('pair: vi.fn<[], [string, number]>().mockReturnValue([]),');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves named interface returns through the checker, incl. Promise<named> and nested members', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-synth-named-'));
+    try {
+      writeFileSync(
+        join(dir, 'named.ts'),
+        [
+          'export interface Address { city: string; zip?: number }',
+          'export interface User { id: number; name: string; address: Address; active: boolean }',
+          'export class Named {',
+          '  find(): Promise<User> { return Promise.resolve({} as User); }',
+          '  home(): Address { return {} as Address; }',
+          '  onlyMethods(): { run(): void } { return { run() {} }; }',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      const out = synthesizeForCli(dir, 'named.ts', undefined, 'vitest');
+      const template = (out as { template: string }).template;
+      // Promise<named interface> unwraps to a nested data-shape literal
+      expect(template).toContain(
+        "find: vi.fn<[], Promise<User>>().mockResolvedValue({ id: 0, name: '', address: { city: '', zip: 0 }, active: false }),",
+      );
+      // named interface (non-Promise) resolves to a data-shape literal too
+      expect(template).toContain("home: vi.fn<[], Address>().mockReturnValue({ city: '', zip: 0 }),");
+      // an inline type with only methods has no data properties → empty shape
+      expect(template).toContain('onlyMethods: vi.fn<[], { run(): void }>().mockReturnValue({}),');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -291,13 +291,27 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   inside the same closure resolves to the closure-scoped binding). Knossos TAUT-005: **5 → 0**;
   the only remaining findings are the 6 genuine `assertSame(true, true)` sentinels. Regression
   test pins `$pdo` → sites `[willReturnCallback, new hand-off]` and `$stmt` → `[return hand-off]`.
+- **Last verified (round 9):** (a) **Knossos DRIFT-001/DRIFT-003 drill-down** — 0 issues on the
+  full corpus (no false positives; Knossos genuinely has no planted drift). (b) **named-type
+  object-shape synthesis** — new `tsReturnExampleChecked(checker, typeNode)` resolves named
+  interface/class type references through the program checker (`getPropertiesOfType`, data
+  properties only), so `User` / `Promise<User>` returns emit nested literals
+  (`mockResolvedValue({ id: 0, name: '', address: { city: '', zip: 0 }, active: false })`)
+  instead of `undefined`. `synthesizeContract` now builds the program (`getProgram`) once and maps
+  method names → program type nodes, falling back to syntax-only `tsReturnExample` when the file
+  isn't in a resolvable program. Optional members are included with example values; method-only
+  inline types emit `{}`. (c) **MCP round-trip vs Knossos** — all 5 tools over the MCP transport
+  (PHP enabled in-memory, cache disabled → no writes to Knossos): `listTools`→5,
+  `list_rules`→14, `verify_mock_drift`→0, `detect_tautological_assertions`→6 sentinels,
+  `audit_test_fidelity` on `CliHelpersTest.php`→6, `synthesize_mock_contract` on
+  `LanguageWorkerPool.php`→correct `phpunit` template.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
   real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos and fixing every false-positive/perf gap
   they expose, keeping `docs/11-real-world-findings.md` as the live record. Phase 4 publishing
   (npm/MCP registry) remains blocked on credentials (no `NPM_TOKEN`). Chaos-MCP is now **0 errors /
   5 warnings** (1 untraceable TAUT-004 + 4 MOCK-001 heuristics); Knossos-MCP is **6 genuine
-  sentinel errors / 0 warnings**. Next: named-interface object-shape synthesis (needs the type
-  checker), and a Knossos drift/DRIFT-003 drill-down.
+  sentinel errors / 0 warnings**. Both test-subject repos are kept clean (read-only validation;
+  PHP enabled in-memory, cache disabled).
 - **Safe resume point:** if interrupted, resume wherever you stopped; do not revisit PHP
   closure-form/DRIFT-003, docblock typing, synth templates, anonymous-class doubles, git-diff
   plumbing, DRIFT-006, precommit, annotate-pr, the action, the `--fix` mechanism,
@@ -314,7 +328,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   ignore pattern, the TAUT-001 `REEVALUATING_KINDS` decision + PHP `exprKind` mapper, the
   TAUT-006 `spiedObjects` hand-off, the `vi.fn<[...]>` typed-generic/object-shape synthesis, or the
   TAUT-004 `productionCalls` guards (setup bindings, local-helper tracing, `it.each` collection), or the
-  PHP constructor/call/return hand-off reachability (`return`/`new`/`call` walk in `extractMocks`).
+  PHP constructor/call/return hand-off reachability (`return`/`new`/`call` walk in `extractMocks`), or the
+  named-type object-shape synthesis (`tsReturnExampleChecked` + `getProgram` in `synthesizeContract`).
 
 ---
 
@@ -549,10 +564,11 @@ in `audit.ts` — only inline comments are. (Verify before relying on it.)
    covered; broader Jest-specific semantics remain open.
 5. **`synthesize_mock_contract`** derives type-appropriate placeholder return values for the
    TypeScript path (`tsReturnExample`: number→`0`, string→`''`, boolean→`false`, arrays→`[]`,
-   `Promise<T>`→`mockResolvedValue(example of T)` (unwrapped), unions→first non-nullish member;
-   class/interface/unknown→`undefined`), matching the PHP path's `phpReturnExample`. The rich
-   `vi.fn<[...]>` generics / `mockResolvedValue({...})` / `expect.any(...)` shape shown in
-   `docs/04` §4.4.3 is still aspirational (not emitted).
+   `Promise<T>`→`mockResolvedValue(example of T)` (unwrapped), unions→first non-nullish member),
+   matching the PHP path's `phpReturnExample`. Named interface/class returns now resolve through
+   the checker (`tsReturnExampleChecked`) to nested data-shape literals. The `vi.fn<[...]>`
+   generics are emitted; the `expect.any(...)` matcher shape in `docs/04` §4.4.3 remains
+   aspirational (not emitted).
 6. **Perf budgets** (§2.7) are asserted nowhere yet; whole-workspace `ts.createProgram` per
    audit. The chokidar watcher invalidates the `ts.Program` cache on change (`serve --watch`), and
    the persistent IR cache (`better-sqlite3`, `.momus/cache/`) serves warm parses for an unchanged
