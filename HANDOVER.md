@@ -316,13 +316,24 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   **Knossos sentinel decision** — the 6 `assertSame(true, true)` hits are correct true positives
   (author's `// sentinel` smoke/skip markers), not a Momus bug; documented a Knossos-side
   recommendation (`expectNotToPerformAssertions()` / `assertTrue` / `markTestSkipped`).
+- **Last verified (round 11, self-dogfooding):** ran Momus on its own repo (59 files incl. all 23
+  test files, DRIFT-000 enabled) → 0 issues; git-diff drift vs `HEAD~15` → CLEAN. `momus contract`
+  on its own classes exposed **two real synthesis bugs** (fixed): (a) string-literal union type
+  aliases (`Language`/`MockFramework`/`SymbolKind`) synthesized `{ length: 0 }` because
+  `getPropertiesOfType` returned the primitive `String`'s intrinsic `length` — added
+  `primitiveExample` (resolves unions/literals/primitives to real values) + `resolveNamedType`
+  (replaces `namedObjectLiteral`); (b) inline type literals (`{ lang: Language }`) recursed through
+  the non-checker `tsReturnExample`, emitting `undefined` for named union members —
+  `tsReturnExampleChecked` now handles type literals itself (checker-aware recursion). Post-fix,
+  `momus contract packages/core/src/audit.ts` emits a fully-correct nested `AuditResult` literal.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
-  real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos and fixing every false-positive/perf gap
-  they expose, keeping `docs/11-real-world-findings.md` as the live record. Phase 4 publishing
-  (npm/MCP registry) remains blocked on credentials (no `NPM_TOKEN`). Chaos-MCP is now **0 errors /
-  4 warnings** (all MOCK-001 over-mocking heuristics, working as intended); Knossos-MCP is **6
-  genuine sentinel errors / 0 warnings**. Test-subject repos are treated as read-only except for
-  temporary files I create and remove (`.momusrc`, cache dirs).
+  real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos plus itself (dogfooding) and fixing every
+  false-positive/perf gap they expose, keeping `docs/11-real-world-findings.md` as the live
+  record. Phase 4 publishing (npm/MCP registry) remains blocked on credentials (no `NPM_TOKEN`).
+  Chaos-MCP is now **0 errors / 4 warnings** (all MOCK-001 over-mocking heuristics); Knossos-MCP
+  is **6 genuine sentinel errors / 0 warnings**; Momus-on-Momus is **0 issues** (drift, tautology,
+  and git-diff all clean). Test-subject repos are read-only except for temp files I create and
+  remove (`.momusrc`, cache dirs).
 - **Safe resume point:** if interrupted, resume wherever you stopped; do not revisit PHP
   closure-form/DRIFT-003, docblock typing, synth templates, anonymous-class doubles, git-diff
   plumbing, DRIFT-006, precommit, annotate-pr, the action, the `--fix` mechanism,
@@ -340,8 +351,9 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   TAUT-006 `spiedObjects` hand-off, the `vi.fn<[...]>` typed-generic/object-shape synthesis, or the
   TAUT-004 `productionCalls` guards (setup bindings, local-helper tracing, `it.each` collection), or the
   PHP constructor/call/return hand-off reachability (`return`/`new`/`call` walk in `extractMocks`), the
-  named-type object-shape synthesis (`tsReturnExampleChecked` + `getProgram` in `synthesizeContract`), or the
-  dynamic-`import()` production-call counting in `productionCalls`.
+  named-type object-shape synthesis (`tsReturnExampleChecked` + `getProgram` in `synthesizeContract`), the
+  dynamic-`import()` production-call counting in `productionCalls`, or the string-literal-union
+  synthesis fix (`primitiveExample` + `resolveNamedType` + checker-aware type literals).
 
 ---
 

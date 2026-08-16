@@ -151,11 +151,35 @@ const BUILTIN_TYPE_NAMES = new Set([
 ]);
 
 /**
- * Resolve a named interface/class type reference through the checker and build an object
- * literal from its data properties (methods/accessors are skipped). Returns `undefined` when the
- * type can't be resolved or has no data properties, so callers fall back to `tsReturnExample`.
+ * A primitive/literal example for a checker-resolved type, recursing through unions and type
+ * aliases. Returns `undefined` when the type is not primitive (e.g. an object/interface/class).
  */
-function namedObjectLiteral(checker: ts.TypeChecker, typeNode: ts.TypeNode, depth: number): string | undefined {
+function primitiveExample(type: ts.Type): string | undefined {
+  if (type.isUnion()) {
+    const nonNullish = type.types.find((t) => !(t.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)));
+    return nonNullish ? primitiveExample(nonNullish) : 'undefined';
+  }
+  if (type.isStringLiteral()) return JSON.stringify(type.value);
+  if (type.isNumberLiteral()) return String(type.value);
+  if (type.flags & ts.TypeFlags.BooleanLiteral) {
+    return (type as unknown as { intrinsicName?: string }).intrinsicName === 'true' ? 'true' : 'false';
+  }
+  if (type.flags & ts.TypeFlags.String) return "''";
+  if (type.flags & (ts.TypeFlags.Number | ts.TypeFlags.BigInt)) return '0';
+  if (type.flags & ts.TypeFlags.Boolean) return 'false';
+  if (type.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Void | ts.TypeFlags.Never)) return 'undefined';
+  if (type.flags & ts.TypeFlags.Null) return 'null';
+  return undefined;
+}
+
+/**
+ * Resolve a named interface/class type reference through the checker and build an object
+ * literal from its data properties (methods/accessors are skipped). String/number/boolean
+ * literal unions (e.g. `type Language = 'typescript' | 'php'`) resolve to a real literal member
+ * rather than their intrinsic `{ length }` shape. Returns `undefined` when the type can't be
+ * resolved or has no data properties, so callers fall back to `tsReturnExample`.
+ */
+function resolveNamedType(checker: ts.TypeChecker, typeNode: ts.TypeNode, depth: number): string | undefined {
   if (depth > 4 || !ts.isTypeReferenceNode(typeNode)) return undefined;
   const name = typeNode.typeName.getText();
   if (BUILTIN_TYPE_NAMES.has(name)) return undefined;
@@ -165,6 +189,8 @@ function namedObjectLiteral(checker: ts.TypeChecker, typeNode: ts.TypeNode, dept
   } catch {
     return undefined;
   }
+  const prim = primitiveExample(type);
+  if (prim !== undefined) return prim;
   if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Never | ts.TypeFlags.Void)) {
     return undefined;
   }
@@ -195,12 +221,23 @@ export function tsReturnExampleChecked(checker: ts.TypeChecker, typeNode: ts.Typ
   if (ts.isTypeReferenceNode(typeNode)) {
     const name = typeNode.typeName.getText();
     if (name === 'Promise' && typeNode.typeArguments?.[0]) {
-      const obj = namedObjectLiteral(checker, typeNode.typeArguments[0], depth + 1);
+      const obj = resolveNamedType(checker, typeNode.typeArguments[0], depth + 1);
       if (obj !== undefined) return obj;
     } else {
-      const obj = namedObjectLiteral(checker, typeNode, depth + 1);
+      const obj = resolveNamedType(checker, typeNode, depth + 1);
       if (obj !== undefined) return obj;
     }
+  }
+  // Inline object type literals recurse through the checker so nested named members
+  // (e.g. `{ lang: Language }`) resolve to real literals, not `undefined`.
+  if (ts.isTypeLiteralNode(typeNode)) {
+    const props = typeNode.members
+      .filter(
+        (m): m is ts.PropertySignature =>
+          ts.isPropertySignature(m) && !!m.name && ts.isIdentifier(m.name) && m.type !== undefined,
+      )
+      .map((m) => `${m.name.getText()}: ${tsReturnExampleChecked(checker, m.type, depth + 1)}`);
+    return props.length > 0 ? `{ ${props.join(', ')} }` : '{}';
   }
   return tsReturnExample(typeNode);
 }

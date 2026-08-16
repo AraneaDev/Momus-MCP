@@ -1,8 +1,9 @@
 # Momus-MCP — Real-World Validation Findings
 
 > **Live report.** Updated as we validate Momus against two real, independent AraneaDev
-> repositories. This is the honest record of (a) what Momus reports about those codebases and
-> (b) the bugs we found in Momus while doing so. Non-normative (see `docs/README`).
+> repositories plus Momus itself (dogfooding). This is the honest record of (a) what Momus
+> reports about those codebases and (b) the bugs we found in Momus while doing so.
+> Non-normative (see `docs/README`).
 
 **Last updated:** 2026-08-16
 
@@ -12,6 +13,7 @@
 |---|---|---|---|---|
 | `/root/Chaos-MCP` | TypeScript (ESM, NodeNext) | 320 files, 97 test files | Vitest (`vi.*`), Stryker mutation testing | default TS |
 | `/root/Knossos-MCP` | PHP ≥ 8.3 | 154 src + 221 test files | PHPUnit 12, Infection | `.momusrc` → `{languages:{php:true}}` (temp) |
+| `Momus-MCP` (self) | TypeScript + PHP | 59 audited files | Vitest | `.momusrc` (fixtures excluded) |
 
 ## 2. Bugs found in Momus (and fixed)
 
@@ -32,6 +34,8 @@
 | 13 | *(this round)* | `productionCalls` missed a SUT assigned in `beforeEach`, local helpers wrapping the SUT, and `it.each` parameterized tests | 21 false TAUT-004 "mock-only-assertion" on Chaos-MCP |
 | 14 | *(this round)* | PHP mocks handed to production via `new Foo($mock)`, passed as a call argument, or returned from a `willReturnCallback` closure were never marked reachable | 5 false TAUT-005 "zero-reach" on Knossos-MCP |
 | 15 | *(this round)* | `productionCalls` did not count dynamic `import()` as executing production code | 1 false TAUT-004 on Chaos-MCP `sandbox.test.ts` (signal-handler re-import pattern) |
+| 16 | *(dogfood)* | `synthesize_mock_contract` synthesized `{ length: 0 }` for string-literal union aliases (`Language`/`MockFramework`/`SymbolKind`) because `getPropertiesOfType` returns the primitive `String`'s intrinsic `length` | garbage mock contracts for Momus's own `ModuleIR`/`SymbolIR` |
+| 17 | *(dogfood)* | inline type literals (`{ lang: Language }`) recursed through the non-checker `tsReturnExample`, so named union members emitted `undefined` | `{ lang: undefined, sev: undefined }` for a union-field return |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -81,6 +85,18 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
   absent from `Support/Assertions.php`). Recommendation for Knossos (not a Momus change): add
   `assertTrue` to the assertion shim, or use PHPUnit's `expectNotToPerformAssertions()` / a
   proper `markTestSkipped` for the pcntl-guard case — the current lines give false confidence.
+
+## 4b. Self-dogfooding (Momus on Momus)
+
+- **Full audit incl. DRIFT-000: 0 issues** on 59 files (all 23 test files + production source).
+  The tool's own test suite genuinely exercises the drift/tautology rules (36 `vi.fn`, 20
+  `vi.spyOn`, 6 `vi.mock`) and stays clean.
+- **git-diff drift (`--base HEAD~15`): CLEAN** — no DRIFT-006 stale-mock.
+- **`momus contract` on its own classes** surfaced two real synthesis bugs (fixed, rows 16–17):
+  string-literal union aliases emitted `{ length: 0 }`, and inline type literals didn't recurse
+  through the checker. Post-fix, `momus contract packages/core/src/audit.ts` produces a fully
+  correct nested literal for `AuditResult` (`summary: { … truncated: false }`, `issues: []`,
+  `indexStats: { modules: 0, symbols: 0, mocks: 0 }`).
 
 ## 5. Open / candidate improvements
 

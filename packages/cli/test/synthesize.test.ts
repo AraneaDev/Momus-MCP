@@ -197,6 +197,37 @@ describe('synthesizeForCli', () => {
     }
   });
 
+  it('resolves string-literal union aliases (and inline literals) to real members, not { length }', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-synth-union-'));
+    try {
+      writeFileSync(
+        join(dir, 'union.ts'),
+        [
+          "export type Language = 'typescript' | 'php';",
+          "export type Severity = 'error' | 'warning' | 'info';",
+          'export class Union {',
+          '  lang(): Language { return "typescript"; }',
+          '  sev(): Severity { return "error"; }',
+          '  both(): { lang: Language; sev: Severity } { return { lang: "typescript", sev: "error" }; }',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      const out = synthesizeForCli(dir, 'union.ts', undefined, 'vitest');
+      const template = (out as { template: string }).template;
+      // regression: a string-literal union must not leak the intrinsic String `{ length }` shape
+      expect(template).not.toContain('length');
+      expect(template).toContain('lang: vi.fn<[], Language>().mockReturnValue("typescript"),');
+      expect(template).toContain('sev: vi.fn<[], Severity>().mockReturnValue("error"),');
+      // inline object literals recurse through the checker too
+      expect(template).toContain(
+        'both: vi.fn<[], { lang: Language; sev: Severity }>().mockReturnValue({ lang: "typescript", sev: "error" }),',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('synthesizes a phpunit template for a PHP class (not a TS stub)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'momus-synth-php-'));
     try {
