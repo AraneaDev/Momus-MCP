@@ -4,9 +4,8 @@
  * production / literal / unknown, with configured-value echo detection.
  */
 import * as ts from 'typescript';
-import type { AssertionIR, ExprIR, ModuleIR, RawComment, SourceKind, SourceSpan, TestFnIR } from '@momus/core';
+import type { AssertionIR, ExprIR, ModuleIR, SourceKind, SourceSpan, TestFnIR } from '@momus/core';
 import { span } from '@momus/core';
-import { extractComments } from './comments.ts';
 
 const HELPER_ROOTS = new Set([
   'expect',
@@ -481,7 +480,3 @@ function ownerOf(e: ts.Expression, sf: ts.SourceFile): string | undefined {
   return text.match(/^([A-Za-z_$][\w$]*)/)?.[1];
 }
 
-export function extractCommentsForModule(sf: ts.SourceFile, source: string): RawComment[] {
-  void sf;
-  return extractComments(source);
-}

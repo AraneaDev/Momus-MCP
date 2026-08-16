@@ -38,6 +38,12 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
       - name: Self-audit gate (Momus audits its own tests)
         run: npm run audit-self
 

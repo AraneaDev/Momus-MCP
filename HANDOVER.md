@@ -1,6 +1,6 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 278 tests passing, ~90% statements / ~86% branches / ~94% functions,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 285 tests passing, ~90.6% statements / ~86.7% branches / ~94.6% functions,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials (Phase 4 deferred indefinitely). Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
@@ -407,6 +407,17 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   with a thin mapper — commands unit-testable without subprocess, CLI stmts 19.4→37.8%,
   overall coverage 89.95% stmts / 86.14% branches / 94.06% funcs. 278 tests. Chaos and
   Knossos re-audits unchanged (0 errors / 4 MOCK-001 and 6 sentinel errors).
+- **Last verified (round 19):** hardening per HANDOVER §9 — **SYS-004 is now real**: a per-file
+  parse over `AuditOptions.parseBudgetMs` (default 2s, deliberately above the 50ms normative
+  §2.7 budget to avoid CI timing flakes) emits an info diagnostic and the audit still completes
+  (busy-wait-parser unit tests cover fires + quiet). **CI now gates on lint + format:check**
+  (previously scripts only). Coverage pass: block-bodied `mockImplementation` returns extract
+  literals (`{ return 42; }`, `function () {}`) with non-literal blocks falling back to full
+  text; removed the dead `extractCommentsForModule` wrapper; `typeAssignable` and
+  `phpReturnAssignable` hit 100% stmts (named-primitive branches, void/literal fallthroughs,
+  prod-kind-null). 285 tests; overall coverage 90.56% stmts / 86.7% branches / 94.64% funcs.
+  Self-audit CLEAN; Chaos 0 errors / 4 MOCK-001 and Knossos 6 sentinel errors — both
+  unchanged; precommit on the working tree is CLEAN.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
   real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos plus itself (dogfooding) and fixing every
   false-positive/perf gap they expose, keeping `docs/11-real-world-findings.md` as the live
@@ -421,6 +432,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   plumbing, DRIFT-006, precommit, annotate-pr, the action, the `--fix` mechanism,
   TAUT-001/002/003 fix code (resolved: semantic → descriptive-only), PHP `getMockForAbstractClass`,
   round-18 coverage pass (symbolIndex/markdown/typeAssignable/CLI dispatch extraction),
+  round-19 items (SYS-004 perf budget, ci.yml lint/format gates, dataflow block-body
+  implementation extraction, dead `extractCommentsForModule` removal),
   PHP function-scoped mock bindings, PHP setUp/property mock bindings, PHP same-variable
   reassignment, the test-coverage tooling, the contract-synthesis public-member/`?`-ordering
   fixes, the persistent IR cache, the ESLint/Prettier setup, the real-codebase Chaos-MCP
@@ -476,8 +489,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 26 files, 278 tests, all pass
-npm run test:coverage    # v8: ~90% statements / ~86% branches / ~94% functions (floors 80/75/90/80)
+npm test                 # 26 files, 285 tests, all pass
+npm run test:coverage    # v8: ~90.6% statements / ~86.7% branches / ~94.6% functions (floors 80/75/90/80)
 npm run lint             # eslint .  — clean
 npm run format:check     # prettier --check .  — clean
 npm run check:commits    # fails if any commit carries the Codebuff attribution footer

@@ -140,6 +140,56 @@ describe('assigned mock implementations', () => {
     expect(assertion.operands[0]!.provenance).toBe('mock-config');
     expect(assertion.operands[0]!.configuredValue).toBe('42');
   });
+
+  it('extracts a literal from a block-bodied arrow implementation', () => {
+    const src = [
+      "import { expect, it, vi } from 'vitest';",
+      'it("block-arrow", () => {',
+      '  const fn = vi.fn();',
+      "  fn.mockImplementation(() => { return 'hi'; });",
+      "  expect(fn()).toBe('hi');",
+      '});',
+      '',
+    ].join('\\n');
+    const p = join(FIXTURES, 'tests', 'mock-implementation-block.test.ts');
+    const mod = parser.parseModule(p, src, { config: undefined, resolveImport: () => null });
+    const assertion = mod.assertions.find((a) => a.api === 'toBe')!;
+    expect(assertion.operands[0]!.configuredValue).toBe("'hi'");
+  });
+
+  it('extracts a literal from a function-expression implementation', () => {
+    const src = [
+      "import { expect, it, vi } from 'vitest';",
+      'it("fn-expr", () => {',
+      '  const fn = vi.fn();',
+      '  fn.mockImplementation(function () { return 99; });',
+      '  expect(fn()).toBe(99);',
+      '});',
+      '',
+    ].join('\\n');
+    const p = join(FIXTURES, 'tests', 'mock-implementation-fnexpr.test.ts');
+    const mod = parser.parseModule(p, src, { config: undefined, resolveImport: () => null });
+    const assertion = mod.assertions.find((a) => a.api === 'toBe')!;
+    expect(assertion.operands[0]!.configuredValue).toBe('99');
+  });
+
+  it('falls back to the full text when a block-bodied implementation returns a non-literal', () => {
+    const src = [
+      "import { expect, it, vi } from 'vitest';",
+      'it("non-literal", () => {',
+      '  const fn = vi.fn();',
+      '  const compute = () => 7;',
+      '  fn.mockImplementation(() => { return compute(); });',
+      '  expect(fn()).toBe(7);',
+      '});',
+      '',
+    ].join('\\n');
+    const p = join(FIXTURES, 'tests', 'mock-implementation-dynamic.test.ts');
+    const mod = parser.parseModule(p, src, { config: undefined, resolveImport: () => null });
+    const assertion = mod.assertions.find((a) => a.api === 'toBe')!;
+    // the return isn't a literal, so we keep the full implementation source text
+    expect(assertion.operands[0]!.configuredValue).toBe('() => { return compute(); }');
+  });
 });
 
 describe('test function statistics', () => {

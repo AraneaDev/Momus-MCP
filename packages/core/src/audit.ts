@@ -32,6 +32,8 @@ export interface AuditOptions {
   diff?: { baseRef: string; changedPaths: string[] };
   /** Advisory persistent parse cache (keyed by file hash + workspace digest). */
   cache?: ParseCache;
+  /** Per-file parse budget in ms (§2.7); parses over it emit a SYS-004 info diagnostic. */
+  parseBudgetMs?: number;
 }
 
 export class AuditEngine {
@@ -94,6 +96,7 @@ export class AuditEngine {
       // the path filter restricts which TEST files get audited.
       let module = cache?.get(f.path, hash, workspaceHash);
       if (!module) {
+        const parseT0 = Date.now();
         try {
           module = parser.parseModule(f.path, source, {
             config: this.config,
@@ -106,6 +109,18 @@ export class AuditEngine {
             message: `SYS-001: parse error: ${(e as Error).message}`.slice(0, 120),
           });
           continue;
+        }
+        const parseMs = Date.now() - parseT0;
+        // Perf budget §2.7: a single-file parse over the budget degrades to an info
+        // diagnostic (SYS-004), never a crash. The normative budget is 50ms; the
+        // 2s ceiling keeps CI free of flaky timing while still surfacing pathological
+        // parses (huge/typed workspaces) as diagnostics.
+        if (parseMs > (this.opts.parseBudgetMs ?? 2000)) {
+          diagnostics.push({
+            severity: 'info',
+            span: { file: f.path, startLine: 1, startCol: 1, endLine: 1, endCol: 1 },
+            message: `SYS-004: single-file parse took ${parseMs}ms (budget 2000ms)`,
+          });
         }
         module.hash = hash;
         cache?.put(f.path, hash, workspaceHash, module);

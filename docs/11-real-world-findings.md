@@ -53,6 +53,9 @@
 | 32 | *(coverage pass)* | DRIFT-002's `typeAssignable` checked target-union **before** source-union, so a stub param typed `string\|number` could not accept a production `string\|number` param | identical union types falsely flagged as signature-mismatch; source unions now recurse first (each source member must be accepted by the target) |
 | 33 | *(refactor)* | CLI `main()` was one giant switch: commands weren't unit-testable without spawning a subprocess (CLI entrypoint coverage 19.4%) | extracted exported per-command functions (`runAudit`/`runDrift`/`runPrecommit`/`runHook`/`runContract`/`runRules`/`runServe`/`runInit`/`runDoctor`/`runAnnotate`/`runAnnotatePr`) + thin mapper; 2 direct tests, CLI stmts 19.4→37.8% |
 | 34 | *(coverage pass)* | coverage gaps in `markdown.ts` pluralization, `symbolIndex.ts` dedupe/inheritance/resolveByName, and the PHP `phpReturnAssignable` tree were uncovered | new unit tests took markdown.ts + symbolIndex.ts to 100% stmts/branches and covered every PHP DRIFT-003 branch (mixed/void/null/union/class-resolution) |
+| 35 | *(coverage pass)* | `SYS-004` (perf budget §2.7) was declared in the IR taxonomy but **never emitted** — the spec's "degrades to info, never crashes" contract was unexercised | a per-file parse-time budget (`parseBudgetMs`, default 2s) now emits a SYS-004 info diagnostic; deterministic busy-wait-parser tests cover the fires + quiet paths |
+| 36 | *(coverage pass)* | `dataflow.ts` block-bodied `mockImplementation` returns (`{ return 42; }`, `function () {}`) fell back to raw source text; the `extractCommentsForModule` wrapper was dead code | literal extraction now walks block bodies (arrow + function-expression), non-literal blocks keep full text; dead wrapper removed; `typeAssignable`/`phpReturnAssignable` named-primitive + void/literal fallthrough branches covered |
+| 37 | *(process)* | lint + format:check were scripts but not wired into CI | `ci.yml` test job now runs both gates after the test step |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -183,3 +186,9 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
     without spawning a subprocess (2 direct tests added); CLI entrypoint coverage 19.4% → 37.8%.
     Note: the ts.Program cache is memoized per process, so calling a run* twice on the same path
     in one process can serve a stale program — the real CLI invokes one command per process.
+15. ✅ SYS-004 (perf-budget, §2.7) is now real, not just a declared code: a per-file parse over
+    the budget (`AuditOptions.parseBudgetMs`, default 2s — well above the 50ms normative budget
+    to keep CI timing-flake-free) emits an info diagnostic and the audit still completes. Unit
+    tests drive a busy-wait parser against a 1ms budget (fires) and a 5s budget (quiet). Row 35.
+16. ✅ CI now runs `npm run lint` + `npm run format:check` in the test job — the style gates
+    were script-only before.

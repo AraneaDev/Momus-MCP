@@ -542,6 +542,8 @@ describe('DRIFT-003 PHP return-type assignability', () => {
             }),
             prodMember('tags', { kind: 'array', element: { kind: 'named', name: 'string', typeArgs: [] } }),
             prodMember('owner', { kind: 'named', name: 'User', typeArgs: [] }),
+            prodMember('ratio', { kind: 'named', name: 'float', typeArgs: [] }),
+            prodMember('raw', { kind: 'literal', value: 42 }),
           ],
           extendsIds: [],
           implementsIds: [],
@@ -634,6 +636,55 @@ describe('DRIFT-003 PHP return-type assignability', () => {
       },
     ]);
     expect(nullish).toHaveLength(1);
+    // named value of the matching primitive passes (string/bool name branches)
+    expect(
+      fired([
+        {
+          name: 'label',
+          returnType: { kind: 'named', name: 'string', typeArgs: [] },
+          values: [{ kind: 'named', name: 'string', typeArgs: [] }],
+        },
+      ]),
+    ).toHaveLength(0);
+    expect(
+      fired([
+        {
+          name: 'active',
+          returnType: { kind: 'named', name: 'bool', typeArgs: [] },
+          values: [{ kind: 'named', name: 'boolean', typeArgs: [] }],
+        },
+      ]),
+    ).toHaveLength(0);
+    // a non-literal, non-array, non-named value (void) is never a class
+    expect(
+      fired([
+        {
+          name: 'owner',
+          returnType: { kind: 'named', name: 'User', typeArgs: [] },
+          values: [{ kind: 'void' }],
+        },
+      ]),
+    ).toHaveLength(1);
+    // named float value against a float production passes (named primitive branch)
+    expect(
+      fired([
+        {
+          name: 'ratio',
+          returnType: { kind: 'named', name: 'float', typeArgs: [] },
+          values: [{ kind: 'named', name: 'float', typeArgs: [] }],
+        },
+      ]),
+    ).toHaveLength(0);
+    // same-kind fallthrough: literal production vs literal value
+    expect(
+      fired([
+        {
+          name: 'raw',
+          returnType: { kind: 'literal', value: 42 },
+          values: [{ kind: 'literal', value: 42 }],
+        },
+      ]),
+    ).toHaveLength(0);
   });
 
   it('resolves class-like production types by symbol identity, conservatively when unresolvable', () => {
@@ -695,6 +746,16 @@ describe('DRIFT-003 PHP return-type assignability', () => {
         {
           name: 'mayBeNull',
           returnType: { kind: 'named', name: 'null', typeArgs: [] },
+          values: [{ kind: 'literal', value: 1 }],
+        },
+      ]),
+    ).toHaveLength(1);
+    // production kind 'null' directly rejects any non-null value
+    expect(
+      run([
+        {
+          name: 'mayBeNull',
+          returnType: { kind: 'null' },
           values: [{ kind: 'literal', value: 1 }],
         },
       ]),
@@ -828,6 +889,36 @@ describe('DRIFT-002 parameter assignability tree', () => {
             implementsIds: [],
             signature: paramSig({ kind: 'literal', value: 'open' }),
           },
+          {
+            id: `${classId}.numLit`,
+            name: 'numLit',
+            kind: 'method',
+            span: sp(prodPath, 8),
+            members: [],
+            extendsIds: [],
+            implementsIds: [],
+            signature: paramSig({ kind: 'literal', value: 5 }),
+          },
+          {
+            id: `${classId}.boolLit`,
+            name: 'boolLit',
+            kind: 'method',
+            span: sp(prodPath, 9),
+            members: [],
+            extendsIds: [],
+            implementsIds: [],
+            signature: paramSig({ kind: 'literal', value: true }),
+          },
+          {
+            id: `${classId}.noop`,
+            name: 'noop',
+            kind: 'method',
+            span: sp(prodPath, 10),
+            members: [],
+            extendsIds: [],
+            implementsIds: [],
+            signature: paramSig({ kind: 'void' }),
+          },
         ],
         extendsIds: [],
         implementsIds: [],
@@ -908,6 +999,17 @@ describe('DRIFT-002 parameter assignability tree', () => {
     expect(fired('run', { kind: 'literal', value: 'x' })).toHaveLength(1);
     // kind mismatch (number vs string) is not assignable
     expect(fired('run', { kind: 'named', name: 'number', typeArgs: [] })).toHaveLength(1);
+  });
+
+  it('literal-number/boolean production params map to their named primitives', () => {
+    expect(fired('numLit', { kind: 'named', name: 'number', typeArgs: [] })).toHaveLength(0);
+    expect(fired('boolLit', { kind: 'named', name: 'boolean', typeArgs: [] })).toHaveLength(0);
+    expect(fired('numLit', { kind: 'named', name: 'string', typeArgs: [] })).toHaveLength(1);
+  });
+
+  it('same-kind fallthrough accepts matching non-literal kinds (void/void)', () => {
+    expect(fired('noop', { kind: 'void' })).toHaveLength(0);
+    expect(fired('noop', { kind: 'undefined' })).toHaveLength(1);
   });
 });
 
