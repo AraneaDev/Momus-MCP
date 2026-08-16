@@ -6,4 +6,8 @@ export class InvoiceService {
   label(): string {
     return '';
   }
+
+  fetch(): Promise<string> {
+    return Promise.resolve('');
+  }
 }

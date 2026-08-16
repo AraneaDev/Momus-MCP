@@ -27,6 +27,8 @@ describe('golden audit — planted violations fixture', () => {
     const found = result.issues.map((i) => `${i.rule}@${i.span.startLine}`).sort();
     expect(found).toEqual([
       'DRIFT-001@16', // spyOn on totalForX which does not exist
+      'DRIFT-003@30', // spy-bound mockImplementation(() => 'nope') not assignable to totalCents(): number
+      'DRIFT-003@37', // spy-bound mockReturnValueOnce('nope') not assignable to totalCents(): number
       'DRIFT-003@9', // spy-bound mockReturnValue('nope') not assignable to totalCents(): number
       'TAUT-002@11', // echoes the stubbed value 42 against itself
       'TAUT-002@18', // echoes the beforeEach value 42 against itself
@@ -61,8 +63,8 @@ describe('golden audit — planted violations fixture', () => {
 
   it('summary counts match the issue list', () => {
     expect(result.summary.errors).toBe(6);
-    expect(result.summary.warnings).toBe(2);
-    expect(result.summary.issues).toBe(8);
+    expect(result.summary.warnings).toBe(4);
+    expect(result.summary.issues).toBe(10);
     expect(result.summary.suppressed).toBe(0);
   });
 

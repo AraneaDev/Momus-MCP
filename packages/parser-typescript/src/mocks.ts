@@ -848,7 +848,11 @@ function computeReturnAssignability(
   for (const stub of stubs) {
     const sig = classMethodSignature(handle, targetSymbolId, stub.name);
     for (const v of stub.returnValues) {
-      if (v.value === undefined) continue;
+      // mockRejectedValue configures a rejection *reason*, not a resolved value — the
+      // production return type never applies to it (checked against the promise's rejection).
+      if (v.api === 'mockRejectedValue' || v.api === 'mockRejectedValueOnce') continue;
+      const isImplementation = v.api === 'mockImplementation' || v.api === 'mockImplementationOnce';
+      if (!isImplementation && v.value === undefined) continue;
       if (!sig) {
         v.assignable = 'unknown';
         continue;
@@ -864,9 +868,16 @@ function computeReturnAssignability(
         v.assignable = 'unknown';
         continue;
       }
-      const valType = sig.checker.getTypeAtLocation(valNode);
       try {
-        v.assignable = sig.checker.isTypeAssignableTo(valType, retType);
+        if (isImplementation) {
+          // the configured value is a callback; compare its body's return type to production
+          const implType = sig.checker.getTypeAtLocation(valNode);
+          const implReturn = implType.getCallSignatures()[0]?.getReturnType();
+          v.assignable = implReturn ? sig.checker.isTypeAssignableTo(implReturn, retType) : 'unknown';
+        } else {
+          const valType = sig.checker.getTypeAtLocation(valNode);
+          v.assignable = sig.checker.isTypeAssignableTo(valType, retType);
+        }
       } catch {
         v.assignable = 'unknown';
       }

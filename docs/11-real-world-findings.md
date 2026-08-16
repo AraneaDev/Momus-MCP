@@ -49,6 +49,7 @@
 | 28 | *(dogfood/coverage)* | `collectAssignedConfigs` resolved config owners through the **flat** `instanceIds` map, so a name reused across test scopes (`spy`) attached configs to the last binding | wrong-mock config attachment; now position-aware (`resolveInstance` nearest-binding) |
 | 29 | *(dogfood/coverage)* | `literalShape` didn't unwrap casts, so `mockReturnValue('x' as T)` yielded no value | `'x' as unknown as number` produced `value: undefined`; casts/parens now unwrap |
 | 30 | *(dogfood)* | `momus hook --install --root DIR` (and every non-`serve` command) ignored `--root` — `main` used `process.cwd()` | the hook installer wrote `.git/hooks/pre-commit` into the **wrong repo**; `--root` is now honored by every command |
+| 31 | *(dogfood)* | `mockRejectedValue`/`mockRejectedValueOnce` configs were checked against the production return type — but a rejection **reason** is not a resolved value | `spy.mockRejectedValue(new Error('boom'))` on a `Promise<string>` method false-flagged DRIFT-003; rejection configs are now skipped in assignability |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -159,3 +160,10 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
 10. ✅ `momus --root DIR` is honored by every command (row 30): audit/drift/hook/contract/rules/
     init/doctor/serve run against DIR from any cwd (mirrors the MCP server's `MOMUS_ROOT`).
     Regression test runs the bin from an empty cwd with `--root` pointing at a target repo.
+11. ✅ TS DRIFT-003 assignability now covers the full spy-config surface: `mockReturnValueOnce` /
+    `mockResolvedValueOnce` flow through the same pass (fixture: planted once-mismatch fires),
+    `mockImplementation`/`mockImplementationOnce` callback **returns** are checked against the
+    production return type (`spy.mockImplementation(() => 'nope')` on `totalCents(): number`
+    fires), and `mockRejectedValue` is correctly exempted (row 31 — a rejection reason, not a
+    resolved value). Dogfooded on Momus itself (20+ spyOn uses): 0 issues; Chaos re-audit
+    unchanged (0 errors / 4 MOCK-001).

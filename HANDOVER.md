@@ -385,10 +385,22 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   coverage 88.0% stmts / 85.3% branches / 94.5% funcs, self-audit clean. Chaos re-audit
   unchanged: **0 errors / 4 MOCK-001** (no DRIFT-003 false positives). Knossos unchanged: 6
   sentinel errors.
+- **Last verified (round 17, spy config depth):** DRIFT-003 assignability now covers the full
+  spy-config surface. (a) `mockRejectedValue`/`mockRejectedValueOnce` no longer false-positive:
+  a rejection **reason** is not a resolved value, so those configs are exempted (found by
+  dogfood probe — `spy.mockRejectedValue(new Error('boom'))` on `Promise<string>` flagged
+  DRIFT-003 before the fix). (b) `mockImplementation`/`mockImplementationOnce` callback
+  **returns** are checked against the production return type (`() => 'nope'` on
+  `totalCents(): number` fires). (c) once-variants (`mockReturnValueOnce`) flow through the
+  same pass. The fixture now plants three DRIFT-003s (literal, implementation callback,
+  once) plus a healthy rejected-value twin; golden updated (10 issues, 6 errors / 4
+  warnings). Dogfooded on Momus itself (20+ spyOn uses): **0 issues**; Chaos re-audit
+  unchanged: 0 errors / 4 MOCK-001. Coverage 88.0% stmts / 85.5% branches / 94.5% funcs.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
   real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos plus itself (dogfooding) and fixing every
   false-positive/perf gap they expose, keeping `docs/11-real-world-findings.md` as the live
-  record. Phase 4 publishing (npm/MCP registry) remains blocked on credentials (no `NPM_TOKEN`).
+  record. Phase 4 publishing (npm/MCP registry) is **deferred indefinitely** per project
+  preference — the in-repo scaffolding (action, changesets, annotate-pr) stays as-is.
   Chaos-MCP is now **0 errors / 4 warnings** (all MOCK-001 over-mocking heuristics); Knossos-MCP
   is **6 genuine sentinel errors / 0 warnings**; Momus-on-Momus is **0 issues** (drift, tautology,
   and git-diff all clean). Test-subject repos are read-only except for temp files I create and
@@ -704,15 +716,16 @@ in `audit.ts` — only inline comments are. (Verify before relying on it.)
 
 ## 9. Next session — recommended sequence
 
-1. **MCP registry listing draft** — write the `momus-mcp` registry entry (name, description,
-   install command `npx -y @momus/mcp-server@latest`, tool manifest) + install snippets; no
-   credentials needed, ready for the publish step.
-2. **Phase 4 publishing** — run `npx changeset version` + `changeset publish` and register
-   `momus-mcp` once `NPM_TOKEN` is available; e2e-test the composite action via `act`.
-3. **Optional hardening** — wire `lint` + `format:check` into `ci.yml`; extract the CLI `main()`
+1. **Continue the hardening loop** — dogfood the audit + `synthesize_mock_contract` on Momus
+   itself and against `Chaos-MCP`/`Knossos-MCP`, fixing every false-positive/perf gap they
+   expose; keep `docs/11-real-world-findings.md` + this handover current.
+2. **Optional hardening** — wire `lint` + `format:check` into `ci.yml`; extract the CLI `main()`
    dispatch into pure functions (raises the CLI entrypoint's subprocess-blind v8 coverage); cover
    the remaining `format/markdown`/`drift`/`dataflow` branch edges; add perf-budget asserts (§2.7)
    and the incremental `ts.createWatchProgram` program.
+3. **Phase 4 (publishing + MCP registry) is deferred indefinitely** — do not spend cycles on it
+   unless the project preference changes; the in-repo scaffolding (action, changesets,
+   annotate-pr, registry draft) remains available.
 
 **Guardrails:** read-only tools only; deterministic output (golden-tested); <100 tokens/issue
 (asserted); new patterns ship only with anti-pattern + healthy fixtures in CI; test ideas in

@@ -16,4 +16,25 @@ describe('InvoiceService', () => {
     spy.mockReturnValue(42);
     expect(svc.totalCents()).toBeDefined();
   });
+
+  it('healthy: mockRejectedValue sets a rejection reason, not a return value', () => {
+    const svc = new InvoiceService();
+    const spy = vi.spyOn(svc, 'fetch');
+    spy.mockRejectedValue(new Error('boom'));
+    expect(svc.fetch()).toBeDefined();
+  });
+
+  it('planted: implementation callback returns a type not assignable to the production return', () => {
+    const svc = new InvoiceService();
+    const spy = vi.spyOn(svc, 'totalCents');
+    spy.mockImplementation(() => 'nope');
+    expect(svc.totalCents()).toBeDefined();
+  });
+
+  it('planted: mockReturnValueOnce is checked like the persistent variant', () => {
+    const svc = new InvoiceService();
+    const spy = vi.spyOn(svc, 'totalCents');
+    spy.mockReturnValueOnce('nope');
+    expect(svc.totalCents()).toBeDefined();
+  });
 });
