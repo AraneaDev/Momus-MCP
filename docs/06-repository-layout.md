@@ -152,18 +152,28 @@ counts (`summary.totalErrors`), so `--max-issues 0` (summary-only) never masks f
 
 ## 6.5 CI/CD
 
-### 6.5.1 `ci.yml` (every PR)
+### 6.5.1 `ci.yml` + `pr-title.yml` (every PR)
 
-| Job | Runs | Gate |
-|---|---|---|
-| `unit` | node 22 × ubuntu; vitest unit suites (94+ tests, all packages) | all green |
-| `integration` | node 22 × ubuntu (in-memory MCP client round-trip: all 5 tools) | all green |
-| `golden` | planted-violation fixture gallery: exact rule/line/severity assertions | no drift |
-| `self-audit` | `npm run audit-self` on the Momus repo (fixture galleries excluded via `.momusrc` ignorePatterns — they hold intentional anti-patterns) | **zero findings** (P9) |
-| `fixture-smoke` | copy fixture gallery to a temp dir (no `.momusrc`), audit it: exit code must be 1 and the report must contain `TAUT-002`/`DRIFT-001` | exit 1 (anti-patterns caught) |
-| `lint` | deferred (authoring lints: message ≤ 80 chars, token budget §5.1 are asserted in unit tests) | clean when added |
-| `bench-smoke` | deferred until Phase 2 (perf budgets §2.7) | under budget |
-| `coverage` | `npm run test:coverage` (v8) — floors 80% statements/lines, 75% branches, 90% functions | ~85% lines (CLI entrypoint is exercised end-to-end via bin spawns, not subprocess-instrumented) |
+`ci.yml` jobs (`test` includes typecheck, tests, lint, format, self-audit, and the CLI fixture
+smoke — see `.github/workflows/ci.yml`):
+
+| Job | Gate |
+|---|---|
+| `commit-hygiene` | full-history scan: no Codebuff attribution footer in any commit |
+| `release-config` | `scripts/verify-release-config.mjs` — release-please config/version/dep lockstep |
+| `test` | typecheck 0 errors + vitest (all packages) + lint + format:check + `audit-self` CLEAN + CLI fixture smoke (planted violations → exit 1) |
+
+`pr-title.yml` (`pull_request_target`, payload-only, `permissions: {}`):
+
+| Job | Gate |
+|---|---|
+| `conventional-title` | PR title matches Conventional Commits (`feat`/`fix`/`!` cut a release) |
+
+**Branch protection on `main` (live):** no direct pushes (enforced for admins too — every
+change goes through a PR); required checks `commit-hygiene` + `conventional-title` +
+`release-config` + `test`, branches must be up to date with `main` (strict); no review
+required (solo repo); force-push and branch deletion blocked. The release-please bot's
+version PRs pass the same gates.
 
 ### 6.5.2 `release-please.yml` (shipped in-repo)
 
