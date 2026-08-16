@@ -30,6 +30,7 @@
 | 11 | *(this round)* | `momus contract` on PHP reimplemented TS-only synthesis, ignoring `--framework phpunit` | emitted `satisfies Partial<...>` garbage for a PHP class |
 | 12 | *(this round)* | Default `ignorePatterns` omitted `**/vendor/**` (Composer deps) | Knossos audit scanned 3,808 files incl. 3,915 vendor `.php` files (70s) instead of 403 files (8.5s) |
 | 13 | *(this round)* | `productionCalls` missed a SUT assigned in `beforeEach`, local helpers wrapping the SUT, and `it.each` parameterized tests | 21 false TAUT-004 "mock-only-assertion" on Chaos-MCP |
+| 14 | *(this round)* | PHP mocks handed to production via `new Foo($mock)`, passed as a call argument, or returned from a `willReturnCallback` closure were never marked reachable | 5 false TAUT-005 "zero-reach" on Knossos-MCP |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -55,14 +56,17 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
 - **TAUT-001 / TAUT-003** (`tests/phpunit/Cli/CliHelpersTest.php:322,530,568`):
   `assertSame(true, true)` with the author's own `// sentinel` comments — **true positives**
   (no-op smoke assertions).
-- **TAUT-005** (5 warnings, was 8): `createStub(PDO::class)` / `PDOStatement` configured then
-  passed into the SUT (`ProjectWriterLease`, `ProjectWriterLock`) — conservative; the stubs are
-  exercised through the SUT but the call path isn't statically visible.
+- **TAUT-005** (0 warnings, was 8 → 5 → 0): `createStub(PDO::class)` / `PDOStatement` configured
+  then passed into the SUT (`new ProjectWriterLease($pdo, …)`, `new ProjectWriterLock($pdo)`)
+  or returned from a `willReturnCallback` closure (`return $stmt;`). After wiring
+  constructor/call/return hand-off reachability, all were correctly marked reachable.
 - **Drift:** CLEAN. Mocks target `LanguageWorkerPool` (own class, resolves via PSR-4 to
   `src/Scan/LanguageWorkerPool.php`) and `PDO`/`PDOStatement` (PHP built-ins, correctly skipped).
 - **`willThrowException` now recognized** as a config call (like `willReturnCallback`), which
   removed 3 of the TAUT-005 warnings (the throw-configured `$pool`/`$pdo` mocks are now marked
   reachable instead of zero-reach).
+- **Remaining findings are the 6 genuine `assertSame(true, true)` sentinels** — true positives
+  (the author's own `// sentinel` comments).
 
 ## 5. Open / candidate improvements
 

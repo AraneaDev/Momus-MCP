@@ -95,6 +95,34 @@ describe('PHP parser', () => {
     expect(mock?.invocationSites.map((s) => s.startLine)).toEqual([6]);
   });
 
+  it('marks mocks handed off via constructor/call/return as reachable (TAUT-005 regression)', () => {
+    const src = [
+      '<?php',
+      'use PHPUnit\\Framework\\TestCase;',
+      'final class HandoffTest extends TestCase {',
+      '  public function testHandsOff(): void {',
+      '    $pdo = $this->createStub(PDO::class);',
+      "    $pdo->method('prepare')->willReturnCallback(function (): PDOStatement {",
+      '      $stmt = $this->createStub(PDOStatement::class);',
+      "      $stmt->method('execute')->willReturn(true);",
+      '      return $stmt;',
+      '    });',
+      '    $lock = new ProjectWriterLock($pdo);',
+      '  }',
+      '}',
+    ].join('\n');
+    const module = parser.parseModule('/ws/tests/HandoffTest.php', src, {
+      config: undefined,
+      resolveImport: () => null,
+    });
+    const pdo = module.mocks.find((m) => m.target?.exportName === 'PDO');
+    const stmt = module.mocks.find((m) => m.target?.exportName === 'PDOStatement');
+    // $pdo: the willReturnCallback config call + the `new ProjectWriterLock($pdo)` hand-off
+    expect(pdo?.invocationSites.map((s) => s.startLine)).toEqual([6, 11]);
+    // $stmt: returned from the willReturnCallback closure → handed off to production
+    expect(stmt?.invocationSites.map((s) => s.startLine)).toEqual([9]);
+  });
+
   it('keeps distinct operand source text so assertSame($a, $b) is not a self-comparison', () => {
     const src = [
       '<?php',

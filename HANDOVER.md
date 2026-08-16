@@ -282,12 +282,22 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   silently skipped). Chaos-MCP TAUT-004: **21 → 1**; the survivor is a dynamic-`import()` +
   indirect signal-handler invocation `(sigCall[1])()` from a spy's `.mock.calls` — statically
   untraceable. MOCK-001 (4) is a heuristic firing on mock-heavy unit tests by design.
+- **Last verified (round 8, PHP):** PHP mock reachability is now **hand-off-aware** — a mock passed
+  to a constructor (`new ProjectWriterLease($pdo, …)` / `new ProjectWriterLock($pdo)`), passed as a
+  non-config call argument, or returned from a closure (`return $stmt;` inside a
+  `willReturnCallback`) was never marked reachable, producing **5 false TAUT-005 "zero-reach"** on
+  Knossos-MCP. `extractMocks` now walks every `return`/`new`/`call` node and marks the resolved
+  mock reachable (via `resolveConfigBinding` + `bindingScope`, so `$stmt` created and returned
+  inside the same closure resolves to the closure-scoped binding). Knossos TAUT-005: **5 → 0**;
+  the only remaining findings are the 6 genuine `assertSame(true, true)` sentinels. Regression
+  test pins `$pdo` → sites `[willReturnCallback, new hand-off]` and `$stmt` → `[return hand-off]`.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
   real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos and fixing every false-positive/perf gap
   they expose, keeping `docs/11-real-world-findings.md` as the live record. Phase 4 publishing
   (npm/MCP registry) remains blocked on credentials (no `NPM_TOKEN`). Chaos-MCP is now **0 errors /
-  5 warnings** (1 untraceable TAUT-004 + 4 MOCK-001 heuristics). Next: named-interface object-shape
-  synthesis (needs the type checker), and Knossos-specific PHP drill-down.
+  5 warnings** (1 untraceable TAUT-004 + 4 MOCK-001 heuristics); Knossos-MCP is **6 genuine
+  sentinel errors / 0 warnings**. Next: named-interface object-shape synthesis (needs the type
+  checker), and a Knossos drift/DRIFT-003 drill-down.
 - **Safe resume point:** if interrupted, resume wherever you stopped; do not revisit PHP
   closure-form/DRIFT-003, docblock typing, synth templates, anonymous-class doubles, git-diff
   plumbing, DRIFT-006, precommit, annotate-pr, the action, the `--fix` mechanism,
@@ -303,7 +313,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   server-delegation, the PHP `willThrowException` config detection, the `**/vendor/**` default
   ignore pattern, the TAUT-001 `REEVALUATING_KINDS` decision + PHP `exprKind` mapper, the
   TAUT-006 `spiedObjects` hand-off, the `vi.fn<[...]>` typed-generic/object-shape synthesis, or the
-  TAUT-004 `productionCalls` guards (setup bindings, local-helper tracing, `it.each` collection).
+  TAUT-004 `productionCalls` guards (setup bindings, local-helper tracing, `it.each` collection), or the
+  PHP constructor/call/return hand-off reachability (`return`/`new`/`call` walk in `extractMocks`).
 
 ---
 
@@ -562,7 +573,9 @@ in `audit.ts` — only inline comments are. (Verify before relying on it.)
    targeting the abstract class with `method()`/`willReturn()` stubbed members). Mock bindings are
    function-scoped (`scope:name` keys), property mocks (`$this->x`, e.g. assigned in `setUp`) are
    class-scoped (`this:x`), and same-variable reassignment within one method resolves to the
-   nearest prior assignment (line-ordered `recordBinding`/`nearestBinding`).
+   nearest prior assignment (line-ordered `recordBinding`/`nearestBinding`). Mock reachability is
+   hand-off-aware: a mock passed to a constructor/call or returned from a closure is marked
+   reachable (no false TAUT-005).
 
 ---
 

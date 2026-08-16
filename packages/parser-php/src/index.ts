@@ -573,6 +573,47 @@ function extractMocks(file: string, nodes: PhpNode[], imports: ImportIR[]): PhpM
     if (!CONFIG_CALLS.has(name) || name === 'willReturn' || name === 'andReturn') continue;
     if (name !== 'method' && name !== 'shouldReceive') mock.invocationSites.push(nodeSpan(file, call));
   }
+
+  // Hand-off reachability: a mock passed to a constructor/call or returned from a closure is
+  // handed off to production, so it must not be flagged as zero-reach (TAUT-005). This mirrors
+  // the TS side's argument/object/array hand-off detection (e.g. `new ProjectWriterLease($pdo)`
+  // and the inner `return $stmt;` inside a `willReturnCallback` closure).
+  const markReachable = (mock: MockIR, node: PhpNode): void => {
+    const line = nodeLine(node);
+    if (!mock.invocationSites.some((s) => s.startLine === line)) {
+      mock.invocationSites.push(nodeSpan(file, node));
+    }
+  };
+  const mockAt = (expr: PhpNode | undefined, node: PhpNode): MockIR | undefined => {
+    if (!expr) return undefined;
+    const binding = bindingName(expr);
+    if (!binding) return undefined;
+    return resolveConfigBinding(
+      binding,
+      nodeLine(node),
+      byBinding,
+      closureBindings,
+      bindingScope(binding, node, methods, classes),
+    );
+  };
+  for (const node of nodes) {
+    if (node.kind === 'return') {
+      const mock = mockAt(node.expr, node);
+      if (mock) markReachable(mock, node);
+    } else if (node.kind === 'new') {
+      for (const arg of node.arguments ?? []) {
+        const mock = mockAt(arg, node);
+        if (mock) markReachable(mock, node);
+      }
+    } else if (node.kind === 'call') {
+      const name = callName(node);
+      if (name && CONFIG_CALLS.has(name)) continue;
+      for (const arg of node.arguments ?? []) {
+        const mock = mockAt(arg, node);
+        if (mock) markReachable(mock, node);
+      }
+    }
+  }
   return { mocks, bindings: byBinding, closureBindings };
 }
 
