@@ -2,14 +2,12 @@
 import { execFileSync } from 'node:child_process';
 import { relative, resolve } from 'node:path';
 
-/** Prefix from the repo toplevel back to `root` ('' when `root` is the toplevel). */
-function repoPrefix(root: string): string {
-  const toplevel = execFileSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], {
+/** Repo toplevel (absolute) for `root`, throwing when `root` is not inside a git repo. */
+function repoTopLevel(root: string): string {
+  return execFileSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], {
     encoding: 'utf8',
     maxBuffer: 1 << 20,
   }).trim();
-  const prefix = relative(resolve(root), resolve(toplevel));
-  return prefix && !prefix.startsWith('..') ? prefix : '';
 }
 
 /** Parse `git diff --name-status` output; rename pairs contribute every path. */
@@ -37,8 +35,21 @@ function parseUntracked(out: string): string[] {
   return paths;
 }
 
-function relToRoot(paths: string[], prefix: string): string[] {
-  return prefix === '' ? paths : paths.map((p) => `${prefix}/${p}`);
+/**
+ * Git reports paths relative to the repo toplevel. Convert them to `root`-relative:
+ * - `root` IS the toplevel → as-is.
+ * - `root` is a SUBDIR of the toplevel (e.g. auditing `src/`) → strip the subdir prefix.
+ * - `root` is an ANCESTOR of the toplevel → prepend the ancestor path.
+ */
+function relToRoot(paths: string[], root: string, toplevel: string): string[] {
+  const toTop = relative(resolve(root), resolve(toplevel));
+  if (toTop === '') return paths; // root is the toplevel
+  if (toTop === '..' || toTop.startsWith('../')) {
+    const subdir = relative(resolve(toplevel), resolve(root));
+    const prefix = `${subdir}/`;
+    return paths.map((p) => (p.startsWith(prefix) ? p.slice(prefix.length) : p));
+  }
+  return paths.map((p) => `${toTop}/${p}`);
 }
 
 /**
@@ -48,7 +59,7 @@ function relToRoot(paths: string[], prefix: string): string[] {
  * skipped conservatively — better to under-report than mis-map.
  */
 export function gitChangedPaths(root: string, baseRef: string): string[] {
-  const prefix = repoPrefix(root);
+  const toplevel = repoTopLevel(root);
   const out = execFileSync('git', ['-C', root, 'diff', '--name-status', '--find-renames', baseRef, '--'], {
     encoding: 'utf8',
     maxBuffer: 64 << 20,
@@ -57,7 +68,7 @@ export function gitChangedPaths(root: string, baseRef: string): string[] {
     encoding: 'utf8',
     maxBuffer: 64 << 20,
   });
-  return relToRoot([...parseUntracked(untracked), ...parseNameStatus(out)], prefix);
+  return relToRoot([...parseUntracked(untracked), ...parseNameStatus(out)], root, toplevel);
 }
 
 /**
@@ -66,10 +77,10 @@ export function gitChangedPaths(root: string, baseRef: string): string[] {
  * pairs contribute both sides.
  */
 export function gitStagedPaths(root: string, baseRef: string): string[] {
-  const prefix = repoPrefix(root);
+  const toplevel = repoTopLevel(root);
   const out = execFileSync('git', ['-C', root, 'diff', '--cached', '--name-status', '--find-renames', baseRef, '--'], {
     encoding: 'utf8',
     maxBuffer: 64 << 20,
   });
-  return relToRoot(parseNameStatus(out), prefix);
+  return relToRoot(parseNameStatus(out), root, toplevel);
 }

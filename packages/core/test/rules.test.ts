@@ -577,6 +577,53 @@ describe('MOCK-001 saturation', () => {
     });
     expect(runRules(rulesOf('MOCK-001'), ctx(m))).toHaveLength(0);
   });
+
+  it('stays quiet when there are no imported dependencies to saturate', () => {
+    const m = testModule({ imports: [], mocks: [] });
+    expect(runRules(rulesOf('MOCK-001'), ctx(m))).toHaveLength(0);
+  });
+
+  it('dedupes same-module mocks via symbolId when modulePath is absent', () => {
+    const m = testModule({
+      imports: [{ specifier: '../src/a', names: ['A'] }],
+      mocks: [
+        mock({ id: 'a1', target: { kind: 'module', symbolId: '/ws/src/a.ts#A', span: sp(FILE, 1) } }),
+        mock({ id: 'a2', target: { kind: 'module', symbolId: '/ws/src/a.ts#A', span: sp(FILE, 2) } }),
+      ],
+      assertions: [assertion({ operands: [expr({ provenance: 'mock-call' })] })],
+    });
+    const issues = runRules(rulesOf('MOCK-001'), ctx(m));
+    expect(issues).toHaveLength(1); // 1/1 mocked, not 2/1
+    expect(issues[0]!.message).toContain('1/1 dependencies mocked');
+  });
+});
+
+describe('MOCK-002 mock-of-self', () => {
+  it('flags a test that mocks the module it imports as its own subject', () => {
+    const m = testModule({
+      mocks: [
+        mock({ id: 'self', target: { kind: 'module', modulePath: PROD, specifier: '../ledger', span: sp(FILE, 5) } }),
+      ],
+    });
+    const issues = runRules(rulesOf('MOCK-002'), ctx(m));
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.message).toContain('mock-of-self');
+  });
+
+  it('stays quiet when the mocked module is not the subject', () => {
+    const m = testModule({
+      mocks: [mock({ id: 'other', target: { kind: 'module', modulePath: '/ws/src/other.ts', span: sp(FILE, 5) } })],
+    });
+    expect(runRules(rulesOf('MOCK-002'), ctx(m))).toHaveLength(0);
+  });
+
+  it('stays quiet when the test file name has no test/spec suffix', () => {
+    const m = testModule({
+      path: '/ws/tests/helpers.manual.ts',
+      mocks: [mock({ id: 'x', target: { kind: 'module', modulePath: PROD, span: sp(FILE, 5) } })],
+    });
+    expect(runRules(rulesOf('MOCK-002'), ctx(m))).toHaveLength(0);
+  });
 });
 
 describe('rule engine', () => {

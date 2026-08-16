@@ -240,4 +240,31 @@ describe('gitChangedPaths', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('returns paths relative to a subdirectory root (regression: was toplevel-relative)', () => {
+    const dir = repo();
+    try {
+      mkdirSync(join(dir, 'src', 'nested'));
+      writeFileSync(join(dir, 'src', 'ledger.ts'), 'export class LedgerService { changed() {} }\n');
+      writeFileSync(join(dir, 'src', 'nested', 'x.ts'), 'export const x = 1;\n');
+      expect(gitChangedPaths(join(dir, 'src'), 'HEAD').sort()).toEqual(['ledger.ts', 'nested/x.ts']);
+      expect(gitChangedPaths(dir, 'HEAD').sort()).toEqual(['src/ledger.ts', 'src/nested/x.ts']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('skips non-ASCII (quoted) paths conservatively', () => {
+    const dir = repo();
+    try {
+      writeFileSync(join(dir, 'src', 'café.ts'), 'export const c = 1;\n');
+      writeFileSync(join(dir, 'src', 'plain.ts'), 'export const p = 1;\n');
+      const paths = gitChangedPaths(dir, 'HEAD');
+      expect(paths).toContain('src/plain.ts');
+      // the non-ASCII file is quoted by git and skipped rather than mis-mapped
+      expect(paths.some((p) => p.includes('caf'))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

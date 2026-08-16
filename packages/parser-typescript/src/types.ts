@@ -2,6 +2,13 @@
 import type { TypeIR, ParamIR } from '@momus/core';
 import * as ts from 'typescript';
 
+/** True for `null` / `undefined` type nodes — including `null` parsed as a `LiteralType` inside a union. */
+function isNullishTypeNode(t: ts.TypeNode): boolean {
+  const K = ts.SyntaxKind;
+  if (t.kind === K.NullKeyword || t.kind === K.UndefinedKeyword) return true;
+  return ts.isLiteralTypeNode(t) && t.literal.kind === K.NullKeyword;
+}
+
 export function typeNodeToIR(node: ts.TypeNode | undefined): TypeIR | undefined {
   if (!node) return undefined;
   if (ts.isUnionTypeNode(node)) {
@@ -107,7 +114,7 @@ export function tsReturnExample(type: ts.TypeNode | undefined): string {
     return props.length > 0 ? `{ ${props.join(', ')} }` : '{}';
   }
   if (ts.isUnionTypeNode(type)) {
-    const nonNullish = type.types.find((t) => t.kind !== K.NullKeyword && t.kind !== K.UndefinedKeyword);
+    const nonNullish = type.types.find((t) => !isNullishTypeNode(t));
     return nonNullish ? tsReturnExample(nonNullish) : 'undefined';
   }
   if (ts.isTypeReferenceNode(type)) {
@@ -213,9 +220,7 @@ export function tsReturnExampleChecked(checker: ts.TypeChecker, typeNode: ts.Typ
   if (!typeNode) return 'undefined';
   if (depth > 5) return 'undefined';
   if (ts.isUnionTypeNode(typeNode)) {
-    const nonNullish = typeNode.types.find(
-      (t) => t.kind !== ts.SyntaxKind.NullKeyword && t.kind !== ts.SyntaxKind.UndefinedKeyword,
-    );
+    const nonNullish = typeNode.types.find((t) => !isNullishTypeNode(t));
     return nonNullish ? tsReturnExampleChecked(checker, nonNullish, depth + 1) : 'undefined';
   }
   if (ts.isTypeReferenceNode(typeNode)) {

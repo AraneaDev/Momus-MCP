@@ -1,6 +1,6 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 235 tests passing, ~85% statements / ~83% branches / ~93% functions,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 255 tests passing, ~86% statements / ~84% branches / ~93% functions,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials. Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
@@ -334,6 +334,17 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   become `vi.fn` stubs, and the default target still prefers the first class, falling back to the
   first interface only when no class exists. `momus contract packages/core/src/ir.ts --symbol
   ModuleIR` now yields a correct 13-property mock. Self-audit (incl. DRIFT-000) remains 0 issues.
+- **Last verified (round 13, coverage + dogfooding):** added dedicated `comments.test.ts` (100%)
+  and `types.test.ts` for `tsReturnExample`/`promiseTypeArg`, plus MOCK-002 (mock-of-self) and
+  MOCK-001 edge tests and git subdir/quoted-path tests. Coverage: 85.8% stmts / 84.2% branches /
+  92.9% funcs, 255 tests. Two real bugs surfaced while writing the tests (fixed): (a) union
+  nullish-exclusion in `tsReturnExample` missed `null` parsed as a `LiteralType`, so
+  `null | undefined` synthesized as `'null'`; (b) `gitChangedPaths`/`gitStagedPaths` returned
+  **toplevel**-relative paths when `root` was a subdirectory, silently no-oping diff scoping —
+  `relToRoot` now strips the subdir prefix / prepends ancestor paths. Also dogfooded the CLI
+  surface on itself (`doctor`, `rules`, `init` template, `audit --json` — all good) and verified
+  the new interface/generic synthesis against real Chaos-MCP types (`ExecResult`,
+  `ExecuteOptions`) — output is valid, type-appropriate TypeScript.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
   real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos plus itself (dogfooding) and fixing every
   false-positive/perf gap they expose, keeping `docs/11-real-world-findings.md` as the live
@@ -361,9 +372,10 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   PHP constructor/call/return hand-off reachability (`return`/`new`/`call` walk in `extractMocks`), the
   named-type object-shape synthesis (`tsReturnExampleChecked` + `getProgram` in `synthesizeContract`), the
   dynamic-`import()` production-call counting in `productionCalls`, the string-literal-union
-  synthesis fix (`primitiveExample` + `resolveNamedType` + checker-aware type literals), or the
+  synthesis fix (`primitiveExample` + `resolveNamedType` + checker-aware type literals), the
   generic/interface synthesis support (generics concretized to `unknown`, `Partial<Box<unknown>>`,
-  interface targets with data values + method stubs).
+  interface targets with data values + method stubs), the union `null`-as-`LiteralType` fix, or
+  the git subdir-root path normalization (`relToRoot` strip/prepend).
 
 ---
 
@@ -391,8 +403,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 23 files, 235 tests, all pass
-npm run test:coverage    # v8: ~85% statements / ~83% branches / ~93% functions (floors 80/75/90/80)
+npm test                 # 25 files, 255 tests, all pass
+npm run test:coverage    # v8: ~86% statements / ~84% branches / ~93% functions (floors 80/75/90/80)
 npm run lint             # eslint .  — clean
 npm run format:check     # prettier --check .  — clean
 npm run check:commits    # fails if any commit carries the Codebuff attribution footer
