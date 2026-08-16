@@ -148,6 +148,37 @@ describe('DRIFT-006 stale-mock (git-diff mode)', () => {
     const issues = runRules(drift('DRIFT-006'), ctx(staleMock(), index));
     expect(issues).toHaveLength(0);
   });
+
+  it('flags module-target mocks (vi.mock factories) whose production file changed', () => {
+    const moduleMock = testModule({
+      mocks: [
+        mock({
+          pattern: 'vi.mock',
+          target: { kind: 'module', modulePath: PROD, specifier: '../src/ledger', span: sp(FILE, 5) },
+          stubbedMembers: [{ name: 'LedgerService', span: sp(FILE, 5), api: 'mockFactoryKey', returnValues: [] }],
+        }),
+      ],
+    });
+    const issues = runRules(drift('DRIFT-006'), ctx(moduleMock, index, diffOf([PROD], [])));
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.message).toContain('ledger.ts'); // module basename, not a class id
+    // the long prefix eats the 80-char budget, so export names may be budget-truncated
+    expect(issues[0]!.message.length).toBeLessThanOrEqual(80);
+  });
+
+  it('stays quiet for module-target mocks when the module file did not change', () => {
+    const moduleMock = testModule({
+      mocks: [
+        mock({
+          pattern: 'vi.mock',
+          target: { kind: 'module', modulePath: PROD, specifier: '../src/ledger', span: sp(FILE, 5) },
+          stubbedMembers: [],
+        }),
+      ],
+    });
+    const issues = runRules(drift('DRIFT-006'), ctx(moduleMock, index, diffOf(['/ws/src/other.ts'], [])));
+    expect(issues).toHaveLength(0);
+  });
 });
 
 describe('diff-scoped drift filtering (git-diff mode)', () => {
@@ -174,6 +205,24 @@ describe('diff-scoped drift filtering (git-diff mode)', () => {
     expect(runRules(drift('DRIFT-001'), changed)).toHaveLength(1);
     const untouched = ctx(missingMemberMock(), index, diffOf(['/ws/src/other.ts'], ['/ws/src/other.ts#Other']));
     expect(runRules(drift('DRIFT-001'), untouched)).toHaveLength(0);
+  });
+
+  it('DRIFT-005 fires for module mocks when their production file changed', () => {
+    const moduleMock = testModule({
+      mocks: [
+        mock({
+          pattern: 'vi.mock',
+          target: { kind: 'module', modulePath: PROD, specifier: '../src/ledger', span: sp(FILE, 5) },
+          stubbedMembers: [{ name: 'Ghost', span: sp(FILE, 5), api: 'mockFactoryKey', returnValues: [] }],
+        }),
+      ],
+    });
+    // diff scope includes the production file: the missing export IS in scope
+    const changed = ctx(moduleMock, index, diffOf([PROD], []));
+    expect(runRules(drift('DRIFT-005'), changed)).toHaveLength(1);
+    // different file changed: the module mock is out of scope
+    const untouched = ctx(moduleMock, index, diffOf(['/ws/src/other.ts'], []));
+    expect(runRules(drift('DRIFT-005'), untouched)).toHaveLength(0);
   });
 });
 

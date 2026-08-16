@@ -1,6 +1,6 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 294 tests passing, ~91.6% statements / ~86.9% branches / ~95.3% functions,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 298 tests passing, ~91.6% statements / ~86.9% branches / ~95.3% functions,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials (Phase 4 deferred indefinitely). Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
@@ -439,6 +439,20 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   91.62% stmts / 86.89% branches / 95.26% funcs. Self-audit CLEAN; Knossos unchanged
   (6 sentinel errors); contract synthesis verified on real Knossos classes
   (`LanguageScanRunner`, `ScanPlanner`) and Chaos classes (`BaseEngine`, `LineRange`).
+- **Last verified (round 22):** dogfooding the **git-diff/precommit flow on a temp clone of
+  Chaos-MCP** found a real bug: module-target mocks (`vi.mock` factories) have no `symbolId`,
+  and `diffRelevant` required one — in precommit/`--git-diff` mode they were **silently out of
+  scope**. A planted rename (`createSandbox` → `createSandboxV2` in `sandbox.ts`, tests
+  untouched) made `momus precommit` report **CLEAN (exit 0)** while a plain audit fired
+  DRIFT-005. Fix: `diffRelevant` resolves module-target mocks through their changed
+  `modulePath`, and DRIFT-006 (stale-mock) gained a module-target branch (module file changed
+  + mock file untouched → stale; message lists module basename + exports, budget-fitted). The
+  same planted rename now fires DRIFT-005 errors + DRIFT-006 warnings across every affected
+  test file with exit 1; the healthy twin (factory key updated alongside) clears. Regression
+  tests: rule-level (diff.test.ts: module DRIFT-006 + DRIFT-005 in/out of scope) and CLI
+  end-to-end (renamed export vs untouched factory → exit 1 + DRIFT-005/006; healthy twin
+  → exit 0). 298 tests; coverage 91.6% stmts / 86.85% branches / 95.26% funcs; self-audit
+  CLEAN. Temp clone removed; Chaos/Knossos working trees clean.
   Self-audit CLEAN; Chaos 0 errors / 4 MOCK-001 and Knossos 6 sentinel errors — both
   unchanged; precommit on the working tree is CLEAN.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
@@ -461,6 +475,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   EdgeCasesTest.php fixture, tools/list size budget assert),
   round-21 items (importOriginal block-factory extraction, PHP synth union/intersection
   return examples),
+  round-22 items (module-target diff relevance — diffRelevant + DRIFT-006 module branch,
+  precommit git-diff dogfood on temp Chaos clone),
   PHP function-scoped mock bindings, PHP setUp/property mock bindings, PHP same-variable
   reassignment, the test-coverage tooling, the contract-synthesis public-member/`?`-ordering
   fixes, the persistent IR cache, the ESLint/Prettier setup, the real-codebase Chaos-MCP
@@ -516,7 +532,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 26 files, 294 tests, all pass
+npm test                 # 26 files, 298 tests, all pass
 npm run test:coverage    # v8: ~91.6% statements / ~86.9% branches / ~95.3% functions (floors 80/75/90/80)
 npm run lint             # eslint .  — clean
 npm run format:check     # prettier --check .  — clean

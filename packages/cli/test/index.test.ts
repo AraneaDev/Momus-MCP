@@ -366,6 +366,65 @@ describe('CLI bin entrypoint', () => {
     }
   });
 
+  it('precommit flags a renamed module export against an untouched vi.mock factory', { timeout: 30_000 }, () => {
+    const repo = gitRepo();
+    try {
+      // baseline: the test mocks the module via a factory keyed on totalFor
+      writeFileSync(
+        join(repo, 'src', 'services', 'ledger.ts'),
+        ['export function totalFor(id: string): number { return 0; }', ''].join('\n'),
+      );
+      writeFileSync(
+        join(repo, 'tests', 'ledger.test.ts'),
+        [
+          "import { describe, expect, it, vi } from 'vitest';",
+          "import { totalFor } from '../src/services/ledger';",
+          "vi.mock('../src/services/ledger', () => ({ totalFor: vi.fn() }));",
+          "describe('ledger module', () => {",
+          "  it('uses the mock', () => {",
+          '    expect(totalFor).toBeDefined();',
+          '  });',
+          '});',
+          '',
+        ].join('\n'),
+      );
+      runGit(repo, 'git add -A');
+      runGit(repo, 'git commit -qm baseline');
+
+      // rename the export in production only; the test's factory key is now stale
+      writeFileSync(
+        join(repo, 'src', 'services', 'ledger.ts'),
+        ['export function totalForRenamed(id: string): number { return 0; }', ''].join('\n'),
+      );
+      const result = spawnSync(process.execPath, [BIN, 'precommit'], { cwd: repo, encoding: 'utf8' });
+      expect(result.status, result.stderr).toBe(1);
+      // module-target mocks now participate in diff scope: DRIFT-005 (missing-export) fires
+      // on the factory key and DRIFT-006 (stale-mock) on the untouched test file
+      expect(result.stdout).toMatch(/DRIFT-005/);
+      expect(result.stdout).toMatch(/DRIFT-006/);
+      expect(result.stdout).toMatch(/missing-export: factory key 'totalFor'/);
+      // healthy twin: updating the factory key alongside the production change clears it
+      writeFileSync(
+        join(repo, 'tests', 'ledger.test.ts'),
+        [
+          "import { describe, expect, it, vi } from 'vitest';",
+          "import { totalForRenamed } from '../src/services/ledger';",
+          "vi.mock('../src/services/ledger', () => ({ totalForRenamed: vi.fn() }));",
+          "describe('ledger module', () => {",
+          "  it('uses the mock', () => {",
+          '    expect(totalForRenamed).toBeDefined();',
+          '  });',
+          '});',
+          '',
+        ].join('\n'),
+      );
+      const fixed = spawnSync(process.execPath, [BIN, 'precommit'], { cwd: repo, encoding: 'utf8' });
+      expect(fixed.status, fixed.stderr).toBe(0);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   it('executes the audit through the npm bin symlink and reports planted findings', () => {
     const fixture = mkdtempSync(join(tmpdir(), 'momus-bin-'));
     try {

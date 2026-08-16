@@ -62,6 +62,7 @@
 | 41 | *(perf budget)* | §2.7 `MCP tools/list < 4 KB` budget was asserted nowhere | MCP integration test serializes the live `ListToolsResult` and asserts < 4096 bytes |
 | 42 | *(dogfood, Chaos)* | `importOriginal` partial-mock factories (`vi.mock('mod', async (io) => { const a = await io(); return { ...a, key: vi.fn() }; })`) extracted **zero** factory keys — only expression-bodied factories were scanned | block-bodied factories are now scanned via `findReturnedObjectLiteral` (first object-literal return wins; `...actual` spread preserved as non-stub) — the stubbed exports (`readdirSync`, `runShellCommand`, …) become real members for DRIFT-005/TAUT; Chaos re-audit unchanged, no false positives |
 | 43 | *(coverage pass)* | `phpReturnExample`/`renderPhpType` union, intersection, and callable return branches in the PHP synth path were uncovered | `DocblockTypes.php` gains `either()` (`int|string` → `andReturn(0)`), `both()` (`CollabA&CollabB` → `null`), `factory()` (`callable(): int` → `null`); MCP test asserts all three renderings |
+| 44 | *(dogfood, git-diff on temp Chaos clone)* | module-target mocks (`vi.mock` factories) have no `symbolId`, and `diffRelevant` required one — in precommit/`--git-diff` mode they were **silently out of scope**: a renamed export left the factory key dangling and `momus precommit` reported CLEAN (exit 0) while a plain audit fired DRIFT-005 | `diffRelevant` now resolves module-target mocks via their changed `modulePath`; DRIFT-006 gained a module-target branch (module file changed + mock file untouched → stale, message lists module basename + exports, budget-fitted). Planted rename on the temp clone fires DRIFT-005 errors + DRIFT-006 warnings with exit 1; healthy twin clears. Rule-level + CLI e2e regression tests |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -224,3 +225,13 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
     the example: `int|string` → `andReturn(0)`), intersection, and callable returns stay
     conservative (`null`), via new `either`/`both`/`factory` methods on `DocblockTypes.php`
     (row 43). Server stmts 91.5 → 92.1%.
+22. ✅ **Real precommit bug found by dogfooding the git-diff flow on a temp clone of Chaos-MCP**: module-target
+    mocks (`vi.mock`/`jest.mock` factories) have **no `symbolId`**, and `diffRelevant` required one — so in
+    `precommit`/`--git-diff` mode they were silently out of scope. A renamed production export left the
+    `vi.mock` factory key dangling and precommit reported **CLEAN** (exit 0) while a plain audit correctly
+    fired DRIFT-005. `diffRelevant` now resolves module-target mocks through their changed `modulePath`, and
+    DRIFT-006 (stale-mock) gained a module-target branch (stale when the module file changed + mock file
+    untouched; message lists the module basename + export names, budget-fitted). Planted rename on the temp
+    clone now fires DRIFT-005 errors + DRIFT-006 warnings across every affected test file with exit 1; the
+    healthy twin (factory key updated alongside) clears. Regression tests at rule level (diff.test.ts) and
+    CLI end-to-end (row 44).

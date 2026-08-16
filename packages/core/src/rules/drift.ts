@@ -18,7 +18,14 @@ abstract class DriftRule implements Rule {
 /** In git-diff mode, only mocks whose resolved target changed are in scope. */
 function diffRelevant(ctx: RuleContext, mock: MockIR): boolean {
   if (!ctx.diff) return true;
-  return !!mock.target?.symbolId && ctx.diff.changedSymbolIds.has(mock.target.symbolId);
+  if (mock.target?.symbolId) return ctx.diff.changedSymbolIds.has(mock.target.symbolId);
+  // Module-target mocks (vi.mock/jest.mock factories, automocks) have no symbolId — resolve
+  // relevance through the changed module path so a renamed/removed export is still checked in
+  // diff/precommit mode (DRIFT-005 missing-export, DRIFT-006 stale-mock).
+  if (mock.target?.kind === 'module' && mock.target.modulePath) {
+    return ctx.diff.changedPaths.some((p) => resolve(p) === mock.target!.modulePath);
+  }
+  return false;
 }
 
 /** True when the mock's own file changed (author already touched it). */
@@ -430,18 +437,26 @@ export class Drift006StaleMock extends DriftRule {
     if (!diff) return [];
     const out: Issue[] = [];
     for (const m of module.mocks) {
-      if (!m.target?.symbolId) continue;
-      if (!diff.changedSymbolIds.has(m.target.symbolId)) continue;
       if (mockFileChanged(ctx, m)) continue;
-      const target = m.target.symbolId.split('#').pop();
-      const prefix = `stale-mock: ${target} since ${diff.baseRef}; ${module.path.split(/[\\/]/).pop()} untouched; review: `;
+      let targetChanged = false;
+      let targetName = '';
+      let memberNames: string[] = [];
+      if (m.target?.symbolId) {
+        targetChanged = diff.changedSymbolIds.has(m.target.symbolId);
+        targetName = m.target.symbolId.split('#').pop() ?? '';
+        memberNames = index.membersOf(m.target.symbolId).map((s) => s.name);
+      } else if (m.target?.kind === 'module' && m.target.modulePath) {
+        // module-target mock: stale when its production module file changed
+        targetChanged = diff.changedPaths.some((p) => resolve(p) === m.target!.modulePath);
+        targetName = m.target.modulePath.split(/[\\/]/).pop() ?? m.target.specifier ?? '';
+        memberNames = index.getModule(m.target.modulePath)?.exports ?? [];
+      }
+      if (!targetChanged) continue;
+      const prefix = `stale-mock: ${targetName} since ${diff.baseRef}; ${module.path.split(/[\\/]/).pop()} untouched; review: `;
       // fit member names inside the 80-char budget without truncating mid-word
       let message = prefix;
       let first = true;
-      for (const name of index
-        .membersOf(m.target.symbolId)
-        .map((s) => s.name)
-        .slice(0, 4)) {
+      for (const name of memberNames.slice(0, 4)) {
         const need = first ? name.length : name.length + 2;
         if (message.length + need > 80) break;
         message += first ? name : `, ${name}`;
