@@ -51,4 +51,13 @@ describe('release-please config', () => {
     expect(cfg['changelog-path']).toBe('CHANGELOG.md');
     expect(cfg['include-component-in-tag']).toBe(false); // tags are vX.Y.Z
   });
+
+  it('json extra-files carry a jsonpath (release-please rejects json without it)', () => {
+    const cfg = JSON.parse(readFileSync(join(ROOT, 'release-please-config.json'), 'utf8')).packages['.'];
+    const jsonFiles = cfg['extra-files'].filter((f: { type?: string }) => f.type === 'json');
+    expect(jsonFiles.length).toBeGreaterThan(0);
+    for (const f of jsonFiles) {
+      expect(f.jsonpath).toBe('$.version');
+    }
+  });
 });

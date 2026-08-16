@@ -34,7 +34,15 @@ check(pkgCfg['changelog-path'] === 'CHANGELOG.md', 'config: changelog-path must 
 check(pkgCfg['include-component-in-tag'] === false, 'config: include-component-in-tag must be false (tags = vX.Y.Z)');
 check(rootPkg.version === expected, `root package.json version ${rootPkg.version} !== manifest ${expected}`);
 
-const extraPaths = new Set((pkgCfg['extra-files'] ?? []).map((f) => f.path));
+const extraFiles = pkgCfg['extra-files'] ?? [];
+// The `json` extra-file type requires a jsonpath property (release-please rejects
+// `{ type: 'json', path }` without it — caught live on the first real run).
+for (const f of extraFiles) {
+  if (f.type === 'json') {
+    check(typeof f.jsonpath === 'string' && f.jsonpath.length > 0, `extra-file ${f.path}: json type requires jsonpath`);
+  }
+}
+const extraPaths = new Set(extraFiles.map((f) => f.path));
 
 // Every workspace package.json must be version-locked to the manifest and listed as an
 // extra-file (release-please bumps only what it knows about).
