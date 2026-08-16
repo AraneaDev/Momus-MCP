@@ -62,10 +62,15 @@ jobs:
       - name: CLI smoke (fixture must fail, exit code 1)
         run: |
           # copy the fixture gallery to a temp dir (no .momusrc) so planted
-          # violations are audited, then verify the exit-code contract
+          # violations are audited, then verify the exit-code contract.
+          # NOTE: cd into the fixture first -- the CLI treats positional paths as
+          # workspace-relative filters against root (default: cwd), so passing the
+          # absolute /tmp path from the repo root silently audits nothing (false-green).
           rm -rf /tmp/momus-fixture && cp -r packages/parser-typescript/test/fixtures /tmp/momus-fixture
+          cd /tmp/momus-fixture
           set +e
-          npx tsx packages/cli/src/index.ts audit /tmp/momus-fixture --max-issues 0 >/tmp/fixture-audit.txt 2>&1
+          # no --max-issues: the report must show the issue lines the greps below check
+          "$GITHUB_WORKSPACE/node_modules/.bin/tsx" "$GITHUB_WORKSPACE/packages/cli/src/index.ts" audit . >/tmp/fixture-audit.txt 2>&1
           code=$?
           set -e
           if [ "$code" -ne 1 ]; then
