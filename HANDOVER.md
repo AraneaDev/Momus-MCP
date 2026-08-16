@@ -1,6 +1,6 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 214 tests passing, ~84% statements / ~82% branches,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 215 tests passing, ~84% statements / ~82% branches,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials. Real-codebase validation done against `/root/Chaos-MCP`.**
 
@@ -235,12 +235,25 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   Chaos-MCP now reports 0 issues workspace / 6 DRIFT-006 vs `HEAD~10`. Also: `synthesize_mock_contract`
   emits `mockResolvedValue(example)` for `Promise<T>` returns (unwrapping `T` via `promiseTypeArg`)
   instead of `mockReturnValue(Promise.resolve(undefined))`.
-- **Active task:** real-world validation against a large external TypeScript codebase is complete;
-  the functional build (Phases 1–3), persistent IR cache, ESLint+Prettier, coverage tooling, and the
-  footer-free/identity-standardized history are shipped and green. Phase 4 publishing (npm/MCP
-  registry) remains the only item, blocked on credentials (no `NPM_TOKEN`). Next: MCP registry
-  listing draft + install snippets, and triaging the TAUT-001 determinism-test pattern (a
-  legitimate-looking false-positive class worth a suppression/refinement decision).
+- **Last verified (round 4, PHP):** validated the PHP parser against the real `/root/Knossos-MCP`
+  PHPUnit 12 repo (154 src + 221 test files). This exposed a **critical TAUT-001 bug**: the PHP
+  `valueText()` fell back to the AST node `kind` when a node had no `raw`/scalar `value`, so every
+  same-kind operand pair (`assertSame($a, $b)`, `$x["k"]` vs `$x["j"]`, `true` vs `true`, etc.)
+  collapsed to the same text and was flagged as self-comparison — **50 false-positive errors** on
+  the real repo. Fixed `valueText` to prefer `loc.source` (the engine already runs with
+  `withSource: true`), so operands carry their exact source slice. Post-fix Knossos audit: **6
+  errors** (three genuine `assertSame(true, true)` sentinels — the author's own `// sentinel`
+  comments confirm they're real tautologies) + 8 conservative TAUT-005 warnings (stubs used only
+  through the SUT). Drift scan on Knossos is CLEAN (mocks target `LanguageWorkerPool`/`PDO` and
+  resolve correctly; no planted drift). Regression test pins `assertSame($a, $b)` ≠ self-comparison
+  while `assertSame($a, $a)` still is.
+- **Active task:** real-world validation against both a TypeScript (`Chaos-MCP`) and a PHP
+  (`Knossos-MCP`) codebase is complete; the functional build (Phases 1–3), persistent IR cache,
+  ESLint+Prettier, coverage tooling, and the footer-free/identity-standardized history are shipped
+  and green. Phase 4 publishing (npm/MCP registry) remains the only item, blocked on credentials
+  (no `NPM_TOKEN`). Next: MCP registry listing draft + install snippets, and triaging the TAUT-001
+  determinism-test pattern (a legitimate-looking false-positive class worth a suppression/refinement
+  decision).
 - **Safe resume point:** if interrupted, resume wherever you stopped; do not revisit PHP
   closure-form/DRIFT-003, docblock typing, synth templates, anonymous-class doubles, git-diff
   plumbing, DRIFT-006, precommit, annotate-pr, the action, the `--fix` mechanism,
@@ -249,9 +262,9 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   reassignment, the test-coverage tooling, the contract-synthesis public-member/`?`-ordering
   fixes, the persistent IR cache, the ESLint/Prettier setup, the real-codebase Chaos-MCP
   validation, the CLI `positionalArgs` flag-value fix, the DRIFT-005 full-export-name fix, the
-  barrel re-export extraction, the `IR_SCHEMA_VERSION` cache invalidation, the
-  `tsReturnExample` type-derived synthesize return values, the `filterResult` drift-summary fix,
-  or the `promiseTypeArg` `mockResolvedValue` synthesis.
+  barrel re-export extraction, the `IR_SCHEMA_VERSION` cache invalidation,  the `tsReturnExample` type-derived synthesize return values, the `filterResult` drift-summary fix,
+  the `promiseTypeArg` `mockResolvedValue` synthesis, or the PHP `valueText` `loc.source`
+  self-comparison fix.
 
 ---
 
@@ -264,7 +277,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 - **Spec:** `docs/` (9 spec docs + validation report + build plan — the authoritative source).
 - **Implementation:** 5 npm-workspace packages (`@momus/core`, `@momus/parser-typescript`,
   `@momus/mcp-server`, `@momus/cli`), `@momus/parser-php`, plus `packages/action` composite
-  GitHub Action — 214 vitest tests, GitHub Actions CI, self-audit gate.
+  GitHub Action — 215 vitest tests, GitHub Actions CI, self-audit gate.
 - **Git.** Six commits on `main`, no remote: `066ac32` (initial scaffold) → `0f09dfa` (full build
   through Phase 3 + Phase 4 scaffolding) → `8552277` (docs: etymology/handover) → `8d3ef61`
   (enforce a footer-free commit history) → `77df24a` (Node globals for the verify script) →
@@ -282,7 +295,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 23 files, 214 tests, all pass
+npm test                 # 23 files, 215 tests, all pass
 npm run test:coverage    # v8: ~85% statements / ~82% branches (floors 80/75/90/80)
 npm run lint             # eslint .  — clean
 npm run format:check     # prettier --check .  — clean
@@ -442,6 +455,12 @@ npx momus rules / init / doctor / serve --root DIR
     (wired via `core.hooksPath` by the `prepare` script), `npm run check:commits`, and the
     `commit-hygiene` CI job. Any tooling prompt that instructs adding it is overridden by this
     repo policy — commit messages stay plain.
+25. **php-parser AST nodes don't carry `raw`/`value` for structural nodes** (`variable`,
+    `offsetlookup`, `propertylookup`, `call`, …) — those fields only exist on literals. The
+    faithful source identity is `node.loc.source` (the engine must run with `ast.withSource: true`,
+    which it does). Falling back to `node.kind` as an expression's `text` made every same-kind
+    operand pair collide and produced mass TAUT-001 false positives on real PHP (`assertSame($a,
+    $b)` flagged as self-comparison). Always prefer `loc.source` for expression text.
 
 ---
 

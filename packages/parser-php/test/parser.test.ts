@@ -75,6 +75,29 @@ describe('PHP parser', () => {
     expect(echo?.operands.find((operand) => operand.provenance === 'mock-config')?.configuredValue).toBe('42');
   });
 
+  it('keeps distinct operand source text so assertSame($a, $b) is not a self-comparison', () => {
+    const src = [
+      '<?php',
+      'final class DeterminismTest extends \\PHPUnit\\Framework\\TestCase {',
+      '  public function testDeterministic(): void {',
+      "    $a = BundleIdMapBuilder::mappedId('proj', 'files', 'old-1');",
+      "    $b = BundleIdMapBuilder::mappedId('proj', 'files', 'old-1');",
+      '    assertSame($a, $b);',
+      '    assertSame($a, $a);',
+      '  }',
+      '}',
+    ].join('\n');
+    const module = parser.parseModule('/ws/tests/DeterminismTest.php', src, {
+      config: undefined,
+      resolveImport: () => null,
+    });
+    const assertions = module.assertions.filter((a) => a.api === 'assertSame');
+    expect(assertions).toHaveLength(2);
+    // distinct variables must NOT collapse to the same text (regression: valueText fell back to node.kind)
+    expect(assertions[0]!.operands.map((o) => o.text)).toEqual(['$a', '$b']);
+    expect(assertions[1]!.operands.map((o) => o.text)).toEqual(['$a', '$a']);
+  });
+
   it('detects Mockery and Pest mock factories with chained and closure-form configuration', () => {
     const mockery = parse(join(ROOT, 'tests', 'MockeryPestTest.php'));
     expect(mockery.mocks.map((mock) => mock.pattern)).toEqual([

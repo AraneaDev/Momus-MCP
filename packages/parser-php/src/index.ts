@@ -900,6 +900,10 @@ function variableText(node: PhpNode): string {
 
 function valueText(node: PhpNode | undefined): string {
   if (!node) return '';
+  // `loc.source` is the exact source slice (engine runs with `withSource: true`) — the only
+  // faithful identity for TAUT-001 self-comparison. Falling back to `kind` here made every
+  // same-kind operand (`$a` vs `$b`) look identical and produced false self-comparisons.
+  if (node.loc?.source) return String(node.loc.source);
   if (node.raw !== undefined) return String(node.raw);
   if (node.value !== undefined && typeof node.value !== 'object') return String(node.value);
   return node.kind ?? '';
