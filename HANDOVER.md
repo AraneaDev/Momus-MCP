@@ -1,6 +1,6 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 226 tests passing, ~85% statements / ~83% branches,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 229 tests passing, ~85% statements / ~83% branches,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials. Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
@@ -273,12 +273,21 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   Chaos-MCP TAUT-006: **5 → 0**. (c) **typed-generic + object-shape synthesis** — TS contract
   templates now emit `vi.fn<[params], Ret>()` generics and `tsReturnExample` builds `{ ok: false,
   count: 0 }` for inline type literals, so `Promise<{…}>` returns emit `mockResolvedValue({…})`.
+- **Last verified (round 7):** `productionCalls` missed three legitimate production paths, so
+  TAUT-004 fired falsely on Chaos-MCP (**21**). Fixed all three in `dataflow.ts`: (a) `buildScope`
+  now collects bindings from `beforeEach`/`beforeAll` (a SUT assigned via `engine = new PythonEngine()`
+  counts as production); (b) local helper functions are traced — `localFns` maps name→body and
+  `productionCalls` recurses into a helper like `run(flags)` that calls the imported `runCli(...)`;
+  (c) `it.each`/`test.each` parameterized tests are now collected as test functions (they were
+  silently skipped). Chaos-MCP TAUT-004: **21 → 1**; the survivor is a dynamic-`import()` +
+  indirect signal-handler invocation `(sigCall[1])()` from a spy's `.mock.calls` — statically
+  untraceable. MOCK-001 (4) is a heuristic firing on mock-heavy unit tests by design.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
   real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos and fixing every false-positive/perf gap
   they expose, keeping `docs/11-real-world-findings.md` as the live record. Phase 4 publishing
-  (npm/MCP registry) remains blocked on credentials (no `NPM_TOKEN`). Chaos-MCP is now **0 errors**
-  (25 conservative warnings: 21 TAUT-004 + 4 MOCK-001). Next: TAUT-004/MOCK-001 refinement, and
-  named-interface object-shape synthesis (needs the type checker).
+  (npm/MCP registry) remains blocked on credentials (no `NPM_TOKEN`). Chaos-MCP is now **0 errors /
+  5 warnings** (1 untraceable TAUT-004 + 4 MOCK-001 heuristics). Next: named-interface object-shape
+  synthesis (needs the type checker), and Knossos-specific PHP drill-down.
 - **Safe resume point:** if interrupted, resume wherever you stopped; do not revisit PHP
   closure-form/DRIFT-003, docblock typing, synth templates, anonymous-class doubles, git-diff
   plumbing, DRIFT-006, precommit, annotate-pr, the action, the `--fix` mechanism,
@@ -293,7 +302,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   fix, the TS scope-aware `resolveInstance` hand-off reachability, the CLI-contract
   server-delegation, the PHP `willThrowException` config detection, the `**/vendor/**` default
   ignore pattern, the TAUT-001 `REEVALUATING_KINDS` decision + PHP `exprKind` mapper, the
-  TAUT-006 `spiedObjects` hand-off, or the `vi.fn<[...]>` typed-generic/object-shape synthesis.
+  TAUT-006 `spiedObjects` hand-off, the `vi.fn<[...]>` typed-generic/object-shape synthesis, or the
+  TAUT-004 `productionCalls` guards (setup bindings, local-helper tracing, `it.each` collection).
 
 ---
 

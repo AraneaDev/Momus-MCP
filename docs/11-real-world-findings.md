@@ -29,6 +29,7 @@
 | 10 | *(this round)* | Chained-config initializers (`const f = vi.fn().mockReturnValue(1)`) and inline `vi.fn().mockXxx(...)` inside object/array literals were never marked reachable | more false TAUT-005 (see #9's fix — folded into the same change) |
 | 11 | *(this round)* | `momus contract` on PHP reimplemented TS-only synthesis, ignoring `--framework phpunit` | emitted `satisfies Partial<...>` garbage for a PHP class |
 | 12 | *(this round)* | Default `ignorePatterns` omitted `**/vendor/**` (Composer deps) | Knossos audit scanned 3,808 files incl. 3,915 vendor `.php` files (70s) instead of 403 files (8.5s) |
+| 13 | *(this round)* | `productionCalls` missed a SUT assigned in `beforeEach`, local helpers wrapping the SUT, and `it.each` parameterized tests | 21 false TAUT-004 "mock-only-assertion" on Chaos-MCP |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -38,11 +39,14 @@ Verified against source after fixes; working tree at commit `a65faae`.
   `handler-container.test.ts` mock `estimateAudit`/`estimateNeedsSandbox`/`createExecutionSession`
   from `core/estimate.ts`, `estimate-handler.ts`, `utils/execution.ts`, which changed in that
   range while the test files did not. **True positives.**
-- **Remaining warnings (0 errors):** TAUT-004 (21, mock-only-assertion) + MOCK-001 (4,
-  over-mocking). Conservative, not noise.
+- **Remaining warnings (0 errors):** TAUT-004 (1, a dynamic-`import()` + indirect handler
+  invocation Momus can't statically trace) + MOCK-001 (4, mock-heavy unit tests — heuristic,
+  working as intended).
 - **Resolved false positives:** TAUT-005 (scope-aware hand-off, **107 → 0**), TAUT-006
-  (spied-object hand-off, **5 → 0**), and the TAUT-001 determinism test
-  (`expect(f(x)).toBe(f(x))` — a re-evaluating call, now correctly not flagged).
+  (spied-object hand-off, **5 → 0**), the TAUT-001 determinism test
+  (`expect(f(x)).toBe(f(x))` — a re-evaluating call, now correctly not flagged), and TAUT-004
+  (**21 → 1** — `productionCalls` now sees SUT instances assigned in `beforeEach`, traces local
+  helper functions that wrap the SUT, and collects `it.each`/`test.each` tests).
 
 ## 4. Findings about `/root/Knossos-MCP` (PHP)
 
@@ -67,5 +71,8 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
 2. TS synthesis: `mockResolvedValue({...})` object shapes for **named** interface/class returns
    (currently only inline type literals like `{ ok: boolean }` get a literal; named types still
    resolve via the checker, which syntax-only synthesis doesn't load).
-3. Refine TAUT-004 (mock-only-assertion) and MOCK-001 (over-mocking) — the last conservative
-   warning classes on Chaos-MCP.
+3. MOCK-001 (over-mocking) remains a heuristic warning — it intentionally flags mock-heavy unit
+   tests; tuning its threshold or production-assertion counting is a judgment call, not a bug.
+4. TAUT-004's last survivor is a dynamic-`import()` + indirect signal-handler invocation
+   (`(sigCall[1])()` from a spy's `.mock.calls`) — statically untraceable without full
+   interprocedural analysis.

@@ -67,15 +67,32 @@ export function analyzeAssertions(
   /** Setup callbacks contribute mock configurations to each applicable test scope. */
   function buildScope(body: ts.Block, setupBlocks: SetupBlock[] = []): Scope {
     const scope: Scope = { bindings: new Map(), mockInstanceIds: new Map(instanceIds), configs: new Map() };
-    for (const st of body.statements) {
-      if (!ts.isVariableStatement(st)) continue;
-      const mutable = (st.declarationList.flags & ts.NodeFlags.Const) === 0;
-      for (const d of st.declarationList.declarations) {
-        if (!ts.isIdentifier(d.name) || !d.initializer) continue;
-        const init = stripAwait(d.initializer);
-        scope.bindings.set(d.name.text, { expr: init, mutable });
+    // Bindings come from the test body AND its setup hooks. A SUT instance created in a
+    // `beforeEach` (`engine = new PythonEngine()`) must count as production when the test
+    // calls `engine.run(...)` — otherwise TAUT-004 falsely reports a mock-only test.
+    const collectBindings = (node: ts.Node) => {
+      if (ts.isVariableStatement(node)) {
+        const mutable = (node.declarationList.flags & ts.NodeFlags.Const) === 0;
+        for (const d of node.declarationList.declarations) {
+          if (!ts.isIdentifier(d.name) || !d.initializer) continue;
+          scope.bindings.set(d.name.text, { expr: stripAwait(d.initializer), mutable });
+        }
+        return;
       }
-    }
+      if (
+        ts.isExpressionStatement(node) &&
+        ts.isBinaryExpression(node.expression) &&
+        node.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken
+      ) {
+        const left = node.expression.left;
+        if (ts.isIdentifier(left)) scope.bindings.set(left.text, { expr: node.expression.right, mutable: true });
+        return;
+      }
+      ts.forEachChild(node, collectBindings);
+    };
+    // Setup runs before the test body, so a test-local binding wins over a setup binding.
+    for (const setup of setupBlocks) collectBindings(setup.body);
+    for (const st of body.statements) collectBindings(st);
     const visit = (n: ts.Node) => {
       if (ts.isCallExpression(n)) {
         const name = callName(n.expression);
@@ -237,9 +254,27 @@ export function analyzeAssertions(
     return { kind: 'unknown', mockRefs: [], constant: false };
   }
 
+  // Local helper functions can wrap the SUT (e.g. a `run(flags)` helper that calls
+  // `runCli(...)`). Tracing through them lets `productionCalls` see that the test exercises
+  // production instead of misreporting it as mock-only (TAUT-004).
+  const localFns = new Map<string, ts.Node>();
+  const collectLocalFns = (n: ts.Node) => {
+    if (ts.isFunctionDeclaration(n) && n.name) {
+      localFns.set(n.name.text, n.body ?? n);
+    } else if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
+      const init = stripCast(n.initializer);
+      if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) localFns.set(n.name.text, init.body);
+    }
+    ts.forEachChild(n, collectLocalFns);
+  };
+  collectLocalFns(sf);
+
   function productionCalls(body: ts.Block, scope: Scope): number {
     let count = 0;
+    const seen = new Set<ts.Node>();
     const visit = (n: ts.Node) => {
+      if (seen.has(n)) return;
+      seen.add(n);
       if (ts.isCallExpression(n)) {
         const root = rootOf(n.expression);
         if (!root || HELPER_ROOTS.has(root)) {
@@ -255,6 +290,9 @@ export function analyzeAssertions(
           count++;
         } else if (isProductionRoot(root)) {
           count++;
+        } else {
+          const local = localFns.get(root);
+          if (local) visit(local);
         }
       }
       ts.forEachChild(n, visit);
@@ -266,14 +304,20 @@ export function analyzeAssertions(
   // ---- collect test functions (it/test callbacks + describe for stats)
   const testFns: TestFnIR[] = [];
   const setupBlocksByFnId = new Map<string, SetupBlock[]>();
+  /** Name of a test-defining call: `it`/`test`, or their parameterized `it.each`/`test.each` forms. */
+  const testCallName = (n: ts.CallExpression): string | undefined => {
+    const direct = callName(n.expression);
+    if (direct === 'it' || direct === 'test') return direct;
+    if (ts.isCallExpression(n.expression)) {
+      const each = callName(n.expression.expression);
+      if (each === 'it.each' || each === 'test.each') return each;
+    }
+    return undefined;
+  };
   const collectFns = (n: ts.Node) => {
     if (ts.isCallExpression(n)) {
-      const name = callName(n.expression);
-      if (
-        (name === 'it' || name === 'test') &&
-        n.arguments[1] &&
-        (ts.isArrowFunction(n.arguments[1]) || ts.isFunctionExpression(n.arguments[1]))
-      ) {
+      const name = testCallName(n);
+      if (name && n.arguments[1] && (ts.isArrowFunction(n.arguments[1]) || ts.isFunctionExpression(n.arguments[1]))) {
         const fn = n.arguments[1];
         const body = (fn as ts.ArrowFunction).body;
         if (ts.isBlock(body)) {

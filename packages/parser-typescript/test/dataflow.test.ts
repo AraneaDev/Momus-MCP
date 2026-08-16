@@ -157,3 +157,61 @@ describe('test function statistics', () => {
     expect(total).toBe(test.assertions.length);
   });
 });
+
+describe('production-call detection (TAUT-004 false-positive guards)', () => {
+  const scratch = join(FIXTURES, 'tests', 'scratch.test.ts');
+  const parse = (src: string) => parser.parseModule(scratch, src, { config: undefined, resolveImport: () => null });
+
+  it('counts a SUT instance assigned in beforeEach as production', () => {
+    const src = [
+      "import { it, expect, beforeEach } from 'vitest';",
+      "import { PythonEngine } from '../engine';",
+      'describe("engine", () => {',
+      '  let engine: PythonEngine;',
+      '  beforeEach(() => { engine = new PythonEngine(); });',
+      '  it("runs", async () => {',
+      "    await engine.run('m.py');",
+      '    expect(engine).toBeTruthy();',
+      '  });',
+      '});',
+      '',
+    ].join('\n');
+    const mod = parse(src);
+    expect(mod.functions).toHaveLength(1);
+    expect(mod.functions[0]!.hasProductionCalls).toBe(true);
+  });
+
+  it('traces a local helper function that wraps the SUT', () => {
+    const src = [
+      "import { it, expect } from 'vitest';",
+      "import { runCli } from '../cli';",
+      'function run(flags: string[]) { runCli({ flags }); }',
+      'describe("cli", () => {',
+      '  it("runs", () => {',
+      "    const { exitCode } = run(['--version']);",
+      '    expect(exitCode).toBe(0);',
+      '  });',
+      '});',
+      '',
+    ].join('\n');
+    const mod = parse(src);
+    expect(mod.functions).toHaveLength(1);
+    expect(mod.functions[0]!.hasProductionCalls).toBe(true);
+  });
+
+  it('collects it.each parameterized tests as test functions', () => {
+    const src = [
+      "import { it, expect } from 'vitest';",
+      "import { handleEstimateCall } from '../handler';",
+      "it.each([1, 2])('handles %i', async (v) => {",
+      '  const res = await handleEstimateCall({ timeoutMs: v });',
+      '  expect(res).toBeTruthy();',
+      '});',
+      '',
+    ].join('\n');
+    const mod = parse(src);
+    expect(mod.functions).toHaveLength(1);
+    expect(mod.functions[0]!.hasProductionCalls).toBe(true);
+    expect(mod.assertions[0]!.fnId).toBe(mod.functions[0]!.id);
+  });
+});
