@@ -6,6 +6,17 @@ on:
   pull_request:
 
 jobs:
+  commit-hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so --all sees every commit
+
+      - name: Verify no Codebuff attribution footer in history
+        run: node scripts/verify-no-codebuff-footer.mjs
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Reject commit messages that carry the Codebuff attribution footer.
+# The repository must never contain "Generated with Codebuff" / "Co-Authored-By: Codebuff".
+if grep -qEi 'Generated with Codebuff|Co-Authored-By: Codebuff' "$1"; then
+  echo 'commit-msg: rejected — the message contains the Codebuff attribution footer.' >&2
+  echo 'This footer must never be added to the repository. Remove it and commit again.' >&2
+  exit 1
+fi
+exit 0

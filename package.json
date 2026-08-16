@@ -16,6 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "check:commits": "node scripts/verify-no-codebuff-footer.mjs",
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
