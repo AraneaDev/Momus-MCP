@@ -239,6 +239,35 @@ describe('CLI bin entrypoint', () => {
       rmSync(fixture, { recursive: true, force: true });
     }
   });
+
+  it('drift reports drift-only counts, not the full audit summary', () => {
+    const fixture = mkdtempSync(join(tmpdir(), 'momus-drift-summary-'));
+    try {
+      writeFileSync(
+        join(fixture, 'planted.test.ts'),
+        [
+          "import { describe, expect, it, vi } from 'vitest';",
+          "describe('planted', () => {",
+          "  it('echoes the stubbed value against itself', () => {",
+          '    const mocked = { getTotal: vi.fn() };',
+          '    mocked.getTotal.mockReturnValue(42);',
+          '    expect(mocked.getTotal()).toBe(42);',
+          '  });',
+          '});',
+          '',
+        ].join('\n'),
+      );
+      // The planted TAUT-002 (mock-echo) is NOT drift; `drift` must report 0 issues,
+      // not inherit the full audit's error/warning summary.
+      const result = spawnSync(process.execPath, [BIN, 'drift'], { cwd: fixture, encoding: 'utf8' });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain('0 issues');
+      expect(result.stdout).toContain('CLEAN:true');
+      expect(result.stdout).not.toMatch(/TAUT-002/);
+    } finally {
+      rmSync(fixture, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('audit --fix', () => {

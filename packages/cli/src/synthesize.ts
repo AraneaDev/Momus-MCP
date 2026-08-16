@@ -2,7 +2,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as ts from 'typescript';
-import { tsReturnExample } from '@momus/parser-typescript';
+import { tsReturnExample, promiseTypeArg } from '@momus/parser-typescript';
 
 export function synthesizeForCli(
   root: string,
@@ -33,9 +33,15 @@ export function synthesizeForCli(
         .join(', ');
       const ret = m.type ? m.type.getText(sf) : 'unknown';
       const retVal = tsReturnExample(m.type);
+      const promiseArg = promiseTypeArg(m.type);
       lines.push(`  // ${name}(${params}): ${ret}`);
       if (framework === 'vitest' || framework === 'jest') {
-        lines.push(`  ${name}: ${framework === 'vitest' ? 'vi' : 'jest'}.fn().mockReturnValue(${retVal}),`);
+        const fn = framework === 'vitest' ? 'vi' : 'jest';
+        lines.push(
+          promiseArg
+            ? `  ${name}: ${fn}.fn().mockResolvedValue(${tsReturnExample(promiseArg)}),`
+            : `  ${name}: ${fn}.fn().mockReturnValue(${retVal}),`,
+        );
       } else {
         lines.push(`  ${name}: (${params}) => ${retVal},`);
       }

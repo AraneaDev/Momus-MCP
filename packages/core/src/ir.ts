@@ -276,3 +276,31 @@ export interface AuditResult {
   diagnostics: ParseDiagnostic[];
   indexStats: { modules: number; symbols: number; mocks: number };
 }
+
+/**
+ * Narrow a result to a subset of its issues (e.g. DRIFT-only or TAUT-only views) and recompute
+ * the summary counts so the header, CLEAN line, and truncation footer describe the filtered set.
+ * Keeps diagnostics/indexStats/suppressed as-is.
+ */
+export function filterResult(result: AuditResult, keep: (issue: Issue) => boolean): AuditResult {
+  const issues = result.issues.filter(keep);
+  const errors = issues.filter((i) => i.severity === 'error').length;
+  const warnings = issues.filter((i) => i.severity === 'warning').length;
+  const infos = issues.filter((i) => i.severity === 'info').length;
+  return {
+    ...result,
+    issues,
+    summary: {
+      ...result.summary,
+      issues: issues.length,
+      errors,
+      warnings,
+      infos,
+      totalIssues: issues.length,
+      totalErrors: errors,
+      totalWarnings: warnings,
+      totalInfos: infos,
+      truncated: false,
+    },
+  };
+}

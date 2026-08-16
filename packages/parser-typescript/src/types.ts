@@ -67,6 +67,13 @@ export function signatureToIR(
   };
 }
 
+/** The inner type argument when `type` is `Promise<T>`, else undefined. */
+export function promiseTypeArg(type: ts.TypeNode | undefined): ts.TypeNode | undefined {
+  if (!type || !ts.isTypeReferenceNode(type)) return undefined;
+  if (!ts.isIdentifier(type.typeName) || type.typeName.text !== 'Promise') return undefined;
+  return type.typeArguments?.[0];
+}
+
 /**
  * A minimal, type-appropriate placeholder return expression for a synthesized TS stub.
  * Primitives get real literals, collections get empty instances, and class/interface/

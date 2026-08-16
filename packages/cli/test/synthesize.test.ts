@@ -131,7 +131,7 @@ describe('synthesizeForCli', () => {
       expect(template).toContain('flag: vi.fn().mockReturnValue(false),');
       expect(template).toContain('list: vi.fn().mockReturnValue([]),');
       expect(template).toContain('maybe: vi.fn().mockReturnValue(0),');
-      expect(template).toContain('late: vi.fn().mockReturnValue(Promise.resolve(undefined)),');
+      expect(template).toContain('late: vi.fn().mockResolvedValue(0),');
       // custom class/interface types cannot be safely literal-constructed → undefined
       expect(template).toContain('custom: vi.fn().mockReturnValue(undefined),');
       expect(template).toContain('voidy: vi.fn().mockReturnValue(undefined),');

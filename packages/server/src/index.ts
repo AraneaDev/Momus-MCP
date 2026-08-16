@@ -18,12 +18,13 @@ import {
   loadConfig,
   buildMarkdownReport,
   buildJsonEnvelope,
+  filterResult,
   type MomusConfig,
   type AuditResult,
   type TypeIR,
   type ParseCache,
 } from '@momus/core';
-import { TypeScriptParser, invalidateProgramCache, tsReturnExample } from '@momus/parser-typescript';
+import { TypeScriptParser, invalidateProgramCache, tsReturnExample, promiseTypeArg } from '@momus/parser-typescript';
 import { PhpParser } from '@momus/parser-php';
 import { openParseCache } from './cache.ts';
 
@@ -187,15 +188,7 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
     { ...ANN, title: 'Detect Tautological Assertions' },
     async ({ paths, maxIssues }) => {
       const result = runAudit({ paths, maxIssues });
-      const filtered: AuditResult = {
-        ...result,
-        summary: { ...result.summary, issues: 0, errors: 0, warnings: 0, infos: 0 },
-        issues: result.issues.filter((i) => i.rule.startsWith('TAUT')),
-      };
-      filtered.summary.issues = filtered.issues.length;
-      filtered.summary.errors = filtered.issues.filter((i) => i.severity === 'error').length;
-      filtered.summary.warnings = filtered.issues.filter((i) => i.severity === 'warning').length;
-      filtered.summary.infos = filtered.issues.filter((i) => i.severity === 'info').length;
+      const filtered = filterResult(result, (i) => i.rule.startsWith('TAUT'));
       return respond('detect_tautological_assertions', filtered, paths?.join(', ') || 'workspace');
     },
   );
@@ -235,15 +228,7 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
         }
       }
       const result = new AuditEngine({ root, parser, config, cache, paths, includeUnresolved, maxIssues, diff }).run();
-      const filtered: AuditResult = {
-        ...result,
-        summary: { ...result.summary, issues: 0, errors: 0, warnings: 0, infos: 0 },
-        issues: result.issues.filter((i) => i.rule.startsWith('DRIFT')),
-      };
-      filtered.summary.issues = filtered.issues.length;
-      filtered.summary.errors = filtered.issues.filter((i) => i.severity === 'error').length;
-      filtered.summary.warnings = filtered.issues.filter((i) => i.severity === 'warning').length;
-      filtered.summary.infos = filtered.issues.filter((i) => i.severity === 'info').length;
+      const filtered = filterResult(result, (i) => i.rule.startsWith('DRIFT'));
       return respond('verify_mock_drift', filtered, `${scope}${baseRef ? ' vs ' + baseRef : ''}`);
     },
   );
@@ -510,9 +495,15 @@ function synthesizeContract(
       const sig = `${name}(${params}): ${ret}`;
       contract.push({ member: name, signature: sig, returnType: ret });
       const retVal = includeReturnValues ? tsReturnExample(m.type) : 'undefined';
+      const promiseArg = promiseTypeArg(m.type);
       lines.push(`  // ${sig}`);
       if (framework === 'vitest' || framework === 'jest') {
-        lines.push(`  ${name}: ${framework === 'vitest' ? 'vi' : 'jest'}.fn().mockReturnValue(${retVal}),`);
+        const fn = framework === 'vitest' ? 'vi' : 'jest';
+        lines.push(
+          promiseArg
+            ? `  ${name}: ${fn}.fn().mockResolvedValue(${tsReturnExample(promiseArg)}),`
+            : `  ${name}: ${fn}.fn().mockReturnValue(${retVal}),`,
+        );
       } else {
         lines.push(`  ${name}: (${params}) => ${retVal},`);
       }

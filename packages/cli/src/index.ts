@@ -15,6 +15,7 @@ import {
   gitChangedPaths,
   gitStagedPaths,
   loadConfig,
+  filterResult,
   ConfigError,
   DEFAULT_CONFIG,
   type Issue,
@@ -319,8 +320,7 @@ async function main(argv: string[]): Promise<number> {
         diff,
       });
       const result = engine.run();
-      const driftIssues = result.issues.filter((i) => i.rule.startsWith('DRIFT'));
-      const drift = { ...result, issues: driftIssues };
+      const drift = filterResult(result, (i) => i.rule.startsWith('DRIFT'));
       if (json) {
         process.stdout.write(
           JSON.stringify(buildJsonEnvelope(drift, { tool: 'verify_mock_drift', workspaceRoot: root }), null, 2) + '\n',
@@ -334,7 +334,7 @@ async function main(argv: string[]): Promise<number> {
           }),
         );
       }
-      return driftIssues.some((i) => i.severity === 'error') ? 1 : 0;
+      return drift.summary.totalErrors > 0 ? 1 : 0;
     }
 
     case 'annotate': {
@@ -435,28 +435,21 @@ async function main(argv: string[]): Promise<number> {
         diff: { baseRef, changedPaths },
       });
       const result = engine.run();
-      const driftIssues = result.issues.filter((i) => i.rule.startsWith('DRIFT'));
+      const drift = filterResult(result, (i) => i.rule.startsWith('DRIFT'));
       if (json) {
         process.stdout.write(
-          JSON.stringify(
-            buildJsonEnvelope({ ...result, issues: driftIssues }, { tool: 'verify_mock_drift', workspaceRoot: root }),
-            null,
-            2,
-          ) + '\n',
+          JSON.stringify(buildJsonEnvelope(drift, { tool: 'verify_mock_drift', workspaceRoot: root }), null, 2) + '\n',
         );
       } else {
         process.stdout.write(
-          buildMarkdownReport(
-            { ...result, issues: driftIssues },
-            {
-              workspaceRoot: root,
-              verbosity: summary ? 'summary' : config.tokenBudget.verbosity,
-              scopeLabel: `precommit vs ${baseRef}`,
-            },
-          ),
+          buildMarkdownReport(drift, {
+            workspaceRoot: root,
+            verbosity: summary ? 'summary' : config.tokenBudget.verbosity,
+            scopeLabel: `precommit vs ${baseRef}`,
+          }),
         );
       }
-      return driftIssues.some((i) => i.severity === 'error') ? 1 : 0;
+      return drift.summary.totalErrors > 0 ? 1 : 0;
     }
 
     case 'hook': {
@@ -482,28 +475,21 @@ async function main(argv: string[]): Promise<number> {
         diff: { baseRef: 'HEAD', changedPaths: staged },
       });
       const result = engine.run();
-      const driftIssues = result.issues.filter((i) => i.rule.startsWith('DRIFT'));
+      const drift = filterResult(result, (i) => i.rule.startsWith('DRIFT'));
       if (json) {
         process.stdout.write(
-          JSON.stringify(
-            buildJsonEnvelope({ ...result, issues: driftIssues }, { tool: 'verify_mock_drift', workspaceRoot: root }),
-            null,
-            2,
-          ) + '\n',
+          JSON.stringify(buildJsonEnvelope(drift, { tool: 'verify_mock_drift', workspaceRoot: root }), null, 2) + '\n',
         );
       } else {
         process.stdout.write(
-          buildMarkdownReport(
-            { ...result, issues: driftIssues },
-            {
-              workspaceRoot: root,
-              verbosity: summary ? 'summary' : config.tokenBudget.verbosity,
-              scopeLabel: 'hook (staged files)',
-            },
-          ),
+          buildMarkdownReport(drift, {
+            workspaceRoot: root,
+            verbosity: summary ? 'summary' : config.tokenBudget.verbosity,
+            scopeLabel: 'hook (staged files)',
+          }),
         );
       }
-      return driftIssues.some((i) => i.severity === 'error') ? 1 : 0;
+      return drift.summary.totalErrors > 0 ? 1 : 0;
     }
 
     case 'contract': {
