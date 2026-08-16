@@ -21,8 +21,13 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   false-green since the first commit** (absolute path + `--max-issues 0` → audited nothing;
   never surfaced because the repo was never pushed). All CI runs on main now green; release
   PRs get the same gates (commit-hygiene, release-config, conventional-title, test). The
-  **npm publish step is dormant** during pre-release — gated on `NPM_TOKEN != ''` so 0.0.x
-  tags never auto-publish (user direction: pre-release).
+  **npm publish step is dormant** during pre-release — so 0.0.x tags never auto-publish
+  (user direction: pre-release). Gate lives on the step (`env.MOMUS_NPM_TOKEN != ''`,
+  token mirrored to job-level env because the `secrets` context is invalid in step `if`
+  expressions — actionlint caught that). All three workflows pass `actionlint`.
+  Also fixed: the `--fix` CLI smoke step was false-green since the first commit (absolute
+  path + `--max-issues 0` audited nothing) — now `cd`s into the fixture, audits '.', and
+  drops `--max-issues`; verified locally + green in CI.
 - **Last verified:** release-please round-trip verified end-to-end: `scripts/simulate-release.mjs`
   creates an isolated worktree, bumps 0.0.1 → 0.0.2 exactly as release-please's json extra-files
   would (root + all five packages + manifest + CHANGELOG), runs `npm ci` + the publish step
