@@ -157,7 +157,7 @@ before merge. **Top risks:** git plumbing edge cases (renames, merge commits) �
   **0.0.1**; `release-please-config.json` + `.release-please-manifest.json`, `json` extra-files
   bumping all five workspace `package.json`s), `pr-title.yml` conventional-commit gate,
   `.github/workflows/release-please.yml` (version-PR → `v*` tag + GitHub Release → `npm run
-  publish` in dependency order). Actual publish still blocked on `NPM_TOKEN`.
+  publish` in dependency order). Actual publish is **manual-only** (not in CI) until sanctioned.
 - Registry publishing: npm packages (`@momus/*`), MCP registry listings (official MCP
   servers list + community registries) with `npx -y @momus/mcp-server` install snippet;
   README quickstart for Claude Desktop / other clients. — pending credentials

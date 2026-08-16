@@ -76,15 +76,13 @@ describe('release-please config', () => {
     expect(cfg['bump-patch-for-minor-pre-major']).toBe(true);
   });
 
-  it('npm publish step stays dormant until NPM_TOKEN exists (pre-release never auto-publishes)', () => {
+  it('CI never publishes to npm (manual-only by decision)', () => {
     const wf = readFileSync(join(ROOT, '.github', 'workflows', 'release-please.yml'), 'utf8');
-    expect(wf).toContain('Publish to npm');
-    // The gate must be on the publish step itself, not a job-level condition that
-    // could be bypassed by reordering steps. `secrets` is unavailable in step `if`
-    // expressions, so the token is mirrored to job-level env (MOMUS_NPM_TOKEN) and
-    // the step gates on that; the publish env still consumes it.
-    const m = wf.match(/name: Publish to npm[\s\S]*?NODE_AUTH_TOKEN: \$\{\{ env\.MOMUS_NPM_TOKEN \}\}/);
-    expect(m).not.toBeNull();
-    expect(m![0]).toContain("env.MOMUS_NPM_TOKEN != ''");
+    // No publish step, no NPM_TOKEN usage, no id-token permission in the workflow.
+    expect(wf).not.toMatch(/npm run publish/);
+    expect(wf).not.toContain('NPM_TOKEN');
+    expect(wf).not.toContain('id-token');
+    // Publishing still exists as a deliberate manual action.
+    expect(readFileSync(join(ROOT, 'scripts', 'publish.mjs'), 'utf8')).toContain("['publish', '-w', pkg");
   });
 });
