@@ -262,298 +262,301 @@ function positionalArgs(argv: string[]): string[] {
   return out;
 }
 
-async function main(argv: string[]): Promise<number> {
-  const cmd = argv[0];
-  // `--root DIR` is honored by every command (not just serve): audit/drift/hook/contract run
-  // against DIR while the CLI process itself may live anywhere (mirrors the MCP server's
-  // MOMUS_ROOT). Falls back to the working directory.
-  const root = argValue(argv, '--root') ?? process.cwd();
+/**
+ * Each command is an exported, pure-ish function (root + argv in, exit code out) so the
+ * dispatch is unit-testable without spawning a subprocess. `main` is a thin mapper.
+ */
+
+export function runAudit(root: string, argv: string[]): number {
   const json = argv.includes('--json');
   const summary = argv.includes('--summary');
+  const paths = positionalArgs(argv)
+    .slice(1)
+    .filter((p) => p !== '.' && p !== './'); // '.' = audit everything
+  const maxIssues = Number(argValue(argv, '--max-issues') ?? '50');
+  const config = loadConfig(root);
+  const parser = createWorkspaceParser();
+  const diff = diffOptions(argv, root);
+  const cache = openParseCache(root, config.cache);
+  const engine = new AuditEngine({
+    root,
+    parser,
+    config,
+    cache,
+    paths: paths.length ? paths : undefined,
+    maxIssues,
+    diff,
+  });
+  const result = engine.run();
+  cache?.close();
+  if (argv.includes('--fix')) {
+    return runFix(result, root, argv.includes('--yes'));
+  }
+  const scope = diff ? `git-diff vs ${diff.baseRef}` : paths.length ? paths.join(', ') : 'workspace';
+  if (json) {
+    process.stdout.write(
+      JSON.stringify(buildJsonEnvelope(result, { tool: 'audit', workspaceRoot: root }), null, 2) + '\n',
+    );
+  } else {
+    process.stdout.write(
+      buildMarkdownReport(result, {
+        workspaceRoot: root,
+        verbosity: summary ? 'summary' : config.tokenBudget.verbosity,
+        scopeLabel: scope,
+      }),
+    );
+  }
+  return result.summary.totalErrors > 0 ? 1 : 0;
+}
 
-  switch (cmd) {
-    case 'audit': {
-      const paths = positionalArgs(argv)
-        .slice(1)
-        .filter((p) => p !== '.' && p !== './'); // '.' = audit everything
-      const maxIssues = Number(argValue(argv, '--max-issues') ?? '50');
-      const config = loadConfig(root);
-      const parser = createWorkspaceParser();
-      const diff = diffOptions(argv, root);
-      const cache = openParseCache(root, config.cache);
-      const engine = new AuditEngine({
-        root,
-        parser,
-        config,
-        cache,
-        paths: paths.length ? paths : undefined,
-        maxIssues,
-        diff,
-      });
-      const result = engine.run();
-      cache?.close();
-      if (argv.includes('--fix')) {
-        return runFix(result, root, argv.includes('--yes'));
-      }
-      const scope = diff ? `git-diff vs ${diff.baseRef}` : paths.length ? paths.join(', ') : 'workspace';
-      if (json) {
-        process.stdout.write(
-          JSON.stringify(buildJsonEnvelope(result, { tool: 'audit', workspaceRoot: root }), null, 2) + '\n',
-        );
-      } else {
-        process.stdout.write(
-          buildMarkdownReport(result, {
-            workspaceRoot: root,
-            verbosity: summary ? 'summary' : config.tokenBudget.verbosity,
-            scopeLabel: scope,
-          }),
-        );
-      }
-      return result.summary.totalErrors > 0 ? 1 : 0;
-    }
+export function runDrift(root: string, argv: string[]): number {
+  const json = argv.includes('--json');
+  const summary = argv.includes('--summary');
+  const config = loadConfig(root);
+  const parser = createWorkspaceParser();
+  const diff = diffOptions(argv, root);
+  const engine = new AuditEngine({
+    root,
+    parser,
+    config,
+    includeUnresolved: argv.includes('--include-unresolved'),
+    diff,
+  });
+  const result = engine.run();
+  const drift = filterResult(result, (i) => i.rule.startsWith('DRIFT'));
+  if (json) {
+    process.stdout.write(
+      JSON.stringify(buildJsonEnvelope(drift, { tool: 'verify_mock_drift', workspaceRoot: root }), null, 2) + '\n',
+    );
+  } else {
+    process.stdout.write(
+      buildMarkdownReport(drift, {
+        workspaceRoot: root,
+        verbosity: summary ? 'summary' : config.tokenBudget.verbosity,
+        scopeLabel: diff ? `drift vs ${diff.baseRef}` : 'drift scan',
+      }),
+    );
+  }
+  return drift.summary.totalErrors > 0 ? 1 : 0;
+}
 
-    case 'drift': {
-      const config = loadConfig(root);
-      const parser = createWorkspaceParser();
-      const diff = diffOptions(argv, root);
-      const engine = new AuditEngine({
-        root,
-        parser,
-        config,
-        includeUnresolved: argv.includes('--include-unresolved'),
-        diff,
-      });
-      const result = engine.run();
-      const drift = filterResult(result, (i) => i.rule.startsWith('DRIFT'));
-      if (json) {
-        process.stdout.write(
-          JSON.stringify(buildJsonEnvelope(drift, { tool: 'verify_mock_drift', workspaceRoot: root }), null, 2) + '\n',
-        );
-      } else {
-        process.stdout.write(
-          buildMarkdownReport(drift, {
-            workspaceRoot: root,
-            verbosity: summary ? 'summary' : config.tokenBudget.verbosity,
-            scopeLabel: diff ? `drift vs ${diff.baseRef}` : 'drift scan',
-          }),
-        );
-      }
-      return drift.summary.totalErrors > 0 ? 1 : 0;
-    }
+export function runAnnotate(root: string, argv: string[]): number {
+  const paths = positionalArgs(argv)
+    .slice(1)
+    .filter((p) => p !== '.' && p !== './');
+  const maxIssues = Number(argValue(argv, '--max-issues') ?? '50');
+  const config = loadConfig(root);
+  const parser = createWorkspaceParser();
+  const diff = diffOptions(argv, root);
+  const engine = new AuditEngine({
+    root,
+    parser,
+    config,
+    paths: paths.length ? paths : undefined,
+    maxIssues,
+    diff,
+  });
+  const result = engine.run();
+  for (const line of buildAnnotateLines(result.issues, root)) {
+    process.stdout.write(line + '\n');
+  }
+  return result.summary.totalErrors > 0 ? 1 : 0;
+}
 
-    case 'annotate': {
-      const paths = positionalArgs(argv)
-        .slice(1)
-        .filter((p) => p !== '.' && p !== './');
-      const maxIssues = Number(argValue(argv, '--max-issues') ?? '50');
-      const config = loadConfig(root);
-      const parser = createWorkspaceParser();
-      const diff = diffOptions(argv, root);
-      const engine = new AuditEngine({
-        root,
-        parser,
-        config,
-        paths: paths.length ? paths : undefined,
-        maxIssues,
-        diff,
-      });
-      const result = engine.run();
-      for (const line of buildAnnotateLines(result.issues, root)) {
-        process.stdout.write(line + '\n');
-      }
-      return result.summary.totalErrors > 0 ? 1 : 0;
-    }
+export async function runAnnotatePr(root: string, argv: string[]): Promise<number> {
+  const token = process.env.GITHUB_TOKEN;
+  const repo = process.env.GITHUB_REPOSITORY;
+  const sha = process.env.GITHUB_SHA;
+  if (!token || !repo || !sha) {
+    process.stderr.write(
+      'annotate-pr: GITHUB_TOKEN, GITHUB_REPOSITORY and GITHUB_SHA are required (run inside GitHub Actions)\n',
+    );
+    return 2;
+  }
+  const baseRef = argValue(argv, '--base') ?? 'main';
+  const config = loadConfig(root);
+  const parser = createWorkspaceParser();
+  let result: AuditResult;
+  try {
+    result = new AuditEngine({
+      root,
+      parser,
+      config,
+      diff: { baseRef, changedPaths: gitChangedPaths(root, baseRef) },
+    }).run();
+  } catch (e) {
+    process.stderr.write(`annotate-pr: git error: ${(e as Error).message.split('\n')[0]}\n`);
+    return 2;
+  }
+  const errors = result.summary.totalErrors;
+  const warnings = result.summary.totalWarnings;
+  const failOn = process.env.MOMUS_FAIL_ON ?? 'error';
+  const failure = failOn === 'none' ? false : errors > 0 || (failOn === 'warning' && warnings > 0);
+  const body = {
+    name: 'momus',
+    head_sha: sha,
+    status: 'completed' as const,
+    conclusion: failure ? ('failure' as const) : ('success' as const),
+    output: {
+      title: `Momus: ${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'}`,
+      summary: `${result.summary.filesAudited} files audited vs ${baseRef}; ${result.summary.totalIssues} total findings.`,
+      annotations: buildCheckAnnotations(result.issues, root).slice(0, 50),
+    },
+  };
+  const res = await fetch(`https://api.github.com/repos/${repo}/check-runs`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    process.stderr.write(`annotate-pr: GitHub API ${res.status}: ${(await res.text()).slice(0, 200)}\n`);
+    return 3;
+  }
+  return failure ? 1 : 0;
+}
 
-    case 'annotate-pr': {
-      const token = process.env.GITHUB_TOKEN;
-      const repo = process.env.GITHUB_REPOSITORY;
-      const sha = process.env.GITHUB_SHA;
-      if (!token || !repo || !sha) {
-        process.stderr.write(
-          'annotate-pr: GITHUB_TOKEN, GITHUB_REPOSITORY and GITHUB_SHA are required (run inside GitHub Actions)\n',
-        );
-        return 2;
-      }
-      const baseRef = argValue(argv, '--base') ?? 'main';
-      const config = loadConfig(root);
-      const parser = createWorkspaceParser();
-      let result: AuditResult;
-      try {
-        result = new AuditEngine({
-          root,
-          parser,
-          config,
-          diff: { baseRef, changedPaths: gitChangedPaths(root, baseRef) },
-        }).run();
-      } catch (e) {
-        process.stderr.write(`annotate-pr: git error: ${(e as Error).message.split('\n')[0]}\n`);
-        return 2;
-      }
-      const errors = result.summary.totalErrors;
-      const warnings = result.summary.totalWarnings;
-      const failOn = process.env.MOMUS_FAIL_ON ?? 'error';
-      const failure = failOn === 'none' ? false : errors > 0 || (failOn === 'warning' && warnings > 0);
-      const body = {
-        name: 'momus',
-        head_sha: sha,
-        status: 'completed' as const,
-        conclusion: failure ? ('failure' as const) : ('success' as const),
-        output: {
-          title: `Momus: ${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'}`,
-          summary: `${result.summary.filesAudited} files audited vs ${baseRef}; ${result.summary.totalIssues} total findings.`,
-          annotations: buildCheckAnnotations(result.issues, root).slice(0, 50),
-        },
-      };
-      const res = await fetch(`https://api.github.com/repos/${repo}/check-runs`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        process.stderr.write(`annotate-pr: GitHub API ${res.status}: ${(await res.text()).slice(0, 200)}\n`);
-        return 3;
-      }
-      return failure ? 1 : 0;
-    }
+export function runPrecommit(root: string, argv: string[]): number {
+  const json = argv.includes('--json');
+  const summary = argv.includes('--summary');
+  const config = loadConfig(root);
+  const parser = createWorkspaceParser();
+  const baseRef = argValue(argv, '--base') ?? 'HEAD';
+  let changedPaths: string[];
+  try {
+    changedPaths = gitChangedPaths(root, baseRef);
+  } catch (e) {
+    process.stderr.write(`precommit: git error: ${(e as Error).message.split('\n')[0]}\n`);
+    return 2;
+  }
+  const engine = new AuditEngine({
+    root,
+    parser,
+    config,
+    includeUnresolved: argv.includes('--include-unresolved'),
+    diff: { baseRef, changedPaths },
+  });
+  const result = engine.run();
+  const drift = filterResult(result, (i) => i.rule.startsWith('DRIFT'));
+  if (json) {
+    process.stdout.write(
+      JSON.stringify(buildJsonEnvelope(drift, { tool: 'verify_mock_drift', workspaceRoot: root }), null, 2) + '\n',
+    );
+  } else {
+    process.stdout.write(
+      buildMarkdownReport(drift, {
+        workspaceRoot: root,
+        verbosity: summary ? 'summary' : config.tokenBudget.verbosity,
+        scopeLabel: `precommit vs ${baseRef}`,
+      }),
+    );
+  }
+  return drift.summary.totalErrors > 0 ? 1 : 0;
+}
 
-    case 'precommit': {
-      const config = loadConfig(root);
-      const parser = createWorkspaceParser();
-      const baseRef = argValue(argv, '--base') ?? 'HEAD';
-      let changedPaths: string[];
-      try {
-        changedPaths = gitChangedPaths(root, baseRef);
-      } catch (e) {
-        process.stderr.write(`precommit: git error: ${(e as Error).message.split('\n')[0]}\n`);
-        return 2;
-      }
-      const engine = new AuditEngine({
-        root,
-        parser,
-        config,
-        includeUnresolved: argv.includes('--include-unresolved'),
-        diff: { baseRef, changedPaths },
-      });
-      const result = engine.run();
-      const drift = filterResult(result, (i) => i.rule.startsWith('DRIFT'));
-      if (json) {
-        process.stdout.write(
-          JSON.stringify(buildJsonEnvelope(drift, { tool: 'verify_mock_drift', workspaceRoot: root }), null, 2) + '\n',
-        );
-      } else {
-        process.stdout.write(
-          buildMarkdownReport(drift, {
-            workspaceRoot: root,
-            verbosity: summary ? 'summary' : config.tokenBudget.verbosity,
-            scopeLabel: `precommit vs ${baseRef}`,
-          }),
-        );
-      }
-      return drift.summary.totalErrors > 0 ? 1 : 0;
-    }
+export function runHook(root: string, argv: string[]): number {
+  const json = argv.includes('--json');
+  const summary = argv.includes('--summary');
+  const sub = argv[1];
+  if (sub === '--install' || sub === 'install') return installHook(root, argv.includes('--yes'));
+  if (sub === '--uninstall' || sub === 'uninstall') return uninstallHook(root, argv.includes('--yes'));
+  // No subcommand: run the staged-files drift gate (what the installed hook executes).
+  const config = loadConfig(root);
+  const parser = createWorkspaceParser();
+  let staged: string[];
+  try {
+    staged = gitStagedPaths(root, 'HEAD');
+  } catch (e) {
+    process.stderr.write(`hook: git error: ${(e as Error).message.split('\n')[0]}\n`);
+    return 2;
+  }
+  if (staged.length === 0) return 0;
+  const engine = new AuditEngine({
+    root,
+    parser,
+    config,
+    includeUnresolved: argv.includes('--include-unresolved'),
+    diff: { baseRef: 'HEAD', changedPaths: staged },
+  });
+  const result = engine.run();
+  const drift = filterResult(result, (i) => i.rule.startsWith('DRIFT'));
+  if (json) {
+    process.stdout.write(
+      JSON.stringify(buildJsonEnvelope(drift, { tool: 'verify_mock_drift', workspaceRoot: root }), null, 2) + '\n',
+    );
+  } else {
+    process.stdout.write(
+      buildMarkdownReport(drift, {
+        workspaceRoot: root,
+        verbosity: summary ? 'summary' : config.tokenBudget.verbosity,
+        scopeLabel: 'hook (staged files)',
+      }),
+    );
+  }
+  return drift.summary.totalErrors > 0 ? 1 : 0;
+}
 
-    case 'hook': {
-      const sub = argv[1];
-      if (sub === '--install' || sub === 'install') return installHook(root, argv.includes('--yes'));
-      if (sub === '--uninstall' || sub === 'uninstall') return uninstallHook(root, argv.includes('--yes'));
-      // No subcommand: run the staged-files drift gate (what the installed hook executes).
-      const config = loadConfig(root);
-      const parser = createWorkspaceParser();
-      let staged: string[];
-      try {
-        staged = gitStagedPaths(root, 'HEAD');
-      } catch (e) {
-        process.stderr.write(`hook: git error: ${(e as Error).message.split('\n')[0]}\n`);
-        return 2;
-      }
-      if (staged.length === 0) return 0;
-      const engine = new AuditEngine({
-        root,
-        parser,
-        config,
-        includeUnresolved: argv.includes('--include-unresolved'),
-        diff: { baseRef: 'HEAD', changedPaths: staged },
-      });
-      const result = engine.run();
-      const drift = filterResult(result, (i) => i.rule.startsWith('DRIFT'));
-      if (json) {
-        process.stdout.write(
-          JSON.stringify(buildJsonEnvelope(drift, { tool: 'verify_mock_drift', workspaceRoot: root }), null, 2) + '\n',
-        );
-      } else {
-        process.stdout.write(
-          buildMarkdownReport(drift, {
-            workspaceRoot: root,
-            verbosity: summary ? 'summary' : config.tokenBudget.verbosity,
-            scopeLabel: 'hook (staged files)',
-          }),
-        );
-      }
-      return drift.summary.totalErrors > 0 ? 1 : 0;
-    }
+export async function runContract(root: string, argv: string[]): Promise<number> {
+  const target = argv[1];
+  if (!target) {
+    process.stderr.write('usage: momus contract <targetPath> [--framework vitest]\n');
+    return 2;
+  }
+  const framework = argValue(argv, '--framework') ?? 'vitest';
+  const symbol = argValue(argv, '--symbol');
+  // reuse the server's synthesis logic via a lightweight re-implementation
+  const { synthesizeForCli } = await import('./synthesize.ts');
+  const out = synthesizeForCli(root, target, symbol, framework);
+  if ('error' in out) {
+    process.stderr.write(`error: ${out.error}\n`);
+    return 2;
+  }
+  process.stdout.write(out.template + '\n');
+  return 0;
+}
 
-    case 'contract': {
-      const target = argv[1];
-      if (!target) {
-        process.stderr.write('usage: momus contract <targetPath> [--framework vitest]\n');
-        return 2;
-      }
-      const framework = argValue(argv, '--framework') ?? 'vitest';
-      const symbol = argValue(argv, '--symbol');
-      // reuse the server's synthesis logic via a lightweight re-implementation
-      const { synthesizeForCli } = await import('./synthesize.ts');
-      const out = synthesizeForCli(root, target, symbol, framework);
-      if ('error' in out) {
-        process.stderr.write(`error: ${out.error}\n`);
-        return 2;
-      }
-      process.stdout.write(out.template + '\n');
-      return 0;
-    }
+export async function runRules(root: string, _argv: string[]): Promise<number> {
+  const config = loadConfig(root);
+  const { RULES_CATALOG } = await import('./catalog.ts');
+  for (const r of RULES_CATALOG) {
+    const override = config.rules[r.id];
+    const sev = typeof override === 'object' ? override.severity : override;
+    process.stdout.write(`${r.id} ${r.name} (${sev ?? r.severity}) — ${r.description}\n`);
+  }
+  process.stdout.write(
+    '\nSuppression: // @momus-ignore | // @momus-ignore:RULE | /** @momus-ignore */ | // @momus-ignore-file\n',
+  );
+  return 0;
+}
 
-    case 'rules': {
-      const config = loadConfig(root);
-      const { RULES_CATALOG } = await import('./catalog.ts');
-      for (const r of RULES_CATALOG) {
-        const override = config.rules[r.id];
-        const sev = typeof override === 'object' ? override.severity : override;
-        process.stdout.write(`${r.id} ${r.name} (${sev ?? r.severity}) — ${r.description}\n`);
-      }
-      process.stdout.write(
-        '\nSuppression: // @momus-ignore | // @momus-ignore:RULE | /** @momus-ignore */ | // @momus-ignore-file\n',
-      );
-      return 0;
-    }
+export async function runServe(root: string, argv: string[]): Promise<number> {
+  // `root` already includes `--root` (resolved in main); keep the alias for clarity.
+  const rootDir = root;
+  if (argv.includes('--watch')) {
+    watchWorkspace(rootDir); // invalidate the ts.Program cache on source changes
+    process.stderr.write(`momus serve: watching ${rootDir} for changes\n`);
+  }
+  if (argValue(argv, '--transport') === 'http') {
+    const port = Number(argValue(argv, '--port') ?? '3000');
+    await serveHttp({ root: rootDir, port });
+    await new Promise<void>(() => {}); // keep serving until terminated
+    return 0;
+  }
+  await serve({ root: rootDir });
+  return 0;
+}
 
-    case 'serve': {
-      // `root` already includes `--root` (resolved in main); keep the alias for clarity.
-      const rootDir = root;
-      if (argv.includes('--watch')) {
-        watchWorkspace(rootDir); // invalidate the ts.Program cache on source changes
-        process.stderr.write(`momus serve: watching ${rootDir} for changes\n`);
-      }
-      if (argValue(argv, '--transport') === 'http') {
-        const port = Number(argValue(argv, '--port') ?? '3000');
-        await serveHttp({ root: rootDir, port });
-        await new Promise<void>(() => {}); // keep serving until terminated
-        return 0;
-      }
-      await serve({ root: rootDir });
-      return 0;
-    }
-
-    case 'init': {
-      const force = argv.includes('--force');
-      const target = join(root, '.momusrc');
-      if (existsSync(target) && !force) {
-        process.stderr.write('.momusrc already exists (use --force to overwrite)\n');
-        return 2;
-      }
-      const template = `{
+export function runInit(root: string, argv: string[]): number {
+  const force = argv.includes('--force');
+  const target = join(root, '.momusrc');
+  if (existsSync(target) && !force) {
+    process.stderr.write('.momusrc already exists (use --force to overwrite)\n');
+    return 2;
+  }
+  const template = `{
   "$schema": "./schemas/momusrc.schema.json",
   "languages": { "typescript": true, "php": false },
   "testFilePatterns": ["**/*.{test,spec}.{ts,tsx,js,jsx,mjs}", "**/__tests__/**"],
@@ -562,39 +565,68 @@ async function main(argv: string[]): Promise<number> {
   "tokenBudget": { "maxIssuesPerReport": 50, "maxIssueLineTokens": 100, "verbosity": "issues" }
 }
 `;
-      writeFileSync(target, template);
-      process.stdout.write(`wrote ${target}\n`);
-      return 0;
-    }
+  writeFileSync(target, template);
+  process.stdout.write(`wrote ${target}\n`);
+  return 0;
+}
 
-    case 'doctor': {
-      let config: MomusConfig = { ...DEFAULT_CONFIG };
-      try {
-        config = loadConfig(root);
-      } catch (e) {
-        process.stdout.write(`  config error: ${e instanceof ConfigError ? e.message : 'unknown'}\n`);
-      }
-      process.stdout.write(`momus doctor\n  cwd:        ${root}\n  node:       ${process.version}\n`);
-      const ts = await import('typescript').then((m) => m.version).catch(() => 'unavailable');
-      process.stdout.write(`  typescript: ${ts}\n`);
-      process.stdout.write(`  php-parser: available\n`);
-      const cfg = existsSync(join(root, '.momusrc')) ? 'present' : 'absent (defaults)';
-      process.stdout.write(`  .momusrc:   ${cfg}\n`);
-      process.stdout.write(
-        `  languages:  typescript=${config.languages.typescript ? 'enabled' : 'disabled'} php=${config.languages.php ? 'enabled' : 'disabled'}\n`,
-      );
-      process.stdout.write(`  php readiness: ${phpReadiness(root, config)}\n`);
-      const testFiles = ['src', 'tests', 'test'].filter((d) => existsSync(join(root, d)));
-      process.stdout.write(`  source dirs: ${testFiles.join(', ') || 'none found'}\n`);
-      return 0;
-    }
+export async function runDoctor(root: string, _argv: string[]): Promise<number> {
+  let config: MomusConfig = { ...DEFAULT_CONFIG };
+  try {
+    config = loadConfig(root);
+  } catch (e) {
+    process.stdout.write(`  config error: ${e instanceof ConfigError ? e.message : 'unknown'}\n`);
+  }
+  process.stdout.write(`momus doctor\n  cwd:        ${root}\n  node:       ${process.version}\n`);
+  const ts = await import('typescript').then((m) => m.version).catch(() => 'unavailable');
+  process.stdout.write(`  typescript: ${ts}\n`);
+  process.stdout.write(`  php-parser: available\n`);
+  const cfg = existsSync(join(root, '.momusrc')) ? 'present' : 'absent (defaults)';
+  process.stdout.write(`  .momusrc:   ${cfg}\n`);
+  process.stdout.write(
+    `  languages:  typescript=${config.languages.typescript ? 'enabled' : 'disabled'} php=${config.languages.php ? 'enabled' : 'disabled'}\n`,
+  );
+  process.stdout.write(`  php readiness: ${phpReadiness(root, config)}\n`);
+  const testFiles = ['src', 'tests', 'test'].filter((d) => existsSync(join(root, d)));
+  process.stdout.write(`  source dirs: ${testFiles.join(', ') || 'none found'}\n`);
+  return 0;
+}
 
+async function main(argv: string[]): Promise<number> {
+  const cmd = argv[0];
+  // `--root DIR` is honored by every command (not just serve): audit/drift/hook/contract run
+  // against DIR while the CLI process itself may live anywhere (mirrors the MCP server's
+  // MOMUS_ROOT). Falls back to the working directory.
+  const root = argValue(argv, '--root') ?? process.cwd();
+
+  switch (cmd) {
+    case 'audit':
+      return runAudit(root, argv);
+    case 'drift':
+      return runDrift(root, argv);
+    case 'annotate':
+      return runAnnotate(root, argv);
+    case 'annotate-pr':
+      return runAnnotatePr(root, argv);
+    case 'precommit':
+      return runPrecommit(root, argv);
+    case 'hook':
+      return runHook(root, argv);
+    case 'contract':
+      return runContract(root, argv);
+    case 'rules':
+      return runRules(root, argv);
+    case 'serve':
+      return runServe(root, argv);
+    case 'init':
+      return runInit(root, argv);
+    case 'doctor':
+      return runDoctor(root, argv);
     case 'help':
     case '--help':
     case '-h':
       process.stdout.write(HELP);
       return 0;
-
     default:
       process.stderr.write(`unknown command '${cmd}'\n\n${HELP}`);
       return 2;

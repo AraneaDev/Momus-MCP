@@ -1,8 +1,8 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 262 tests passing, ~88% statements / ~85% branches / ~94% functions,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 278 tests passing, ~90% statements / ~86% branches / ~94% functions,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
-**Next session: MCP registry listing draft; publishing blocked on credentials. Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
+**Next session: MCP registry listing draft; publishing blocked on credentials (Phase 4 deferred indefinitely). Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
 ## Current checkpoint — 2026-08-16
 
@@ -396,6 +396,17 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   once) plus a healthy rejected-value twin; golden updated (10 issues, 6 errors / 4
   warnings). Dogfooded on Momus itself (20+ spyOn uses): **0 issues**; Chaos re-audit
   unchanged: 0 errors / 4 MOCK-001. Coverage 88.0% stmts / 85.5% branches / 94.5% funcs.
+- **Last verified (round 18):** coverage + refactor round — `markdown.ts` and `symbolIndex.ts`
+  now hit 100% stmts/branches (pluralization edges; inheritance, diamond dedupe, missing
+  extends, same-module `resolveByName`, exports via a new direct unit test file); direct PHP
+  DRIFT-003 rule tests cover every `phpReturnAssignable` branch (mixed/void/null/union/class
+  resolution); DRIFT-002 `typeAssignable` union-order bug fixed (row 32: source unions now
+  recurse first — identical union params no longer false-flag); CLI `main()` dispatch extracted
+  into exported per-command functions (`runAudit`/`runDrift`/`runPrecommit`/`runHook`/
+  `runContract`/`runRules`/`runServe`/`runInit`/`runDoctor`/`runAnnotate`/`runAnnotatePr`)
+  with a thin mapper — commands unit-testable without subprocess, CLI stmts 19.4→37.8%,
+  overall coverage 89.95% stmts / 86.14% branches / 94.06% funcs. 278 tests. Chaos and
+  Knossos re-audits unchanged (0 errors / 4 MOCK-001 and 6 sentinel errors).
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
   real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos plus itself (dogfooding) and fixing every
   false-positive/perf gap they expose, keeping `docs/11-real-world-findings.md` as the live
@@ -409,6 +420,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   closure-form/DRIFT-003, docblock typing, synth templates, anonymous-class doubles, git-diff
   plumbing, DRIFT-006, precommit, annotate-pr, the action, the `--fix` mechanism,
   TAUT-001/002/003 fix code (resolved: semantic → descriptive-only), PHP `getMockForAbstractClass`,
+  round-18 coverage pass (symbolIndex/markdown/typeAssignable/CLI dispatch extraction),
   PHP function-scoped mock bindings, PHP setUp/property mock bindings, PHP same-variable
   reassignment, the test-coverage tooling, the contract-synthesis public-member/`?`-ordering
   fixes, the persistent IR cache, the ESLint/Prettier setup, the real-codebase Chaos-MCP
@@ -464,8 +476,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 25 files, 262 tests, all pass
-npm run test:coverage    # v8: ~86% statements / ~84% branches / ~93% functions (floors 80/75/90/80)
+npm test                 # 26 files, 278 tests, all pass
+npm run test:coverage    # v8: ~90% statements / ~86% branches / ~94% functions (floors 80/75/90/80)
 npm run lint             # eslint .  — clean
 npm run format:check     # prettier --check .  — clean
 npm run check:commits    # fails if any commit carries the Codebuff attribution footer

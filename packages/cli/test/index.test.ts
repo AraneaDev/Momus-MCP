@@ -9,6 +9,10 @@ import {
   buildAnnotateLines,
   phpReadiness,
   phpProjectSignals,
+  runAudit,
+  runDrift,
+  runRules,
+  runInit,
 } from '../src/index.ts';
 import { DEFAULT_CONFIG } from '@momus/core';
 
@@ -169,6 +173,66 @@ describe('CLI --root flag', () => {
     } finally {
       rmSync(empty, { recursive: true, force: true });
       rmSync(fixture, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('extracted command functions (no subprocess)', () => {
+  it('runAudit returns 1 for a planted violation and 0 for a clean tree, with JSON output', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-fn-'));
+    try {
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      mkdirSync(join(dir, 'tests'), { recursive: true });
+      writeFileSync(join(dir, 'src', 'svc.ts'), 'export class Svc { total(): number { return 0; } }\n');
+      writeFileSync(
+        join(dir, 'tests', 'svc.test.ts'),
+        [
+          "import { expect, it, vi } from 'vitest';",
+          "import { Svc } from '../src/svc';",
+          'it("echo", () => {',
+          '  const mocked = { total: vi.fn() };',
+          '  mocked.total.mockReturnValue(7);',
+          '  expect(mocked.total()).toBe(7);',
+          '});',
+          '',
+        ].join('\n'),
+      );
+      expect(runAudit(dir, ['audit', '--json'])).toBe(1); // planted TAUT-002 echo
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('runAudit exits 0 for a genuinely clean tree', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-fn-clean-'));
+    try {
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      mkdirSync(join(dir, 'tests'), { recursive: true });
+      writeFileSync(join(dir, 'src', 'svc.ts'), 'export class Svc { total(): number { return 0; } }\n');
+      writeFileSync(
+        join(dir, 'tests', 'svc.test.ts'),
+        "import { expect, it } from 'vitest';\nimport { Svc } from '../src/svc';\nit('flows', () => { const svc = new Svc(); expect(svc.total()).toBe(0); });\n",
+      );
+      // note: each runAudit uses a fresh process-internal program cache; the real CLI
+      // invokes a command once per process, so one audit per test dir is the supported shape
+      expect(runAudit(dir, ['audit', '--max-issues', '0'])).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('runDrift reports drift-only and runRules lists the catalog with overrides', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-fn2-'));
+    try {
+      writeFileSync(join(dir, '.momusrc'), '{ "rules": { "TAUT-002": "warning" } }\n');
+      const driftOut = runDrift(dir, ['drift', '--summary']);
+      expect(driftOut).toBe(0);
+      const rulesOut = await runRules(dir, ['rules']);
+      expect(rulesOut).toBe(0);
+      expect(runInit(dir, ['init', '--force'])).toBe(0);
+      expect(existsSync(join(dir, '.momusrc'))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

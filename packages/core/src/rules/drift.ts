@@ -209,8 +209,11 @@ function parameterAccepts(stub: ParamIR, production: ParamIR): boolean {
 /** Approximate directional assignability for the syntax-level TypeIR contract. */
 function typeAssignable(source: TypeIR, target: TypeIR): boolean {
   if (source.kind === 'unknown' || target.kind === 'unknown') return true;
-  if (target.kind === 'union') return target.members.some((member) => typeAssignable(source, member));
+  // source unions must check first: `string|number` → `string|number` needs every source
+  // member accepted by the target (checked against target-union below), not each source
+  // member against a single arbitrary target member.
   if (source.kind === 'union') return source.members.every((member) => typeAssignable(member, target));
+  if (target.kind === 'union') return target.members.some((member) => typeAssignable(source, member));
   if (source.kind === 'literal') {
     if (target.kind === 'literal') return source.value === target.value;
     if (target.kind === 'named') {

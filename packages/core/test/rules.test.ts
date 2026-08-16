@@ -5,7 +5,17 @@ import { hygieneRules } from '../src/rules/hygiene.ts';
 import { runRules } from '../src/rules/engine.ts';
 import { SymbolIndex } from '../src/symbolIndex.ts';
 import { DEFAULT_CONFIG } from '../src/config.ts';
-import type { AssertionIR, ExprIR, MockIR, ModuleIR, SignatureIR, SourceSpan } from '../src/ir.ts';
+import type {
+  AssertionIR,
+  ConfiguredValueIR,
+  ExprIR,
+  MockIR,
+  ModuleIR,
+  SignatureIR,
+  SourceSpan,
+  SymbolIR,
+  TypeIR,
+} from '../src/ir.ts';
 
 const FILE = '/ws/tests/ledger.test.ts';
 const PROD = '/ws/src/ledger.ts';
@@ -71,6 +81,49 @@ function ctx(module: ModuleIR, index = new SymbolIndex([])) {
 }
 
 const rulesOf = (id: string) => [...tautologyRules, ...driftRules, ...hygieneRules].filter((r) => r.id === id);
+
+const prodMember = (name: string, returnType: TypeIR): SymbolIR => ({
+  id: `prod#${name}`,
+  name,
+  kind: 'method',
+  path: PROD,
+  span: sp(PROD, 1),
+  signature: { parameters: [], returnType, typeParams: [] },
+  members: [],
+  extendsIds: [],
+  implementsIds: [],
+});
+
+const phpValue = (value: TypeIR): ConfiguredValueIR => ({
+  span: sp(FILE, 5),
+  api: 'willReturn',
+  value,
+  once: false,
+  assignable: 'unknown',
+});
+
+function phpModule(mocks: MockIR[]): ModuleIR {
+  return testModule({
+    path: '/ws/tests/fooTest.php',
+    language: 'php',
+    kind: 'test',
+    framework: 'phpunit',
+    mocks,
+  });
+}
+
+const phpMock = (name: string, stubbed: Array<{ name: string; returnType: TypeIR; values: TypeIR[] }>): MockIR =>
+  mock({
+    id: `m:${name}`,
+    pattern: 'createMock',
+    target: { kind: 'class', symbolId: 'prod#Svc', exportName: 'Svc', span: sp(PROD, 1) },
+    stubbedMembers: stubbed.map((s) => ({
+      name: s.name,
+      span: sp(FILE, 5),
+      api: 'shouldReceive' as const,
+      returnValues: s.values.map(phpValue),
+    })),
+  });
 
 describe('TAUT-001 self-comparison', () => {
   it('flags identical non-reevaluating operands', () => {
@@ -457,6 +510,404 @@ describe('DRIFT-002 signature mismatch', () => {
     const untyped = withStubType('number');
     untyped.mocks[0]!.stubbedMembers[0]!.signature!.parameters[0]!.type = undefined;
     expect(runRules(rulesOf('DRIFT-002'), ctx(untyped, index))).toHaveLength(0);
+  });
+});
+
+describe('DRIFT-003 PHP return-type assignability', () => {
+  const prodId = 'prod#Svc';
+  const index = new SymbolIndex([
+    {
+      path: PROD,
+      language: 'php',
+      kind: 'production',
+      imports: [],
+      exports: ['Svc'],
+      symbols: [
+        {
+          id: prodId,
+          name: 'Svc',
+          kind: 'class',
+          span: sp(PROD, 1),
+          members: [
+            prodMember('count', { kind: 'named', name: 'int', typeArgs: [] }),
+            prodMember('label', { kind: 'named', name: 'string', typeArgs: [] }),
+            prodMember('active', { kind: 'named', name: 'bool', typeArgs: [] }),
+            prodMember('go', { kind: 'void' }),
+            prodMember('id', {
+              kind: 'union',
+              members: [
+                { kind: 'named', name: 'int', typeArgs: [] },
+                { kind: 'named', name: 'string', typeArgs: [] },
+              ],
+            }),
+            prodMember('tags', { kind: 'array', element: { kind: 'named', name: 'string', typeArgs: [] } }),
+            prodMember('owner', { kind: 'named', name: 'User', typeArgs: [] }),
+          ],
+          extendsIds: [],
+          implementsIds: [],
+        },
+        prodMember('User', { kind: 'named', name: 'User', typeArgs: [] }),
+      ],
+      mocks: [],
+      assertions: [],
+      functions: [],
+      comments: [],
+      diagnostics: [],
+      hash: 'prod',
+    },
+  ]);
+
+  const fired = (values: Array<{ name: string; returnType: TypeIR; values: TypeIR[] }>) => {
+    const m = phpModule([phpMock('svc', values)]);
+    return runRules(rulesOf('DRIFT-003'), ctx(m, index));
+  };
+
+  it('accepts literals matching primitive production types and rejects mismatches', () => {
+    expect(
+      fired([
+        {
+          name: 'count',
+          returnType: { kind: 'named', name: 'int', typeArgs: [] },
+          values: [{ kind: 'literal', value: 42 }],
+        },
+      ]),
+    ).toHaveLength(0);
+    const stringOnInt = fired([
+      {
+        name: 'count',
+        returnType: { kind: 'named', name: 'int', typeArgs: [] },
+        values: [{ kind: 'literal', value: 'x' }],
+      },
+    ]);
+    expect(stringOnInt).toHaveLength(1);
+    expect(
+      fired([
+        {
+          name: 'label',
+          returnType: { kind: 'named', name: 'string', typeArgs: [] },
+          values: [{ kind: 'literal', value: 'x' }],
+        },
+      ]),
+    ).toHaveLength(0);
+    expect(
+      fired([
+        {
+          name: 'active',
+          returnType: { kind: 'named', name: 'bool', typeArgs: [] },
+          values: [{ kind: 'literal', value: true }],
+        },
+      ]),
+    ).toHaveLength(0);
+  });
+
+  it('handles void, null, arrays, and unions structurally', () => {
+    expect(fired([{ name: 'go', returnType: { kind: 'void' }, values: [{ kind: 'null' }] }])).toHaveLength(0);
+    expect(fired([{ name: 'go', returnType: { kind: 'void' }, values: [{ kind: 'literal', value: 1 }] }])).toHaveLength(
+      1,
+    );
+    expect(fired([{ name: 'tags', returnType: { kind: 'array' }, values: [{ kind: 'array' }] }])).toHaveLength(0);
+    expect(
+      fired([{ name: 'tags', returnType: { kind: 'array' }, values: [{ kind: 'literal', value: 1 }] }]),
+    ).toHaveLength(1);
+    // production union accepts either member
+    expect(
+      fired([
+        {
+          name: 'id',
+          returnType: {
+            kind: 'union',
+            members: [
+              { kind: 'named', name: 'int', typeArgs: [] },
+              { kind: 'named', name: 'string', typeArgs: [] },
+            ],
+          },
+          values: [{ kind: 'literal', value: 42 }],
+        },
+      ]),
+    ).toHaveLength(0);
+    // value union must satisfy every production member (null vs int fails)
+    const nullish = fired([
+      {
+        name: 'count',
+        returnType: { kind: 'named', name: 'int', typeArgs: [] },
+        values: [{ kind: 'union', members: [{ kind: 'literal', value: 42 }, { kind: 'null' }] }],
+      },
+    ]);
+    expect(nullish).toHaveLength(1);
+  });
+
+  it('resolves class-like production types by symbol identity, conservatively when unresolvable', () => {
+    const idx = new SymbolIndex([
+      {
+        path: PROD,
+        language: 'php',
+        kind: 'production',
+        imports: [],
+        exports: ['Svc'],
+        symbols: [
+          {
+            id: prodId,
+            name: 'Svc',
+            kind: 'class',
+            span: sp(PROD, 1),
+            members: [
+              prodMember('owner', { kind: 'named', name: 'User', typeArgs: [] }),
+              prodMember('any', { kind: 'named', name: 'mixed', typeArgs: [] }),
+              prodMember('mayBeNull', { kind: 'named', name: 'null', typeArgs: [] }),
+            ],
+            extendsIds: [],
+            implementsIds: [],
+          },
+          prodMember('User', { kind: 'named', name: 'User', typeArgs: [] }),
+          prodMember('Admin', { kind: 'named', name: 'Admin', typeArgs: [] }),
+        ],
+        mocks: [],
+        assertions: [],
+        functions: [],
+        comments: [],
+        diagnostics: [],
+        hash: 'prod',
+      },
+    ]);
+    const run = (values: Array<{ name: string; returnType: TypeIR; values: TypeIR[] }>) =>
+      runRules(rulesOf('DRIFT-003'), ctx(phpModule([phpMock('svc', values)]), idx));
+    // identical names pass; mixed accepts anything; prod-null rejects non-null
+    expect(
+      run([
+        {
+          name: 'owner',
+          returnType: { kind: 'named', name: 'User', typeArgs: [] },
+          values: [{ kind: 'named', name: 'User', typeArgs: [] }],
+        },
+      ]),
+    ).toHaveLength(0);
+    expect(
+      run([
+        {
+          name: 'any',
+          returnType: { kind: 'named', name: 'mixed', typeArgs: [] },
+          values: [{ kind: 'literal', value: 1 }],
+        },
+      ]),
+    ).toHaveLength(0);
+    expect(
+      run([
+        {
+          name: 'mayBeNull',
+          returnType: { kind: 'named', name: 'null', typeArgs: [] },
+          values: [{ kind: 'literal', value: 1 }],
+        },
+      ]),
+    ).toHaveLength(1);
+    // a literal is never a class
+    expect(
+      run([
+        {
+          name: 'owner',
+          returnType: { kind: 'named', name: 'User', typeArgs: [] },
+          values: [{ kind: 'literal', value: 1 }],
+        },
+      ]),
+    ).toHaveLength(1);
+    // both sides resolvable but different symbols → mismatch
+    expect(
+      run([
+        {
+          name: 'owner',
+          returnType: { kind: 'named', name: 'User', typeArgs: [] },
+          values: [{ kind: 'named', name: 'Admin', typeArgs: [] }],
+        },
+      ]),
+    ).toHaveLength(1);
+    // unresolvable value name → conservative pass
+    expect(
+      run([
+        {
+          name: 'owner',
+          returnType: { kind: 'named', name: 'User', typeArgs: [] },
+          values: [{ kind: 'named', name: 'Ghost', typeArgs: [] }],
+        },
+      ]),
+    ).toHaveLength(0);
+  });
+});
+
+describe('DRIFT-002 parameter assignability tree', () => {
+  const prodPath = '/ws/src/tree.ts';
+  const classId = `${prodPath}#TreeService`;
+  const paramSig = (param: TypeIR): SignatureIR => ({
+    parameters: [{ name: 'value', type: param, optional: false, variadic: false, hasDefault: false }],
+    typeParams: [],
+  });
+  const prod: ModuleIR = {
+    path: prodPath,
+    language: 'typescript',
+    kind: 'production',
+    imports: [],
+    exports: ['TreeService'],
+    symbols: [
+      {
+        id: classId,
+        name: 'TreeService',
+        kind: 'class',
+        span: sp(prodPath, 1),
+        members: [
+          {
+            id: `${classId}.run`,
+            name: 'run',
+            kind: 'method',
+            span: sp(prodPath, 2),
+            members: [],
+            extendsIds: [],
+            implementsIds: [],
+            signature: paramSig({
+              kind: 'union',
+              members: [
+                { kind: 'named', name: 'string', typeArgs: [] },
+                { kind: 'named', name: 'number', typeArgs: [] },
+              ],
+            }),
+          },
+          {
+            id: `${classId}.each`,
+            name: 'each',
+            kind: 'method',
+            span: sp(prodPath, 3),
+            members: [],
+            extendsIds: [],
+            implementsIds: [],
+            signature: paramSig({ kind: 'array', element: { kind: 'named', name: 'number', typeArgs: [] } }),
+          },
+          {
+            id: `${classId}.pair`,
+            name: 'pair',
+            kind: 'method',
+            span: sp(prodPath, 4),
+            members: [],
+            extendsIds: [],
+            implementsIds: [],
+            signature: paramSig({
+              kind: 'tuple',
+              elements: [
+                { kind: 'named', name: 'string', typeArgs: [] },
+                { kind: 'named', name: 'number', typeArgs: [] },
+              ],
+            }),
+          },
+          {
+            id: `${classId}.boxed`,
+            name: 'boxed',
+            kind: 'method',
+            span: sp(prodPath, 5),
+            members: [],
+            extendsIds: [],
+            implementsIds: [],
+            signature: paramSig({
+              kind: 'named',
+              name: 'Array',
+              typeArgs: [{ kind: 'named', name: 'string', typeArgs: [] }],
+            }),
+          },
+          {
+            id: `${classId}.s`,
+            name: 's',
+            kind: 'method',
+            span: sp(prodPath, 6),
+            members: [],
+            extendsIds: [],
+            implementsIds: [],
+            signature: paramSig({ kind: 'named', name: 'string', typeArgs: [] }),
+          },
+          {
+            id: `${classId}.lit`,
+            name: 'lit',
+            kind: 'method',
+            span: sp(prodPath, 7),
+            members: [],
+            extendsIds: [],
+            implementsIds: [],
+            signature: paramSig({ kind: 'literal', value: 'open' }),
+          },
+        ],
+        extendsIds: [],
+        implementsIds: [],
+      },
+    ],
+    mocks: [],
+    assertions: [],
+    functions: [],
+    comments: [],
+    diagnostics: [],
+    hash: 'tree',
+  };
+  const index = new SymbolIndex([prod]);
+  const fired = (member: string, stubParam: TypeIR) => {
+    const m = testModule({
+      mocks: [
+        mock({
+          id: 'tree-mock',
+          target: { kind: 'class', symbolId: classId, span: sp(FILE, 5) },
+          stubbedMembers: [
+            {
+              name: member,
+              span: sp(FILE, 5),
+              api: 'objectLiteralKey',
+              signature: paramSig(stubParam),
+              returnValues: [],
+            },
+          ],
+        }),
+      ],
+    });
+    return runRules(rulesOf('DRIFT-002'), ctx(m, index));
+  };
+
+  it('union production params need every member assignable to the stub type', () => {
+    // stub string|number accepts both members; stub string alone cannot accept number
+    expect(
+      fired('run', {
+        kind: 'union',
+        members: [
+          { kind: 'named', name: 'string', typeArgs: [] },
+          { kind: 'named', name: 'number', typeArgs: [] },
+        ],
+      }),
+    ).toHaveLength(0);
+    expect(fired('run', { kind: 'named', name: 'string', typeArgs: [] })).toHaveLength(1);
+  });
+
+  it('array and tuple params compare element-wise', () => {
+    expect(fired('each', { kind: 'array', element: { kind: 'named', name: 'number', typeArgs: [] } })).toHaveLength(0);
+    expect(fired('each', { kind: 'array', element: { kind: 'named', name: 'string', typeArgs: [] } })).toHaveLength(1);
+    expect(
+      fired('pair', {
+        kind: 'tuple',
+        elements: [
+          { kind: 'named', name: 'string', typeArgs: [] },
+          { kind: 'named', name: 'number', typeArgs: [] },
+        ],
+      }),
+    ).toHaveLength(0);
+    expect(fired('pair', { kind: 'tuple', elements: [{ kind: 'named', name: 'string', typeArgs: [] }] })).toHaveLength(
+      1,
+    );
+  });
+
+  it('named params compare name and type arguments', () => {
+    expect(
+      fired('boxed', { kind: 'named', name: 'Array', typeArgs: [{ kind: 'named', name: 'string', typeArgs: [] }] }),
+    ).toHaveLength(0);
+    expect(
+      fired('boxed', { kind: 'named', name: 'Array', typeArgs: [{ kind: 'named', name: 'number', typeArgs: [] }] }),
+    ).toHaveLength(1);
+    // a literal production param is accepted by a named stub of the same primitive kind
+    expect(fired('lit', { kind: 'named', name: 'string', typeArgs: [] })).toHaveLength(0);
+    // an over-narrow literal stub cannot accept a string production param
+    expect(fired('s', { kind: 'literal', value: 'x' })).toHaveLength(1);
+    // a single-literal stub cannot accept a union production param
+    expect(fired('run', { kind: 'literal', value: 'x' })).toHaveLength(1);
+    // kind mismatch (number vs string) is not assignable
+    expect(fired('run', { kind: 'named', name: 'number', typeArgs: [] })).toHaveLength(1);
   });
 });
 

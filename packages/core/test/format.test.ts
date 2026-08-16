@@ -94,6 +94,17 @@ describe('buildMarkdownReport', () => {
     expect(out).toContain('2 findings suppressed');
   });
 
+  it('singularizes file/issue/finding labels for exactly one of each', () => {
+    const r = result({
+      summary: summary({ filesAudited: 1, suppressed: 1, issues: 1, errors: 1 }),
+    });
+    const out = buildMarkdownReport(r, { workspaceRoot: ROOT, verbosity: 'issues', scopeLabel: '1 file' });
+    expect(out).toContain('Audited 1 file · 1 issue');
+    expect(out).toContain('1 error · 0 warning · 0 info');
+    expect(out).toContain('1 finding suppressed');
+    expect(out).not.toContain('findings suppressed');
+  });
+
   it('marks CLEAN when no errors or warnings exist (infos allowed)', () => {
     const r = result({
       summary: summary({ errors: 0, totalErrors: 0, issues: 1, totalIssues: 1, infos: 1, totalInfos: 1 }),

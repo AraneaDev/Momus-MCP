@@ -50,6 +50,9 @@
 | 29 | *(dogfood/coverage)* | `literalShape` didn't unwrap casts, so `mockReturnValue('x' as T)` yielded no value | `'x' as unknown as number` produced `value: undefined`; casts/parens now unwrap |
 | 30 | *(dogfood)* | `momus hook --install --root DIR` (and every non-`serve` command) ignored `--root` — `main` used `process.cwd()` | the hook installer wrote `.git/hooks/pre-commit` into the **wrong repo**; `--root` is now honored by every command |
 | 31 | *(dogfood)* | `mockRejectedValue`/`mockRejectedValueOnce` configs were checked against the production return type — but a rejection **reason** is not a resolved value | `spy.mockRejectedValue(new Error('boom'))` on a `Promise<string>` method false-flagged DRIFT-003; rejection configs are now skipped in assignability |
+| 32 | *(coverage pass)* | DRIFT-002's `typeAssignable` checked target-union **before** source-union, so a stub param typed `string\|number` could not accept a production `string\|number` param | identical union types falsely flagged as signature-mismatch; source unions now recurse first (each source member must be accepted by the target) |
+| 33 | *(refactor)* | CLI `main()` was one giant switch: commands weren't unit-testable without spawning a subprocess (CLI entrypoint coverage 19.4%) | extracted exported per-command functions (`runAudit`/`runDrift`/`runPrecommit`/`runHook`/`runContract`/`runRules`/`runServe`/`runInit`/`runDoctor`/`runAnnotate`/`runAnnotatePr`) + thin mapper; 2 direct tests, CLI stmts 19.4→37.8% |
+| 34 | *(coverage pass)* | coverage gaps in `markdown.ts` pluralization, `symbolIndex.ts` dedupe/inheritance/resolveByName, and the PHP `phpReturnAssignable` tree were uncovered | new unit tests took markdown.ts + symbolIndex.ts to 100% stmts/branches and covered every PHP DRIFT-003 branch (mixed/void/null/union/class-resolution) |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -167,3 +170,16 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
     fires), and `mockRejectedValue` is correctly exempted (row 31 — a rejection reason, not a
     resolved value). Dogfooded on Momus itself (20+ spyOn uses): 0 issues; Chaos re-audit
     unchanged (0 errors / 4 MOCK-001).
+12. ✅ DRIFT-002 parameter assignability tree covered (rows 32): union-union no longer false-
+    flags; named params compare names + type args; array/tuple element-wise; literal-vs-named
+    handled in both directions. New direct rule tests exercise every `typeAssignable` branch.
+13. ✅ Coverage pass: `markdown.ts` 100% branches (pluralization edges), `symbolIndex.ts` 100%
+    stmts/branches (new direct unit tests: inheritance, diamond dedupe, missing extends,
+    same-module `resolveByName`, exports), and direct PHP DRIFT-003 rule tests for the
+    `phpReturnAssignable` tree (mixed/void/null/union/class-resolution branches).
+14. ✅ CLI `main()` dispatch extracted into exported per-command functions (`runAudit`/`runDrift`/
+    `runPrecommit`/`runHook`/`runContract`/`runRules`/`runServe`/`runInit`/`runDoctor`/
+    `runAnnotate`/`runAnnotatePr`) with a thin `main` mapper — commands are now unit-testable
+    without spawning a subprocess (2 direct tests added); CLI entrypoint coverage 19.4% → 37.8%.
+    Note: the ts.Program cache is memoized per process, so calling a run* twice on the same path
+    in one process can serve a stale program — the real CLI invokes one command per process.
