@@ -1,6 +1,6 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 229 tests passing, ~85% statements / ~83% branches,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 235 tests passing, ~85% statements / ~83% branches / ~93% functions,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials. Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
@@ -376,11 +376,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 - **Spec:** `docs/` (9 spec docs + validation report + build plan — the authoritative source).
 - **Implementation:** 5 npm-workspace packages (`@momus/core`, `@momus/parser-typescript`,
   `@momus/mcp-server`, `@momus/cli`), `@momus/parser-php`, plus `packages/action` composite
-  GitHub Action — 215 vitest tests, GitHub Actions CI, self-audit gate.
-- **Git.** Six commits on `main`, no remote: `066ac32` (initial scaffold) → `0f09dfa` (full build
-  through Phase 3 + Phase 4 scaffolding) → `8552277` (docs: etymology/handover) → `8d3ef61`
-  (enforce a footer-free commit history) → `77df24a` (Node globals for the verify script) →
-  `072a76a` (handover). Every commit is authored **and** committed by
+  GitHub Action — 235 vitest tests, GitHub Actions CI, self-audit gate.
+- **Git.** 19 commits on `main`, no remote. Every commit is authored **and** committed by
   `AraneaDev <info@aranea-development.nl>` (history rewritten via `--env-filter`); local
   `user.name`/`user.email` are set to match. **No commit carries an attribution footer** — it is
   stripped from history and structurally blocked by a `commit-msg` hook + `check:commits` + a CI
@@ -394,8 +391,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 23 files, 215 tests, all pass
-npm run test:coverage    # v8: ~85% statements / ~82% branches (floors 80/75/90/80)
+npm test                 # 23 files, 235 tests, all pass
+npm run test:coverage    # v8: ~85% statements / ~83% branches / ~93% functions (floors 80/75/90/80)
 npm run lint             # eslint .  — clean
 npm run format:check     # prettier --check .  — clean
 npm run check:commits    # fails if any commit carries the Codebuff attribution footer
