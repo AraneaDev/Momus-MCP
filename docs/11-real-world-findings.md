@@ -261,3 +261,22 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
     function** loaded a second copy of the module graph (parser-php's own `@momus/core` dependency) and
     confused v8 coverage — dropping `All files` from 91.6% → 85%; top-level `import { PhpParser }` fixed
     it (and `config.ts`/`audit.ts` etc. returned to their real numbers).
+26. ✅ Release tooling migrated from changesets to **release-please** modeled on Knossos-MCP (single
+    lockstep version from **0.0.1**): `release-please-config.json` (json extra-files bump all five
+    workspace `package.json`s) + `.release-please-manifest.json`; `pr-title.yml` conventional-commit
+    gate; `.github/workflows/release-please.yml` (version-PR → `v*` tag + GitHub Release → gate +
+    `npm run publish` on `release_created`); `scripts/publish.mjs` (dependency-ordered `npm publish -w`).
+    Internal `@momus/*` deps re-pinned `~0.0.1` so they track in lockstep. Two verification layers:
+    `scripts/verify-release-config.mjs` (deterministic, no-network consistency check wired into
+    `ci.yml` + `test/release-config.test.ts`) and `scripts/simulate-release.mjs` (round-trips the
+    release flow in an isolated worktree: bump 0.0.1 → 0.0.2 exactly as release-please would →
+    `npm ci` → `npm publish` dry-run → asserts all five packages pack at 0.0.2 and `~` ranges admit
+    the bump). MCP `serverInfo.version` is now read from `@momus/mcp-server`'s package.json at
+    runtime (was hardcoded `0.1.0`); pinned by an integration test.
+27. ✅ Dogfood probe round (no code gaps found): `vi.hoisted(() => vi.fn())` and
+    `vi.hoisted(() => ({ key: vi.fn() }))` — the pervasive real-world pattern for sharing mock fns
+    with `vi.mock` factories — resolve correctly on Chaos-MCP: the hoisted `vi.fn` is a standalone
+    mock, the factory keys (`listChangedFiles`, `Server`, …) extract as `mockFactoryKey` stubs, and
+    MOCK-001 counts stay accurate (no double-counting, no false TAUT/DRIFT). Class-valued factory
+    keys (`Server: class { … }`) also extract. Chaos re-audit unchanged (0 errors / 4 MOCK-001);
+    Knossos unchanged (6 sentinel errors, all deliberate `assertSame(true, true)` markers).

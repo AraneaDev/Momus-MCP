@@ -1,11 +1,20 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo — **release-please (Knossos-style), single lockstep version 0.0.1**; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 303 tests passing, ~91.6% statements / ~87.1% branches / ~95.3% functions,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo — **release-please (Knossos-style), single lockstep version 0.0.1, round-trip verified**; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 307 tests passing, ~91.6% statements / ~87.1% branches / ~95.3% functions,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials (Phase 4 deferred indefinitely). Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
 ## Current checkpoint — 2026-08-16
 
+- **Last verified:** release-please round-trip verified end-to-end: `scripts/simulate-release.mjs`
+  creates an isolated worktree, bumps 0.0.1 → 0.0.2 exactly as release-please's json extra-files
+  would (root + all five packages + manifest + CHANGELOG), runs `npm ci` + the publish step
+  dry-run, and asserts every `@momus/*` packs at 0.0.2 with `~0.0.1` ranges admitting the bump.
+  `scripts/verify-release-config.mjs` (deterministic, no-network) is wired into `ci.yml` as the
+  `release-config` job and pinned by `test/release-config.test.ts` (3 tests, root-level vitest
+  include added). Dogfood probe round on Chaos/Knossos found no new gaps: `vi.hoisted`
+  (fn + object forms) and class-valued factory keys resolve correctly, MOCK-001 counts stay
+  accurate; both baselines unchanged (Chaos 4 MOCK-001 / 0 errors, Knossos 6 sentinel errors).
 - **Last verified:** release tooling migrated from changesets to **release-please** modeled on
   Knossos-MCP: root + all five packages at **0.0.1** (lockfile synced), internal `@momus/*` deps
   re-pinned `~0.0.1` to track in lockstep, `release-please-config.json` (json extra-files bump
@@ -617,10 +626,12 @@ packages/server/           # MCP server: 5 tools, annotations + structuredConten
 packages/cli/              # momus audit|drift|precommit|hook|annotate|annotate-pr|contract|rules|serve|init|doctor
   src/fix.ts              #   audit --fix: collect/diff/apply span-based rule fixes
 packages/action/           # composite GitHub Action: diff-scoped audit + annotate-pr (Phase 4)
-.github/workflows/         # ci.yml (PR gates) + pr-title.yml (conventional titles) + release-please.yml (version→publish)
+.github/workflows/         # ci.yml (PR gates + release-config check) + pr-title.yml (conventional titles) + release-please.yml (version→publish)
 release-please-config.json # single lockstep version (0.0.1 baseline) for all @momus/* packages
 .release-please-manifest.json # release-please version manifest
 scripts/publish.mjs        # npm publish -w @momus/* in dependency order (release_created step)
+scripts/verify-release-config.mjs # deterministic release-please consistency check (ci.yml + test)
+scripts/simulate-release.mjs # round-trips the release flow in a worktree (bump → ci → publish dry-run)
 schemas/momusrc.schema.json # .momusrc JSON Schema (referenced by `momus init`)
 test/golden/audit.test.ts  # exact issue set from planted fixtures + suppression e2e
 test/integration/mcp.test.ts # in-memory MCP client round-trip, all 5 tools

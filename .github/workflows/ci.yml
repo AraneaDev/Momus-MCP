@@ -17,6 +17,18 @@ jobs:
       - name: Verify no Codebuff attribution footer in history
         run: node scripts/verify-no-codebuff-footer.mjs
 
+  release-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # Deterministic, no-network check that mirrors what release-please will do:
+      # manifest/package versions lockstep, extra-files cover every workspace,
+      # internal deps use ~ ranges, changelog-path + tag shape correct.
+      - name: Verify release-please config consistency
+        run: node scripts/verify-release-config.mjs
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
