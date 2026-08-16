@@ -124,6 +124,7 @@ export function tsReturnExample(type: ts.TypeNode | undefined): string {
     if (name === 'Date') return 'new Date()';
     if (name === 'RegExp') return '/./';
     if (name === 'Map' || name === 'Set' || name === 'WeakMap' || name === 'WeakSet') return `new ${name}()`;
+    if (name === 'Record' || name === 'Partial' || name === 'Required') return '{}';
   }
   return 'undefined';
 }
@@ -207,7 +208,11 @@ function resolveNamedType(checker: ts.TypeChecker, typeNode: ts.TypeNode, depth:
     if (!decl || !(ts.isPropertySignature(decl) || ts.isPropertyDeclaration(decl))) continue;
     entries.push(`${prop.getName()}: ${tsReturnExampleChecked(checker, decl.type, depth + 1)}`);
   }
-  return entries.length > 0 ? `{ ${entries.join(', ')} }` : undefined;
+  if (entries.length > 0) return `{ ${entries.join(', ')} }`;
+  // Index-signature types (`Record<K, V>`, `NodeJS.ProcessEnv`) have no named properties, but
+  // an empty `{}` literal is still a valid placeholder (prefer over `undefined`).
+  if (checker.getIndexTypeOfType(type, ts.IndexKind.String) !== undefined) return '{}';
+  return undefined;
 }
 
 /**

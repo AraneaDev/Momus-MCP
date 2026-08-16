@@ -203,7 +203,9 @@ describe('Momus MCP server (git-diff scope)', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+    // git repo setup + a full workspace parse can exceed the 5s default under parallel
+    // coverage instrumentation (this test flaked twice with a 5000ms timeout)
+  }, 20_000);
 });
 
 describe('Momus MCP server (Streamable HTTP)', () => {

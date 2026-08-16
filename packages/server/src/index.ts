@@ -463,6 +463,21 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as ts from 'typescript';
 
+/** Type text for a parameter, inferring from its default initializer when unannotated. */
+function paramTypeText(p: ts.ParameterDeclaration, sf: ts.SourceFile): string {
+  if (p.type) return p.type.getText(sf);
+  const init = p.initializer;
+  if (!init) return 'unknown';
+  const K = ts.SyntaxKind;
+  if (init.kind === K.NumericLiteral || init.kind === K.BigIntLiteral) return 'number';
+  if (ts.isPrefixUnaryExpression(init) && init.operator === K.MinusToken) return 'number';
+  if (init.kind === K.StringLiteral || init.kind === K.NoSubstitutionTemplateLiteral) return 'string';
+  if (init.kind === K.TrueKeyword || init.kind === K.FalseKeyword) return 'boolean';
+  if (ts.isArrayLiteralExpression(init)) return 'unknown[]';
+  if (ts.isObjectLiteralExpression(init)) return 'Record<string, unknown>';
+  return 'unknown';
+}
+
 export function synthesizeContract(
   root: string,
   targetPath: string,
@@ -535,7 +550,11 @@ export function synthesizeContract(
       if (!isPublicInstance) continue;
       const name = m.name.getText(sf);
       const params = m.parameters
-        .map((p) => `${p.name.getText(sf)}${p.questionToken ? '?' : ''}${p.type ? ': ' + p.type.getText(sf) : ''}`)
+        .map((p) => {
+          const pname = p.name.getText(sf);
+          const ptype = paramTypeText(p, sf);
+          return `${pname}${p.questionToken ? '?' : ''}${ptype !== 'unknown' ? ': ' + ptype : ''}`;
+        })
         .join(', ');
       const ret = m.type ? m.type.getText(sf) : 'unknown';
       const sig = `${name}(${params}): ${ret}`;
@@ -555,7 +574,7 @@ export function synthesizeContract(
             const pname = p.name.getText(sf);
             const optional = p.questionToken ? '?' : '';
             const variadic = p.dotDotDotToken ? '...' : '';
-            const ptype = p.type ? concretize(p.type.getText(sf), methodTypeParams) : 'unknown';
+            const ptype = concretize(paramTypeText(p, sf), methodTypeParams);
             return `${variadic}${pname}${optional}: ${ptype}`;
           })
           .join(', ');

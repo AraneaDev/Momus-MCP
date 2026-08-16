@@ -275,6 +275,35 @@ describe('synthesizeForCli', () => {
     }
   });
 
+  it('infers unannotated parameter types from default initializers', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-synth-param-'));
+    try {
+      writeFileSync(
+        join(dir, 'param.ts'),
+        [
+          'export class P {',
+          '  configure(name: string, timeoutMs = 1000, label = "x", flag = false, items: string[] = [], env: NodeJS.ProcessEnv = {}): void {}',
+          '  raw(x: number) {}',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      const out = synthesizeForCli(dir, 'param.ts', undefined, 'vitest');
+      const template = (out as { template: string }).template;
+      expect(template).toContain(
+        'configure: vi.fn<[name: string, timeoutMs: number, label: string, flag: boolean, items: string[], env: NodeJS.ProcessEnv], void>().mockReturnValue(undefined),',
+      );
+      // comment reflects the inferred types too
+      expect(template).toContain(
+        '// configure(name: string, timeoutMs: number, label: string, flag: boolean, items: string[], env: NodeJS.ProcessEnv): void',
+      );
+      // an annotated param keeps its declared type; unannotated return stays unknown
+      expect(template).toContain('raw: vi.fn<[x: number], unknown>().mockReturnValue(undefined),');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('synthesizes a phpunit template for a PHP class (not a TS stub)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'momus-synth-php-'));
     try {

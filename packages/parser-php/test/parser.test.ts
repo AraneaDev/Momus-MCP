@@ -93,6 +93,11 @@ describe('PHP parser', () => {
     const mock = module.mocks.find((m) => m.pattern === 'createStub');
     expect(mock?.stubbedMembers.map((s) => s.name)).toEqual(['prepare']);
     expect(mock?.invocationSites.map((s) => s.startLine)).toEqual([6]);
+    // the thrown exception expression is recorded in the IR (mock-level config, NOT a return
+    // value — DRIFT-003 compares returnValues against the production return type)
+    expect(mock?.configuredValues.map((v) => v.api)).toEqual(['willThrowException']);
+    expect(mock?.configuredValues[0]?.value).toMatchObject({ kind: 'named', name: 'RuntimeException' });
+    expect(mock?.stubbedMembers[0]?.returnValues).toEqual([]);
   });
 
   it('marks mocks handed off via constructor/call/return as reachable (TAUT-005 regression)', () => {

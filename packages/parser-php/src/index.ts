@@ -569,6 +569,23 @@ function extractMocks(file: string, nodes: PhpNode[], imports: ImportIR[]): PhpM
         stub.returnValues.push(configured);
         mock.configuredValues.push(configured);
       }
+    } else if (name === 'willThrowException' && memberCall) {
+      // record the thrown exception expression in the IR (mock-level config; not a return
+      // value, so it is intentionally NOT pushed to stub.returnValues — DRIFT-003 would
+      // compare an exception against the production return type and false-positive).
+      const memberName = stringValue(memberCall.arguments?.[0]);
+      if (memberName) {
+        ensureStub(mock, memberName, file, memberCall);
+        const value = call.arguments?.[0];
+        const configured: ConfiguredValueIR = {
+          span: nodeSpan(file, call),
+          api: 'willThrowException',
+          value: phpValue(value),
+          once: false,
+          assignable: 'unknown',
+        };
+        mock.configuredValues.push(configured);
+      }
     }
     if (!CONFIG_CALLS.has(name) || name === 'willReturn' || name === 'andReturn') continue;
     if (name !== 'method' && name !== 'shouldReceive') mock.invocationSites.push(nodeSpan(file, call));

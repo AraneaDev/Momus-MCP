@@ -54,6 +54,12 @@ describe('tsReturnExample (syntax-only type nodes)', () => {
     expect(tsReturnExample(parseType('ReadonlyArray<number>'))).toBe('[]');
   });
 
+  it('maps Record/Partial/Required references to empty shapes', () => {
+    expect(tsReturnExample(parseType('Record<string, number>'))).toBe('{}');
+    expect(tsReturnExample(parseType('Partial<Widget>'))).toBe('{}');
+    expect(tsReturnExample(parseType('Required<Widget>'))).toBe('{}');
+  });
+
   it('falls back to undefined for unknown named types and missing types', () => {
     expect(tsReturnExample(parseType('Widget'))).toBe('undefined');
     expect(tsReturnExample(undefined)).toBe('undefined');

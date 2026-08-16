@@ -41,6 +41,9 @@
 | 20 | *(dogfood)* | `synthesize_mock_contract` returned `no class found` for interface targets, despite the documented "class/interface" contract | interface-only files were unmockable |
 | 21 | *(coverage pass)* | `tsReturnExample`'s union nullish-exclusion missed `null` parsed as a `LiteralType` (not `NullKeyword`) | `null \| undefined` synthesized as `'null'` instead of `'undefined'` |
 | 22 | *(coverage pass)* | `gitChangedPaths` returned **toplevel**-relative paths when `root` was a subdirectory of the repo | diff scoping silently no-oped for subdir roots (paths never matched module paths) |
+| 23 | *(open items)* | PHP `willThrowException` was recognized for reachability but its exception value never reached the IR | throw-configured mocks couldn't be inspected; open improvement §5.1 — now recorded (mock-level config, deliberately not a return value so DRIFT-003 never compares an exception against the production return type) |
+| 24 | *(open items)* | `synthesize_mock_contract` emitted `undefined` for `Record<K, V>` / `NodeJS.ProcessEnv` index-signature types (no named properties in `getPropertiesOfType`) | `{}` is the type-correct placeholder; index-signature detection added to both the syntax-only and checker paths |
+| 25 | *(open items)* | synthesized contracts emitted bare `(x)` for unannotated parameters | `paramTypeText` now infers `number`/`string`/`boolean`/`unknown[]`/`Record<string, unknown>` from the default initializer; `unknown` only when no signal exists |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -74,7 +77,8 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
   `src/Scan/LanguageWorkerPool.php`) and `PDO`/`PDOStatement` (PHP built-ins, correctly skipped).
 - **`willThrowException` now recognized** as a config call (like `willReturnCallback`), which
   removed 3 of the TAUT-005 warnings (the throw-configured `$pool`/`$pdo` mocks are now marked
-  reachable instead of zero-reach).
+  reachable instead of zero-reach). The thrown exception expression is now also captured in the
+  IR as mock-level config (row 23).
 - **Remaining findings are the 6 genuine `assertSame(true, true)` sentinels** — true positives
   (the author's own `// sentinel` comments).
 - **DRIFT-001 / DRIFT-003 drill-down: 0 issues** on the full corpus — the drift rules produce no
@@ -111,15 +115,20 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
 
 ## 5. Open / candidate improvements
 
-1. PHP: consider recording `willThrowException`'s exception value in the IR (currently marked
-   reachable only, consistent with `willReturnCallback`).
+1. ✅ PHP `willThrowException`'s exception value is now recorded in the IR as mock-level config
+   (`configuredValues`, api `willThrowException`) — implemented. It is deliberately **not** a
+   return value, so DRIFT-003 never compares an exception against the production return type.
+   (Left: surfacing the exception value in the `synthesize_mock_contract` PHP templates.)
 2. ✅ TS synthesis now resolves **named** interface/class returns through the type checker
    (`tsReturnExampleChecked`), so `User` / `Promise<User>` emit data-shape literals
-   (`mockResolvedValue({ id: 0, … })`) instead of `undefined`. Remaining nuance: optional members
-   are included with their example value (`zip?: number` → `zip: 0`), and method-only inline
-   types emit `{}`.
+   (`mockResolvedValue({ id: 0, … })`) instead of `undefined`. `Record<K, V>` / index-signature
+   types (`NodeJS.ProcessEnv`) emit `{}`. Remaining nuance: optional members are included with
+   their example value (`zip?: number` → `zip: 0`), and method-only inline types emit `{}`.
 3. MOCK-001 (over-mocking) remains a heuristic warning — it intentionally flags mock-heavy unit
    tests; tuning its threshold or production-assertion counting is a judgment call, not a bug.
 4. TAUT-004's last survivor is a dynamic-`import()` + indirect signal-handler invocation
    (`(sigCall[1])()` from a spy's `.mock.calls`) — statically untraceable without full
    interprocedural analysis.
+5. The pre-existing git-diff MCP integration test flaked under parallel coverage (5s default
+   timeout); raised to 20s for that one test — it no longer flakes across three full coverage
+   runs.

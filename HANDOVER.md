@@ -1,6 +1,6 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 255 tests passing, ~86% statements / ~84% branches / ~93% functions,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 257 tests passing, ~86% statements / ~84% branches / ~93% functions,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials. Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
@@ -345,6 +345,17 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   surface on itself (`doctor`, `rules`, `init` template, `audit --json` — all good) and verified
   the new interface/generic synthesis against real Chaos-MCP types (`ExecResult`,
   `ExecuteOptions`) — output is valid, type-appropriate TypeScript.
+- **Last verified (round 14, open items):** closed three open improvements — (a) PHP
+  `willThrowException` now records the thrown expression in the IR as mock-level config
+  (deliberately not a return value, so DRIFT-003 never compares an exception against the
+  production return type); (b) `synthesize_mock_contract` emits `{}` for `Record<K, V>` /
+  index-signature types (`NodeJS.ProcessEnv`) in both the syntax-only and checker paths (was
+  `undefined`); (c) unannotated method parameters in synthesized contracts infer their type from
+  the default initializer (`paramTypeText`: `number`/`string`/`boolean`/`unknown[]`/`Record<string,
+  unknown>`). Also raised the git-diff MCP integration test's timeout to 20s — the pre-existing
+  parallel-coverage flake (5000ms) is gone across three full coverage runs. Full gate green: 257
+  tests, typecheck/lint/format clean, coverage 85.8% stmts / 84.4% branches / 92.9% funcs,
+  self-audit clean. Knossos re-audit unchanged: 6 genuine sentinel errors, 0 new findings.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
   real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos plus itself (dogfooding) and fixing every
   false-positive/perf gap they expose, keeping `docs/11-real-world-findings.md` as the live
@@ -372,10 +383,11 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   PHP constructor/call/return hand-off reachability (`return`/`new`/`call` walk in `extractMocks`), the
   named-type object-shape synthesis (`tsReturnExampleChecked` + `getProgram` in `synthesizeContract`), the
   dynamic-`import()` production-call counting in `productionCalls`, the string-literal-union
-  synthesis fix (`primitiveExample` + `resolveNamedType` + checker-aware type literals), the
-  generic/interface synthesis support (generics concretized to `unknown`, `Partial<Box<unknown>>`,
-  interface targets with data values + method stubs), the union `null`-as-`LiteralType` fix, or
-  the git subdir-root path normalization (`relToRoot` strip/prepend).
+  synthesis fix (`primitiveExample` + `resolveNamedType` + checker-aware type literals),  the generic/interface synthesis support (generics concretized to `unknown`, `Partial<Box<unknown>>`,
+  interface targets with data values + method stubs), the union `null`-as-`LiteralType` fix, the
+  git subdir-root path normalization (`relToRoot` strip/prepend), the PHP `willThrowException`
+  IR-value capture, the `Record`/index-signature `{}` synthesis, the synthesis param-default type
+  inference, or the git-diff MCP test timeout bump (20s) for the parallel-coverage flake.
 
 ---
 
@@ -403,7 +415,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 25 files, 255 tests, all pass
+npm test                 # 25 files, 257 tests, all pass
 npm run test:coverage    # v8: ~86% statements / ~84% branches / ~93% functions (floors 80/75/90/80)
 npm run lint             # eslint .  — clean
 npm run format:check     # prettier --check .  — clean
