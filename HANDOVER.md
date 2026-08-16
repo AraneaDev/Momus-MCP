@@ -6,6 +6,12 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ## Current checkpoint — 2026-08-16
 
+- **Last verified (branch protection live):** `main` is protected on GitHub — enforced for
+  admins too (no direct pushes, including for us; every change goes through a PR), required
+  checks `commit-hygiene` + `conventional-title` + `release-config` + `test` with branches
+  required up-to-date (strict), no review required (solo repo), force-push and branch
+  deletion blocked. The release-please bot's version PRs pass the same gates. docs/06 §6.5.1
+  updated to the real job set.
 - **Last verified (live release flow):** repo pushed to `https://github.com/AraneaDev/Momus-MCP`
   (first push ever — CI had never run before, which is how several latent CI bugs survived).
   Release-please now works end-to-end against the real GitHub API: **v0.0.1** bootstrapped
