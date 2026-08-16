@@ -1,6 +1,6 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 210 tests passing, ~84% statements / ~82% branches,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 211 tests passing, ~83% statements / ~82% branches,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials. Real-codebase validation done against `/root/Chaos-MCP`.**
 
@@ -215,6 +215,17 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   digest so a tool upgrade invalidates cached IR (was serving stale IR across a parser change).
   Post-fix Chaos-MCP audit: 1 error (TAUT-001 self-comparison, an intentional determinism test
   `expect(f(x)).toBe(f(x))`) + 49 warnings — the 3 DRIFT-005 false positives are gone.
+- **Last verified (real codebase, round 2):** git-diff scope on the real repo (`verify_mock_drift`
+  `scope:git-diff baseRef:HEAD~10`) correctly surfaced 6 DRIFT-006 stale-mock warnings for
+  `estimate-handler.test.ts`/`handler-container.test.ts` — the mocked production modules
+  (`core/estimate.ts`, `estimate-handler.ts`, `utils/execution.ts`) did change in that range while
+  the mock files did not (true positives). `synthesize_mock_contract` on `src/utils/deadline.ts`
+  now emits type-appropriate values (`elapsedMs`/`remainingMs` → `0`, `expired` → `false`) via a new
+  shared `tsReturnExample` (exported from `@momus/parser-typescript`), closing the last
+  `undefined`-placeholder gap for the TS path. Confirmed remaining conservative warnings:
+  TAUT-005/TAUT-006 still fire on mocks/spies whose production call path is hidden behind an opaque
+  cast/object (e.g. `vi.spyOn(signal, 'removeEventListener')` asserted via the SUT) — by-design
+  warnings, not errors.
 - **Active task:** real-world validation against a large external TypeScript codebase is complete;
   the functional build (Phases 1–3), persistent IR cache, ESLint+Prettier, coverage tooling, and the
   footer-free/identity-standardized history are shipped and green. Phase 4 publishing (npm/MCP
@@ -229,7 +240,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   reassignment, the test-coverage tooling, the contract-synthesis public-member/`?`-ordering
   fixes, the persistent IR cache, the ESLint/Prettier setup, the real-codebase Chaos-MCP
   validation, the CLI `positionalArgs` flag-value fix, the DRIFT-005 full-export-name fix, the
-  barrel re-export extraction, or the `IR_SCHEMA_VERSION` cache invalidation.
+  barrel re-export extraction, the `IR_SCHEMA_VERSION` cache invalidation, or the
+  `tsReturnExample` type-derived synthesize return values.
 
 ---
 
@@ -242,7 +254,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 - **Spec:** `docs/` (9 spec docs + validation report + build plan — the authoritative source).
 - **Implementation:** 5 npm-workspace packages (`@momus/core`, `@momus/parser-typescript`,
   `@momus/mcp-server`, `@momus/cli`), `@momus/parser-php`, plus `packages/action` composite
-  GitHub Action — 210 vitest tests, GitHub Actions CI, self-audit gate.
+  GitHub Action — 211 vitest tests, GitHub Actions CI, self-audit gate.
 - **Git.** Six commits on `main`, no remote: `066ac32` (initial scaffold) → `0f09dfa` (full build
   through Phase 3 + Phase 4 scaffolding) → `8552277` (docs: etymology/handover) → `8d3ef61`
   (enforce a footer-free commit history) → `77df24a` (Node globals for the verify script) →
@@ -260,7 +272,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 22 files, 210 tests, all pass
+npm test                 # 22 files, 211 tests, all pass
 npm run test:coverage    # v8: ~85% statements / ~82% branches (floors 80/75/90/80)
 npm run lint             # eslint .  — clean
 npm run format:check     # prettier --check .  — clean
@@ -456,8 +468,12 @@ in `audit.ts` — only inline comments are. (Verify before relying on it.)
    is now covered by a root-level no-`tsconfig.json` fixture; dynamic names remain conservative.
 4. **Jest coverage** — `jest.fn`, `jest.mock` factory/helper, and `jest.requireMock` paths are
    covered; broader Jest-specific semantics remain open.
-5. **`synthesize_mock_contract`** returns `undefined` placeholders for return values
-   (it does not yet derive literal examples from types).
+5. **`synthesize_mock_contract`** derives type-appropriate placeholder return values for the
+   TypeScript path (`tsReturnExample`: number→`0`, string→`''`, boolean→`false`, arrays→`[]`,
+   `Promise<T>`→`Promise.resolve(undefined)`, unions→first non-nullish member; class/interface/
+   unknown→`undefined`), matching the PHP path's `phpReturnExample`. The rich `vi.fn<[...]>` /
+   `mockResolvedValue({...})` / `expect.any(...)` shape shown in `docs/04` §4.4.3 is still
+   aspirational (not emitted).
 6. **Perf budgets** (§2.7) are asserted nowhere yet; whole-workspace `ts.createProgram` per
    audit. The chokidar watcher invalidates the `ts.Program` cache on change (`serve --watch`), and
    the persistent IR cache (`better-sqlite3`, `.momus/cache/`) serves warm parses for an unchanged

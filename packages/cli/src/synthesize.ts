@@ -2,6 +2,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as ts from 'typescript';
+import { tsReturnExample } from '@momus/parser-typescript';
 
 export function synthesizeForCli(
   root: string,
@@ -31,16 +32,17 @@ export function synthesizeForCli(
         .map((p) => `${p.name.getText(sf)}${p.questionToken ? '?' : ''}${p.type ? ': ' + p.type.getText(sf) : ''}`)
         .join(', ');
       const ret = m.type ? m.type.getText(sf) : 'unknown';
+      const retVal = tsReturnExample(m.type);
       lines.push(`  // ${name}(${params}): ${ret}`);
       if (framework === 'vitest' || framework === 'jest') {
-        lines.push(`  ${name}: ${framework === 'vitest' ? 'vi' : 'jest'}.fn().mockReturnValue(undefined),`);
+        lines.push(`  ${name}: ${framework === 'vitest' ? 'vi' : 'jest'}.fn().mockReturnValue(${retVal}),`);
       } else {
-        lines.push(`  ${name}: (${params}) => undefined,`);
+        lines.push(`  ${name}: (${params}) => ${retVal},`);
       }
     } else if (ts.isGetAccessorDeclaration(m)) {
       const name = m.name.getText(sf);
       lines.push(`  // get ${name}(): ${m.type?.getText(sf) ?? 'unknown'}`);
-      lines.push(`  get ${name}() { return undefined; },`);
+      lines.push(`  get ${name}() { return ${tsReturnExample(m.type)}; },`);
     }
   }
   const template = [

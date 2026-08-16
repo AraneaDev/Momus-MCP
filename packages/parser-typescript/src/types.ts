@@ -66,3 +66,43 @@ export function signatureToIR(
     typeParams: (m.typeParameters ?? []).map((t) => t.name.text),
   };
 }
+
+/**
+ * A minimal, type-appropriate placeholder return expression for a synthesized TS stub.
+ * Primitives get real literals, collections get empty instances, and class/interface/
+ * unknown types fall back to `undefined` (a safe literal cannot be constructed).
+ */
+export function tsReturnExample(type: ts.TypeNode | undefined): string {
+  if (!type) return 'undefined';
+  const K = ts.SyntaxKind;
+  const kw = type.kind;
+  if (kw === K.VoidKeyword || kw === K.UndefinedKeyword || kw === K.NeverKeyword) return 'undefined';
+  if (kw === K.NullKeyword) return 'null';
+  if (kw === K.NumberKeyword || kw === K.BigIntKeyword) return '0';
+  if (kw === K.StringKeyword) return "''";
+  if (kw === K.BooleanKeyword) return 'false';
+  if (kw === K.AnyKeyword || kw === K.UnknownKeyword) return 'undefined';
+  if (ts.isLiteralTypeNode(type)) {
+    const lit = type.literal;
+    if (ts.isStringLiteral(lit)) return JSON.stringify(lit.text);
+    if (ts.isNumericLiteral(lit)) return lit.text;
+    if (lit.kind === K.TrueKeyword) return 'true';
+    if (lit.kind === K.FalseKeyword) return 'false';
+    if (lit.kind === K.NullKeyword) return 'null';
+    return 'undefined';
+  }
+  if (ts.isArrayTypeNode(type) || ts.isTupleTypeNode(type)) return '[]';
+  if (ts.isUnionTypeNode(type)) {
+    const nonNullish = type.types.find((t) => t.kind !== K.NullKeyword && t.kind !== K.UndefinedKeyword);
+    return nonNullish ? tsReturnExample(nonNullish) : 'undefined';
+  }
+  if (ts.isTypeReferenceNode(type)) {
+    const name = type.typeName.getText();
+    if (name === 'Array' || name === 'ReadonlyArray') return '[]';
+    if (name === 'Promise') return 'Promise.resolve(undefined)';
+    if (name === 'Date') return 'new Date()';
+    if (name === 'RegExp') return '/./';
+    if (name === 'Map' || name === 'Set' || name === 'WeakMap' || name === 'WeakSet') return `new ${name}()`;
+  }
+  return 'undefined';
+}

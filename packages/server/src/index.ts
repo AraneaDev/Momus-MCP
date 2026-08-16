@@ -23,7 +23,7 @@ import {
   type TypeIR,
   type ParseCache,
 } from '@momus/core';
-import { TypeScriptParser, invalidateProgramCache } from '@momus/parser-typescript';
+import { TypeScriptParser, invalidateProgramCache, tsReturnExample } from '@momus/parser-typescript';
 import { PhpParser } from '@momus/parser-php';
 import { openParseCache } from './cache.ts';
 
@@ -509,7 +509,7 @@ function synthesizeContract(
       const ret = m.type ? m.type.getText(sf) : 'unknown';
       const sig = `${name}(${params}): ${ret}`;
       contract.push({ member: name, signature: sig, returnType: ret });
-      const retVal = includeReturnValues ? 'undefined' : 'undefined';
+      const retVal = includeReturnValues ? tsReturnExample(m.type) : 'undefined';
       lines.push(`  // ${sig}`);
       if (framework === 'vitest' || framework === 'jest') {
         lines.push(`  ${name}: ${framework === 'vitest' ? 'vi' : 'jest'}.fn().mockReturnValue(${retVal}),`);
@@ -524,7 +524,7 @@ function synthesizeContract(
         returnType: m.type?.getText(sf) ?? 'unknown',
       });
       lines.push(`  // get ${name}(): ${m.type?.getText(sf) ?? 'unknown'}`);
-      lines.push(`  get ${name}() { return undefined; },`);
+      lines.push(`  get ${name}() { return ${tsReturnExample(m.type)}; },`);
     }
   }
   const template = [

@@ -53,8 +53,8 @@ describe('synthesizeForCli', () => {
       expect(out).toHaveProperty('template');
       const template = (out as { template: string }).template;
       expect(template).toContain('const svcMock = {');
-      expect(template).toContain('totalFor: vi.fn().mockReturnValue(undefined),');
-      expect(template).toContain('get label() { return undefined; },');
+      expect(template).toContain('totalFor: vi.fn().mockReturnValue(0),');
+      expect(template).toContain("get label() { return ''; },");
       expect(template).toContain('} satisfies Partial<Svc>;');
       // private members are not surfaced as stubbable surface
       expect(template).not.toContain('hidden');
@@ -99,6 +99,42 @@ describe('synthesizeForCli', () => {
       const out = synthesizeForCli(dir, 'svc.ts', 'Svc', 'vitest');
       const template = (out as { template: string }).template;
       expect(template).toContain('// totalFor(id: string, opts?: number): number');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('derives type-appropriate placeholder return values from the return type', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-synth-types-'));
+    try {
+      writeFileSync(
+        join(dir, 'typed.ts'),
+        [
+          'export class Typed {',
+          '  num(): number { return 0; }',
+          "  str(): string { return ''; }",
+          '  flag(): boolean { return false; }',
+          '  list(): string[] { return []; }',
+          '  maybe(): number | undefined { return undefined; }',
+          '  late(): Promise<number> { return Promise.resolve(0); }',
+          '  custom(): Widget { return {} as Widget; }',
+          '  voidy(): void {}',
+          '}',
+          'export interface Widget { id: number }',
+          '',
+        ].join('\n'),
+      );
+      const out = synthesizeForCli(dir, 'typed.ts', undefined, 'vitest');
+      const template = (out as { template: string }).template;
+      expect(template).toContain('num: vi.fn().mockReturnValue(0),');
+      expect(template).toContain("str: vi.fn().mockReturnValue(''),");
+      expect(template).toContain('flag: vi.fn().mockReturnValue(false),');
+      expect(template).toContain('list: vi.fn().mockReturnValue([]),');
+      expect(template).toContain('maybe: vi.fn().mockReturnValue(0),');
+      expect(template).toContain('late: vi.fn().mockReturnValue(Promise.resolve(undefined)),');
+      // custom class/interface types cannot be safely literal-constructed → undefined
+      expect(template).toContain('custom: vi.fn().mockReturnValue(undefined),');
+      expect(template).toContain('voidy: vi.fn().mockReturnValue(undefined),');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
