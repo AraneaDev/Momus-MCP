@@ -422,7 +422,11 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
       if (api && ts.isPropertyAccessExpression(n.expression)) {
         const base = n.expression.expression;
         const owner = rootOfCall(base);
-        const id = owner ? instanceIds.get(owner) : undefined;
+        // position-aware: the flat `instanceIds` map resolves every use of a name to its last
+        // binding; the same `spy`/`mock` name is reused across test scopes, so resolve against
+        // the nearest binding at or before this config site.
+        const line = sf.getLineAndCharacterOfPosition(n.getStart()).line + 1;
+        const id = owner ? resolveInstance(owner, line) : undefined;
         const mock = id ? mocks.find((m) => m.id === id) : undefined;
         if (mock && mock.pattern !== 'vi.mocked-instance' && owner) {
           const value = n.arguments[0];
@@ -435,6 +439,20 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
           };
           if (ts.isIdentifier(base)) {
             mock.configuredValues.push(configured);
+            // `const spy = vi.spyOn(x, 'm'); spy.mockReturnValue(v)` — the config targets the
+            // single spied member, so attach it there too. Otherwise the type-aware pass below
+            // rebuilds `configuredValues` from member returnValues only and this value is
+            // dropped — DRIFT-003's assignability check would never see it.
+            const isSpy = mock.pattern === 'vi.spyOn' || mock.pattern === 'jest.spyOn';
+            const spyMember = isSpy ? mock.stubbedMembers[0] : undefined;
+            if (
+              spyMember &&
+              !spyMember.returnValues.some(
+                (v) => v.span.startLine === configured.span.startLine && v.span.startCol === configured.span.startCol,
+              )
+            ) {
+              spyMember.returnValues.push(configured);
+            }
           } else if (ts.isPropertyAccessExpression(base)) {
             const member = mock.stubbedMembers.find((s) => s.name === base.name.text);
             if (
@@ -495,36 +513,20 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
       ts.forEachChild(n, collect);
     };
     collect(sf);
-    // assignability via checker
-    for (const stub of members.values()) {
-      const sig = ctx.typeAware ? classMethodSignature(handle, mock.target.symbolId, stub.name) : undefined;
-      for (const v of stub.returnValues) {
-        if (v.value === undefined) continue;
-        if (!sig) {
-          v.assignable = 'unknown';
-          continue;
-        }
-        const retType = unwrapPromise(sig.checker, sig.returnType);
-        // generic type parameters (e.g. query<T>(): Promise<T[]>) are not statically checkable
-        if (containsTypeParameter(sig.checker, retType)) {
-          v.assignable = 'unknown';
-          continue;
-        }
-        const valNode = findNodeForSpan(sf, v.span);
-        if (!valNode) {
-          v.assignable = 'unknown';
-          continue;
-        }
-        const valType = sig.checker.getTypeAtLocation(valNode);
-        try {
-          v.assignable = sig.checker.isTypeAssignableTo(valType, retType);
-        } catch {
-          v.assignable = 'unknown';
-        }
-      }
-    }
+    computeReturnAssignability(handle, sf, mock.target.symbolId, [...members.values()], ctx.typeAware);
     mock.stubbedMembers = [...members.values()];
     mock.configuredValues = [...members.values()].flatMap((s) => s.returnValues);
+  }
+
+  // ---- DRIFT-003 assignability for vi.spyOn/jest.spyOn mocks with chained configs.
+  // Configs bound through a const (`const spy = vi.spyOn(x, 'm'); spy.mockReturnValue(v)`)
+  // were previously attached at mock level only and dropped when the instance-mock pass above
+  // rebuilt `configuredValues` from member return values — the assigned value never reached the
+  // checker, so return-type mismatches on spies were invisible.
+  for (const mock of mocks) {
+    if (mock.pattern !== 'vi.spyOn' && mock.pattern !== 'jest.spyOn') continue;
+    if (!mock.target?.symbolId) continue;
+    computeReturnAssignability(handle, sf, mock.target.symbolId, mock.stubbedMembers, ctx.typeAware);
   }
   // drop SUT instances that ended up with no configured members (and unregister them
   // so dataflow treats them as production, not mocks)
@@ -584,6 +586,26 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
           const mock = mocks.find((m) => m.id === oid);
           if (mock && !mock.invocationSites.some((s) => s.startLine === pos(n).line + 1)) {
             mock.invocationSites.push(mkSpan(n));
+          }
+        }
+        // A member call on a spied-on object runs the spy: `svc.totalCents()` invokes the
+        // spy configured via `vi.spyOn(svc, 'totalCents')`. The callee base is not an
+        // argument, so mark the spy reached here (mirrors the spiedObjects hand-off logic).
+        if (ts.isPropertyAccessExpression(n.expression) && ts.isIdentifier(base)) {
+          const memberName = n.expression.name.text;
+          const spies = spiedObjects.get(base.text);
+          for (const id of spies ?? []) {
+            const spy = mocks.find((m) => m.id === id);
+            // only the spy on this exact member is invoked (`service.totalFor()` does not
+            // reach a spy on `totalForX`)
+            if (
+              spy &&
+              spy.target?.kind === 'instance-member' &&
+              spy.target.memberName === memberName &&
+              !spy.invocationSites.some((s) => s.startLine === pos(n).line + 1)
+            ) {
+              spy.invocationSites.push(mkSpan(n));
+            }
           }
         }
       }
@@ -786,6 +808,8 @@ function findInstanceOwner(baseText: string, _sf: ts.SourceFile): string | undef
 
 /** Best-effort static shape of a configured value (for reporting). */
 function literalShape(n: ts.Expression, sf: ts.SourceFile): TypeIR | undefined {
+  // unwrap casts/parens: `'nope' as unknown as number` should still yield the string literal
+  if (ts.isAsExpression(n) || ts.isParenthesizedExpression(n)) return literalShape(n.expression, sf);
   if (ts.isStringLiteral(n)) return { kind: 'literal', value: n.text };
   if (ts.isNumericLiteral(n)) return { kind: 'literal', value: Number(n.text) };
   if (n.kind === ts.SyntaxKind.TrueKeyword) return { kind: 'literal', value: true };
@@ -798,10 +822,56 @@ function literalShape(n: ts.Expression, sf: ts.SourceFile): TypeIR | undefined {
   return undefined;
 }
 
-function findNodeForSpan(sf: ts.SourceFile, s: SourceSpan): ts.Expression | undefined {
+/**
+ * The configured-value expression for a config span: climb from the deepest node to the
+ * enclosing call (`spy.mockReturnValue(<value>)`) and take its first argument. Spanning the
+ * whole config call — and thus resolving the callee identifier (`spy`) — would type-check the
+ * mock function itself against the production return type and fire on every spy.
+ */
+function configuredValueNode(sf: ts.SourceFile, s: SourceSpan): ts.Expression | undefined {
   const pos = sf.getPositionOfLineAndCharacter(s.startLine - 1, s.startCol - 1);
-  const node = findDeepest(sf, pos);
-  return node && ts.isExpression(node) ? node : undefined;
+  let node: ts.Node | undefined = findDeepest(sf, pos);
+  while (node && !ts.isCallExpression(node)) node = node.parent;
+  const arg = node?.arguments[0];
+  return arg && ts.isExpression(arg) ? arg : undefined;
+}
+
+/** Compute DRIFT-003 assignability for stub return values against the production signature. */
+function computeReturnAssignability(
+  handle: ReturnType<typeof getProgram>,
+  sf: ts.SourceFile,
+  targetSymbolId: string,
+  stubs: StubbedMemberIR[],
+  typeAware: boolean,
+): void {
+  if (!typeAware) return;
+  for (const stub of stubs) {
+    const sig = classMethodSignature(handle, targetSymbolId, stub.name);
+    for (const v of stub.returnValues) {
+      if (v.value === undefined) continue;
+      if (!sig) {
+        v.assignable = 'unknown';
+        continue;
+      }
+      const retType = unwrapPromise(sig.checker, sig.returnType);
+      // generic type parameters (e.g. query<T>(): Promise<T[]>) are not statically checkable
+      if (containsTypeParameter(sig.checker, retType)) {
+        v.assignable = 'unknown';
+        continue;
+      }
+      const valNode = configuredValueNode(sf, v.span);
+      if (!valNode) {
+        v.assignable = 'unknown';
+        continue;
+      }
+      const valType = sig.checker.getTypeAtLocation(valNode);
+      try {
+        v.assignable = sig.checker.isTypeAssignableTo(valType, retType);
+      } catch {
+        v.assignable = 'unknown';
+      }
+    }
+  }
 }
 
 function findDeepest(n: ts.Node, pos: number): ts.Node | undefined {

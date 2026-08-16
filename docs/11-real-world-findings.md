@@ -45,6 +45,10 @@
 | 24 | *(open items)* | `synthesize_mock_contract` emitted `undefined` for `Record<K, V>` / `NodeJS.ProcessEnv` index-signature types (no named properties in `getPropertiesOfType`) | `{}` is the type-correct placeholder; index-signature detection added to both the syntax-only and checker paths |
 | 25 | *(open items)* | synthesized contracts emitted bare `(x)` for unannotated parameters | `paramTypeText` now infers `number`/`string`/`boolean`/`unknown[]`/`Record<string, unknown>` from the default initializer; `unknown` only when no signal exists |
 | 26 | *(coverage pass)* | PHPDoc `@return array<int, Invoice>` (generics containing spaces) was truncated to `array<int,` — the first-whitespace token split | wrong TypeIR (`named: 'array<int,'` instead of `array` of `Invoice`); `docTypeFromRest` now consumes tokens until a `$` or a description word |
+| 27 | *(dogfood/coverage)* | TS DRIFT-003 was dead for `vi.spyOn` configs: spy-bound configs (`const spy = vi.spyOn(x, 'm'); spy.mockReturnValue(v)`) were attached at mock level only, then **wiped** when the instance-mock pass rebuilt `configuredValues` from member return values — the assigned value never reached the checker | `spy.mockReturnValue('nope')` on a `number`-returning method was silent; now the spyOn assignability pass computes DRIFT-003 (fixture: planted `'nope'` fires, healthy `42` quiet) |
+| 28 | *(dogfood/coverage)* | `collectAssignedConfigs` resolved config owners through the **flat** `instanceIds` map, so a name reused across test scopes (`spy`) attached configs to the last binding | wrong-mock config attachment; now position-aware (`resolveInstance` nearest-binding) |
+| 29 | *(dogfood/coverage)* | `literalShape` didn't unwrap casts, so `mockReturnValue('x' as T)` yielded no value | `'x' as unknown as number` produced `value: undefined`; casts/parens now unwrap |
+| 30 | *(dogfood)* | `momus hook --install --root DIR` (and every non-`serve` command) ignored `--root` — `main` used `process.cwd()` | the hook installer wrote `.git/hooks/pre-commit` into the **wrong repo**; `--root` is now honored by every command |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -143,3 +147,15 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
 7. PHP parser coverage raised 88.4→96.6% stmts / 100% funcs via new fixtures: `createPartialMock`
    member lists, `createConfiguredMock` array values, PHPDoc type-syntax variants, and a
    deliberately broken file exercising the SYS-001 parse-error diagnostic.
+8. ✅ TS DRIFT-003 now fires for spyOn-bound configs (rows 27–29): a new `computeReturnAssignability`
+   pass runs for `vi.spyOn`/`jest.spyOn` mocks (previously only `vi.mocked` instances), the
+   value node resolves to the config **argument** (not the callee), owner resolution is
+   position-aware, and casts are unwrapped. Planted fixture (`mockReturnValue('nope')` on
+   `totalCents(): number`) → DRIFT-003 warning; healthy twin quiet.
+9. ✅ Member calls on a spied-on object now mark the matching spy reached
+   (`svc.totalCents()` invokes the `vi.spyOn(svc, 'totalCents')` spy) — removes TAUT-005
+   false positives on the standard spy+call pattern while preserving TAUT-006 (member names
+   must match, so `service.totalFor()` never satisfies a spy on `totalForX`).
+10. ✅ `momus --root DIR` is honored by every command (row 30): audit/drift/hook/contract/rules/
+    init/doctor/serve run against DIR from any cwd (mirrors the MCP server's `MOMUS_ROOT`).
+    Regression test runs the bin from an empty cwd with `--root` pointing at a target repo.

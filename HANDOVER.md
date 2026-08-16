@@ -1,6 +1,6 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 261 tests passing, ~87% statements / ~85% branches / ~94% functions,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 262 tests passing, ~88% statements / ~85% branches / ~94% functions,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials. Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
@@ -369,6 +369,22 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   the 5s default that flaked under parallel coverage. Full gate green: 261 tests, typecheck/lint/
   format clean, coverage 87.3% stmts / 84.9% branches / 93.8% funcs, self-audit clean. Knossos
   re-audit unchanged: 6 genuine sentinel errors, 0 diagnostics.
+- **Last verified (round 16, dogfood + coverage):** dogfooding surfaced a real CLI gap and the
+  coverage pass surfaced a dead DRIFT-003 path. (a) `momus --root DIR` is now honored by every
+  command (was `serve`-only): `momus hook --install --root X` previously wrote the pre-commit
+  hook into the **cwd** repo; regression test runs the bin from an empty cwd against a target
+  repo. (b) TS DRIFT-003 was dead for `vi.spyOn` configs: spy-bound configs were dropped when
+  the instance-mock pass rebuilt `configuredValues`, so `spy.mockReturnValue('nope')` on a
+  `number`-returning method never fired. Fixed via a shared `computeReturnAssignability` pass
+  (now runs for spies + instances), position-aware owner resolution, cast unwrapping in
+  `literalShape`, and value-node resolution to the config **argument**. (c) member calls on a
+  spied-on object now mark the matching spy reached (`svc.totalCents()` satisfies the
+  `vi.spyOn(svc, 'totalCents')` spy; member names must match, so TAUT-006 stays intact).
+  Planted `assignability.test.ts` fixture fires exactly DRIFT-003@9; golden test updated (8
+  issues, 6 errors / 2 warnings). Full gate green: 262 tests, typecheck/lint/format clean,
+  coverage 88.0% stmts / 85.3% branches / 94.5% funcs, self-audit clean. Chaos re-audit
+  unchanged: **0 errors / 4 MOCK-001** (no DRIFT-003 false positives). Knossos unchanged: 6
+  sentinel errors.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
   real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos plus itself (dogfooding) and fixing every
   false-positive/perf gap they expose, keeping `docs/11-real-world-findings.md` as the live
@@ -404,8 +420,11 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   inline-literal method-stub synthesis (`vi.fn()` for method signatures/function-typed
   properties/named-interface methods), the PHP `@throws` extraction + synth surfacing
   (`SignatureIR.throws`, IR schema v3), the PHPDoc generic-with-spaces tokenizer fix
-  (`docTypeFromRest`), the `createPartialMock`/`createConfiguredMock` fixtures, or the global
-  `testTimeout: 15s` for parallel-coverage headroom.
+  (`docTypeFromRest`), the  `createPartialMock`/`createConfiguredMock` fixtures, the global
+  `testTimeout: 15s` for parallel-coverage headroom, the CLI `--root` support for all commands,
+  the TS spyOn DRIFT-003 assignability pass (`computeReturnAssignability` + position-aware
+  owner resolution + cast-unwrapping `literalShape` + argument-value resolution), the
+  spied-object member-call reachability link, or the `assignability.test.ts` golden fixture.
 
 ---
 
@@ -433,7 +452,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 25 files, 261 tests, all pass
+npm test                 # 25 files, 262 tests, all pass
 npm run test:coverage    # v8: ~86% statements / ~84% branches / ~93% functions (floors 80/75/90/80)
 npm run lint             # eslint .  — clean
 npm run format:check     # prettier --check .  — clean

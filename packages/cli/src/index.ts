@@ -42,14 +42,15 @@ Usage:
   momus init [--force]
   momus doctor
 
-Exit codes: 0 clean · 1 findings · 2 usage/config error · 3 internal error
+All commands accept --root DIR to audit/act against DIR instead of the working directory
+(mirrors the MCP server's MOMUS_ROOT). Exit codes: 0 clean · 1 findings · 2 usage/config error · 3 internal error
 `;
 
-export function diffOptions(argv: string[]): { baseRef: string; changedPaths: string[] } | undefined {
+export function diffOptions(argv: string[], root: string): { baseRef: string; changedPaths: string[] } | undefined {
   if (!argv.includes('--git-diff')) return undefined;
   const baseRef = argValue(argv, '--base');
   if (!baseRef) throw new Error('--git-diff requires --base <ref>');
-  return { baseRef, changedPaths: gitChangedPaths(process.cwd(), baseRef) };
+  return { baseRef, changedPaths: gitChangedPaths(root, baseRef) };
 }
 
 /** One JSON object per issue (JSONL) for editor plugins — workspace-relative paths, deterministic key order. */
@@ -263,7 +264,10 @@ function positionalArgs(argv: string[]): string[] {
 
 async function main(argv: string[]): Promise<number> {
   const cmd = argv[0];
-  const root = process.cwd();
+  // `--root DIR` is honored by every command (not just serve): audit/drift/hook/contract run
+  // against DIR while the CLI process itself may live anywhere (mirrors the MCP server's
+  // MOMUS_ROOT). Falls back to the working directory.
+  const root = argValue(argv, '--root') ?? process.cwd();
   const json = argv.includes('--json');
   const summary = argv.includes('--summary');
 
@@ -275,7 +279,7 @@ async function main(argv: string[]): Promise<number> {
       const maxIssues = Number(argValue(argv, '--max-issues') ?? '50');
       const config = loadConfig(root);
       const parser = createWorkspaceParser();
-      const diff = diffOptions(argv);
+      const diff = diffOptions(argv, root);
       const cache = openParseCache(root, config.cache);
       const engine = new AuditEngine({
         root,
@@ -311,7 +315,7 @@ async function main(argv: string[]): Promise<number> {
     case 'drift': {
       const config = loadConfig(root);
       const parser = createWorkspaceParser();
-      const diff = diffOptions(argv);
+      const diff = diffOptions(argv, root);
       const engine = new AuditEngine({
         root,
         parser,
@@ -344,7 +348,7 @@ async function main(argv: string[]): Promise<number> {
       const maxIssues = Number(argValue(argv, '--max-issues') ?? '50');
       const config = loadConfig(root);
       const parser = createWorkspaceParser();
-      const diff = diffOptions(argv);
+      const diff = diffOptions(argv, root);
       const engine = new AuditEngine({
         root,
         parser,
@@ -526,7 +530,8 @@ async function main(argv: string[]): Promise<number> {
     }
 
     case 'serve': {
-      const rootDir = argValue(argv, '--root') ?? root;
+      // `root` already includes `--root` (resolved in main); keep the alias for clarity.
+      const rootDir = root;
       if (argv.includes('--watch')) {
         watchWorkspace(rootDir); // invalidate the ts.Program cache on source changes
         process.stderr.write(`momus serve: watching ${rootDir} for changes\n`);

@@ -27,6 +27,7 @@ describe('golden audit — planted violations fixture', () => {
     const found = result.issues.map((i) => `${i.rule}@${i.span.startLine}`).sort();
     expect(found).toEqual([
       'DRIFT-001@16', // spyOn on totalForX which does not exist
+      'DRIFT-003@9', // spy-bound mockReturnValue('nope') not assignable to totalCents(): number
       'TAUT-002@11', // echoes the stubbed value 42 against itself
       'TAUT-002@18', // echoes the beforeEach value 42 against itself
       'TAUT-002@22', // echoes the beforeAll value 7 against itself
@@ -45,7 +46,12 @@ describe('golden audit — planted violations fixture', () => {
 
   it('reports correct severities', () => {
     const byRule = Object.fromEntries(result.issues.map((i) => [i.rule, i.severity]));
-    expect(byRule).toEqual({ 'DRIFT-001': 'error', 'TAUT-002': 'error', 'TAUT-006': 'warning' });
+    expect(byRule).toEqual({
+      'DRIFT-001': 'error',
+      'DRIFT-003': 'warning',
+      'TAUT-002': 'error',
+      'TAUT-006': 'warning',
+    });
   });
 
   it('produces deterministic issue ids (stable across runs)', () => {
@@ -55,8 +61,8 @@ describe('golden audit — planted violations fixture', () => {
 
   it('summary counts match the issue list', () => {
     expect(result.summary.errors).toBe(6);
-    expect(result.summary.warnings).toBe(1);
-    expect(result.summary.issues).toBe(7);
+    expect(result.summary.warnings).toBe(2);
+    expect(result.summary.issues).toBe(8);
     expect(result.summary.suppressed).toBe(0);
   });
 

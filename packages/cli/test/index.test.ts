@@ -141,6 +141,38 @@ describe('annotate-pr annotations', () => {
   });
 });
 
+describe('CLI --root flag', () => {
+  it('audits the --root target, not the working directory', () => {
+    const empty = mkdtempSync(join(tmpdir(), 'momus-root-empty-'));
+    const fixture = mkdtempSync(join(tmpdir(), 'momus-root-target-'));
+    try {
+      writeFileSync(join(fixture, 'a.ts'), 'export const x = 1;\n');
+      // run from an empty cwd; --root must point the audit at the target repo
+      const result = spawnSync(
+        process.execPath,
+        [BIN, 'audit', '.', '--root', fixture, '--json', '--max-issues', '0'],
+        {
+          cwd: empty,
+          encoding: 'utf8',
+        },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      const envelope = JSON.parse(result.stdout);
+      expect(envelope.result.summary.filesAudited).toBe(1);
+      // without --root, the empty cwd audits zero files
+      const withoutRoot = spawnSync(process.execPath, [BIN, 'audit', '.', '--json', '--max-issues', '0'], {
+        cwd: empty,
+        encoding: 'utf8',
+      });
+      expect(withoutRoot.status, withoutRoot.stderr).toBe(0);
+      expect(JSON.parse(withoutRoot.stdout).result.summary.filesAudited).toBe(0);
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+      rmSync(fixture, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('CLI bin entrypoint', () => {
   it('precommit flags mocks left stale by a production change (DRIFT-006 + DRIFT-001)', { timeout: 30_000 }, () => {
     const repo = gitRepo();

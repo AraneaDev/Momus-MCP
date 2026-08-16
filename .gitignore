@@ -2,3 +2,4 @@ node_modules/
 experiments/node_modules/
 *.tsbuildinfo
 **/.momus/cache/
+coverage/
