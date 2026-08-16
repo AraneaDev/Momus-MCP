@@ -43,6 +43,26 @@ const rootOfCall = (e: ts.Expression): string | undefined => {
 
 const unwrap = (e: ts.Expression): ts.Expression => (ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e);
 
+/**
+ * Find the object literal returned from a block-bodied mock factory, e.g.
+ * `async (importOriginal) => { const actual = await importOriginal(); return { ...actual, key: vi.fn() }; }`.
+ * Scans top-level return statements; a `...actual` spread is preserved as a non-stub property.
+ */
+function findReturnedObjectLiteral(body: ts.Node): ts.ObjectLiteralExpression | undefined {
+  let found: ts.ObjectLiteralExpression | undefined;
+  const visit = (n: ts.Node) => {
+    if (found) return;
+    if (ts.isReturnStatement(n) && n.expression) {
+      const expr = unwrap(n.expression);
+      if (ts.isObjectLiteralExpression(expr)) found = expr;
+      return; // do not descend into other returns' subtrees; first return wins
+    }
+    ts.forEachChild(n, visit);
+  };
+  ts.forEachChild(body, visit);
+  return found;
+}
+
 export interface MockDetectionResult {
   mocks: MockIR[];
   /** identifier name -> mock id, for dataflow (instance mocks and spy results). */
@@ -110,10 +130,24 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
       const resolvedPath = specifier ? ctx.resolveImport(specifier) : undefined;
       const factory = node.arguments[1] ? unwrap(node.arguments[1]) : undefined;
       const members: StubbedMemberIR[] = [];
-      const factoryBody =
+      // Factory shapes: `() => ({ key: vi.fn() })` (expression body) and the partial-mock
+      // form `async (importOriginal) => { const actual = await importOriginal();
+      // return { ...actual, key: vi.fn() }; }` (block body returning an object literal).
+      // In both, the object literal's explicit keys are the mock's stubbed exports; a
+      // `...actual` spread just re-exports the real module and is not a stub.
+      let factoryBody: ts.ObjectLiteralExpression | undefined =
         factory && ts.isArrowFunction(factory) && factory.body && !ts.isBlock(factory.body)
           ? (unwrap(factory.body) as ts.ObjectLiteralExpression)
           : undefined;
+      if (
+        !factoryBody &&
+        factory &&
+        (ts.isArrowFunction(factory) || ts.isFunctionExpression(factory)) &&
+        factory.body
+      ) {
+        const returned = findReturnedObjectLiteral(factory.body);
+        if (returned) factoryBody = returned;
+      }
       if (factoryBody) {
         for (const p of factoryBody.properties) {
           if (ts.isPropertyAssignment(p) && ts.isIdentifier(p.name)) {

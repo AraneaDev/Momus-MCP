@@ -46,4 +46,28 @@ class DocblockTypes
     {
         return [1];
     }
+
+    /**
+     * @return int|string
+     */
+    public function either()
+    {
+        return 0;
+    }
+
+    /**
+     * @return CollabA&CollabB
+     */
+    public function both()
+    {
+        return null;
+    }
+
+    /**
+     * @return callable(): int
+     */
+    public function factory()
+    {
+        return fn () => 0;
+    }
 }

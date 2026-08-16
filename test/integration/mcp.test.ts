@@ -354,7 +354,15 @@ describe('Momus MCP server (PHP language selection)', () => {
     expect(text).toContain('combined(CollabA&CollabB $both): string[]');
     expect(text).toContain('genericMap(): Invoice[]');
     expect(text).toContain("shouldReceive('combined')->andReturn([]);");
+    // union return: the non-null member drives the example value ('int|string' → 0)
+    expect(text).toContain('either(): int|string');
+    expect(text).toContain("shouldReceive('either')->andReturn(0);");
+    // intersection + callable returns stay conservative (null)
+    expect(text).toContain('both(): CollabA&CollabB');
+    expect(text).toContain("shouldReceive('both')->andReturn(null);");
+    expect(text).toContain('factory(): callable(): int');
+    expect(text).toContain("shouldReceive('factory')->andReturn(null);");
     const sc = res.structuredContent as { result: { summary: { members: number } } };
-    expect(sc.result.summary.members).toBe(4);
+    expect(sc.result.summary.members).toBe(7);
   });
 });

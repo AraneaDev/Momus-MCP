@@ -60,6 +60,8 @@
 | 39 | *(coverage pass)* | CLI `main` wasn't exported, so help/unknown-command/`init`/`doctor` dispatch cases (lines 602-634) were subprocess-only (37.8% stmts) | `main` exported; direct tests cover help variants, unknown-command exit 2 + stderr hint, `init` via `main`, and `doctor` incl. broken-config tolerance — entrypoint 37.8% → 46.3% |
 | 40 | *(coverage pass)* | PHP parser edge branches uncovered: variable class target (`createMock($className)`), foreign-property assignment, dynamic member name, `new` operand | new `EdgeCasesTest.php` fixture + tests cover all four conservatively (variable target binds its members; foreign property never becomes a `this:` mock; dynamic member not bound; `new` classified re-evaluating) — parser-php 79.4% → 80.8% branches |
 | 41 | *(perf budget)* | §2.7 `MCP tools/list < 4 KB` budget was asserted nowhere | MCP integration test serializes the live `ListToolsResult` and asserts < 4096 bytes |
+| 42 | *(dogfood, Chaos)* | `importOriginal` partial-mock factories (`vi.mock('mod', async (io) => { const a = await io(); return { ...a, key: vi.fn() }; })`) extracted **zero** factory keys — only expression-bodied factories were scanned | block-bodied factories are now scanned via `findReturnedObjectLiteral` (first object-literal return wins; `...actual` spread preserved as non-stub) — the stubbed exports (`readdirSync`, `runShellCommand`, …) become real members for DRIFT-005/TAUT; Chaos re-audit unchanged, no false positives |
+| 43 | *(coverage pass)* | `phpReturnExample`/`renderPhpType` union, intersection, and callable return branches in the PHP synth path were uncovered | `DocblockTypes.php` gains `either()` (`int|string` → `andReturn(0)`), `both()` (`CollabA&CollabB` → `null`), `factory()` (`callable(): int` → `null`); MCP test asserts all three renderings |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -210,3 +212,15 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
     integration test (the SDK's `ListToolsResult` payload is serialized and measured); the
     workspace-time budget stays documented-only because a wall-clock assert on a 100k-LOC
     workspace would flake under CI/coverage instrumentation.
+20. ✅ Dogfood gap found on Chaos-MCP: **`importOriginal` partial-mock factories lost their
+    override keys**. `vi.mock('mod', async (io) => { const a = await io(); return { ...a,
+    key: vi.fn() }; })` produced a mock with **zero** stubbed members (only expression-bodied
+    factories were scanned), so the stubbed exports were invisible to DRIFT-005/TAUT rules.
+    `findReturnedObjectLiteral` now scans block bodies; the `...actual` spread is preserved
+    as a non-stub. Regression tests cover both the block-bodied `importOriginal` form and the
+    non-object fallback (row 42). Chaos re-audit unchanged (4 MOCK-001 / 0 errors) — no
+    false positives from the richer extraction.
+21. ✅ PHP synth render branches covered: `phpReturnExample` union (non-null member drives
+    the example: `int|string` → `andReturn(0)`), intersection, and callable returns stay
+    conservative (`null`), via new `either`/`both`/`factory` methods on `DocblockTypes.php`
+    (row 43). Server stmts 91.5 → 92.1%.

@@ -58,6 +58,39 @@ describe('mock detection (fixture test file)', () => {
     expect(m?.stubbedMembers.map((s) => s.name)).toEqual(['getTotal']);
   });
 
+  it('extracts override keys from importOriginal partial-mock factories', () => {
+    const src = [
+      "import { vi } from 'vitest';",
+      "vi.mock('node:fs', async (importOriginal) => {",
+      '  const actual = await importOriginal<typeof import("node:fs")>();',
+      '  return { ...actual, readdirSync: vi.fn(actual.readdirSync), readFileSync: vi.fn() };',
+      '});',
+      '',
+    ].join('\n');
+    const p = join(FIXTURES, 'tests', 'import-original-mock.test.ts');
+    const mod = parser.parseModule(p, src, { config: undefined, resolveImport: () => null });
+    const mock = mod.mocks.find((m) => m.pattern === 'vi.mock');
+    expect(mock?.target?.specifier).toBe('node:fs');
+    // the explicit overrides become stubbed members; the ...actual spread is not a stub
+    expect(mock?.stubbedMembers.map((s) => s.name)).toEqual(['readdirSync', 'readFileSync']);
+    expect(mock?.stubbedMembers.every((s) => s.api === 'mockFactoryKey')).toBe(true);
+  });
+
+  it('leaves factory keys empty when the block factory returns nothing object-like', () => {
+    const src = [
+      "import { vi } from 'vitest';",
+      "vi.mock('mod', async () => {",
+      '  const value = await load();',
+      '  return value;',
+      '});',
+      '',
+    ].join('\n');
+    const p = join(FIXTURES, 'tests', 'factory-non-object.test.ts');
+    const mod = parser.parseModule(p, src, { config: undefined, resolveImport: () => null });
+    const mock = mod.mocks.find((m) => m.pattern === 'vi.mock');
+    expect(mock?.stubbedMembers).toHaveLength(0);
+  });
+
   it('detects vi.spyOn with resolved instance-member targets', () => {
     const spies = test.mocks.filter((x) => x.pattern === 'vi.spyOn');
     expect(spies).toHaveLength(2);

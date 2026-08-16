@@ -1,6 +1,6 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 292 tests passing, ~91.5% statements / ~86.7% branches / ~95.2% functions,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 294 tests passing, ~91.6% statements / ~86.9% branches / ~95.3% functions,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials (Phase 4 deferred indefinitely). Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
@@ -426,6 +426,19 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   37.8% → 46.3%. §2.7 `tools/list < 4 KB` budget asserted in the MCP integration test.
   292 tests; overall coverage 91.48% stmts / 86.71% branches / 95.23% funcs. Self-audit
   CLEAN; Knossos re-audit unchanged (6 sentinel errors); Chaos unchanged (4 MOCK-001).
+- **Last verified (round 21):** dogfood round on Chaos found a **real gap**: `importOriginal`
+  partial-mock factories (`vi.mock('mod', async (io) => { const a = await io(); return
+  { ...a, key: vi.fn() }; })`) extracted **zero** factory keys — only expression-bodied
+  factories were scanned, so the stubbed exports were invisible to DRIFT-005/TAUT. New
+  `findReturnedObjectLiteral` scans block bodies (first object-literal return wins;
+  `...actual` spread preserved as a non-stub); regression tests cover the block-bodied form
+  and the non-object fallback. Chaos re-audit unchanged (4 MOCK-001 / 0 errors) — no false
+  positives. Also covered the PHP synth `phpReturnExample` union/intersection/callable
+  branches (`int|string` → `andReturn(0)`; intersection/callable → `null`) via new
+  `either`/`both`/`factory` methods on `DocblockTypes.php`. 294 tests; overall coverage
+  91.62% stmts / 86.89% branches / 95.26% funcs. Self-audit CLEAN; Knossos unchanged
+  (6 sentinel errors); contract synthesis verified on real Knossos classes
+  (`LanguageScanRunner`, `ScanPlanner`) and Chaos classes (`BaseEngine`, `LineRange`).
   Self-audit CLEAN; Chaos 0 errors / 4 MOCK-001 and Knossos 6 sentinel errors — both
   unchanged; precommit on the working tree is CLEAN.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
@@ -446,6 +459,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   implementation extraction, dead `extractCommentsForModule` removal),
   round-20 items (PHP `new`-expression literal bug, CLI main export + dispatch tests,
   EdgeCasesTest.php fixture, tools/list size budget assert),
+  round-21 items (importOriginal block-factory extraction, PHP synth union/intersection
+  return examples),
   PHP function-scoped mock bindings, PHP setUp/property mock bindings, PHP same-variable
   reassignment, the test-coverage tooling, the contract-synthesis public-member/`?`-ordering
   fixes, the persistent IR cache, the ESLint/Prettier setup, the real-codebase Chaos-MCP
@@ -501,8 +516,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 26 files, 292 tests, all pass
-npm run test:coverage    # v8: ~91.5% statements / ~86.7% branches / ~95.2% functions (floors 80/75/90/80)
+npm test                 # 26 files, 294 tests, all pass
+npm run test:coverage    # v8: ~91.6% statements / ~86.9% branches / ~95.3% functions (floors 80/75/90/80)
 npm run lint             # eslint .  — clean
 npm run format:check     # prettier --check .  — clean
 npm run check:commits    # fails if any commit carries the Codebuff attribution footer
