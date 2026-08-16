@@ -153,15 +153,16 @@ before merge. **Top risks:** git plumbing edge cases (renames, merge commits) �
   diff-scoped audit + `annotate-pr` check annotations, `fail-on` input, base defaulting to
   the PR base SHA. (Not yet end-to-end CI-tested via `act`; publish + registry listing
   blocked on credentials.)
-- ✅ **Release scaffolding:** `@changesets/cli` + `.changeset/config.json`, root
-  `changeset`/`release` scripts, `publishConfig.access: public` on all five packages, and
-  `.github/workflows/release.yml` (version-PR via `changesets/action`, `changeset publish`,
-  `v*` tag + GitHub Release). Actual publish still blocked on `NPM_TOKEN`.
+- ✅ **Release scaffolding:** `release-please` (Knossos-style single lockstep version from
+  **0.0.1**; `release-please-config.json` + `.release-please-manifest.json`, `json` extra-files
+  bumping all five workspace `package.json`s), `pr-title.yml` conventional-commit gate,
+  `.github/workflows/release-please.yml` (version-PR → `v*` tag + GitHub Release → `npm run
+  publish` in dependency order). Actual publish still blocked on `NPM_TOKEN`.
 - Registry publishing: npm packages (`@momus/*`), MCP registry listings (official MCP
   servers list + community registries) with `npx -y @momus/mcp-server` install snippet;
   README quickstart for Claude Desktop / other clients. — pending credentials
 - **Docs site** (docs/ rendered) + changelog-driven releases (§6.7). — changelog scaffolding
-  shipped via changesets; docs-site rendering pending
+  shipped via release-please; docs-site rendering pending
 - **Soak corpus CI** (optional but enabled): OSS corpus precision/perf triage (§6.6.5).
 
 **Acceptance criteria:**

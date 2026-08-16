@@ -18,7 +18,7 @@ self-audit, and end-to-end CLI + MCP round-trips.
 except registry publishing):
 - ✅ PHP support (Phase 2 — `@momus/parser-php` + engine integration)
 - ✅ git-diff scoping + DRIFT-006 (Phase 3)
-- ✅ CI GitHub Action + changesets release scaffolding (Phase 4; npm/MCP publishing still credential-blocked)
+- ✅ CI GitHub Action + release-please release scaffolding (Phase 4; npm/MCP publishing still credential-blocked)
 - ✅ `better-sqlite3` IR cache, chokidar file watcher, Streamable HTTP transport
 
 ## 10.2 What is built and verified (do not rebuild)
@@ -162,11 +162,13 @@ covered by a bin-symlink regression test); TAUT-003/TAUT-006 and invocation-site
 1. ✅ `packages/action/action.yml` composite action ships in-repo: diff-scoped audit
    (`audit . --git-diff --base`) + `momus annotate-pr` (GitHub Checks API annotations,
    dependency-free via built-in fetch; `fail-on` input; token/repo/sha from the Actions env).
-2. ✅ `release.yml` + changesets scaffolded in-repo: `@changesets/cli` (+ `.changeset/config.json`,
-   root `changeset`/`release` scripts), `publishConfig.access: public` on all five packages, and
-   `.github/workflows/release.yml` (version-PR via `changesets/action`, `changeset publish`, `v*`
-   tag + GitHub Release). Publishing `@momus/*` to npm and registering `momus-mcp` in the MCP
-   registry remain blocked on credentials.
+2. ✅ `release-please` + `release-please.yml` scaffolded in-repo (Knossos-style):
+   `release-please-config.json` + `.release-please-manifest.json` pin a single lockstep version
+   from **0.0.1**, bumping all five workspace `package.json`s via `json` extra-files;
+   `pr-title.yml` gates Conventional Commit titles; on `release_created` the workflow runs the
+   CI gate and `npm run publish` (`scripts/publish.mjs`, dependency order). Publishing
+   `@momus/*` to npm and registering `momus-mcp` in the MCP registry remain blocked on
+   credentials.
    **Acceptance:** a PR on any TS repo shows Momus annotations; `npx -y momus-mcp` serves.
 
 ## 10.4 Rules of engagement (hard constraints from §1)

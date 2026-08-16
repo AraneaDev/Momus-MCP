@@ -1,11 +1,22 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 303 tests passing, ~91.6% statements / ~87.1% branches / ~95.3% functions,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo — **release-please (Knossos-style), single lockstep version 0.0.1**; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 303 tests passing, ~91.6% statements / ~87.1% branches / ~95.3% functions,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials (Phase 4 deferred indefinitely). Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
 ## Current checkpoint — 2026-08-16
 
+- **Last verified:** release tooling migrated from changesets to **release-please** modeled on
+  Knossos-MCP: root + all five packages at **0.0.1** (lockfile synced), internal `@momus/*` deps
+  re-pinned `~0.0.1` to track in lockstep, `release-please-config.json` (json extra-files bump
+  every workspace `package.json`) + `.release-please-manifest.json` (`".": "0.0.1"`),
+  `.github/workflows/release-please.yml` (release-please-action@v4 → version PR → `v*` tag +
+  GitHub Release → gate + `npm run publish` on `release_created`), `.github/workflows/pr-title.yml`
+  (conventional-commit title gate, payload-only `pull_request_target`, `permissions: {}`), and
+  `scripts/publish.mjs` (`npm publish -w` in dependency order, `NPM_PUBLISH_DRY_RUN=1`
+  supported). `@changesets/cli`, `.changeset/`, and `release.yml` removed. MCP serverInfo
+  version now reads `@momus/mcp-server`'s package.json at runtime (test pins 0.0.1). MCP
+  integration test (18) and full gate green.
 - **Last verified:** setup scopes, assigned `vi.fn`/`jest.fn` implementations, DRIFT-002 arity and
   parameter-type checks, Proxy doubles, syntax-only target-name enrichment, spy implementation
   signatures, and module automock helpers are complete. Full tests (112), typecheck, self-audit,
@@ -119,11 +130,14 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   descriptive-only (the `— fix:` hint renders in the issue line; `collectFixable` excludes them
   from `--fix`). Rule tests now pin the empty-`code`/non-empty-`description` contract. DRIFT-001
   rename remains the demonstrated mechanical auto-fix.
-- **Last verified:** Phase 4 release scaffolding is complete in-repo: `@changesets/cli` +
-  `.changeset/config.json` (`baseBranch: main`, `access: public`, `patch`-level internal bumps),
-  root `changeset`/`release` scripts, `publishConfig.access: public` on all five packages, and
-  `.github/workflows/release.yml` (version-PR via `changesets/action`, `changeset publish`,
-  `v*` tag + GitHub Release). Actual npm/MCP publish remains blocked on credentials.
+- **Last verified:** Phase 4 release scaffolding migrated to **release-please** (Knossos-style):
+  `release-please-config.json` + `.release-please-manifest.json` pin a single lockstep version
+  from **0.0.1**, bumping all five workspace `package.json`s via `json` extra-files; internal
+  `@momus/*` deps use `~0.0.1`; `pr-title.yml` gates Conventional Commit titles;
+  `.github/workflows/release-please.yml` (version-PR → `v*` tag + GitHub Release → `npm run
+  publish` in dependency order). `@changesets/cli` + `.changeset/` removed; serverInfo version
+  now read from `@momus/mcp-server` package.json at runtime. Actual npm/MCP publish remains
+  blocked on credentials.
 - **Last verified:** PHP `getMockForAbstractClass` doubles are complete: `$this->getMockForAbstractClass(AbstractFoo::class)`
   now emits `MockIR{pattern:'getMockForAbstractClass'}` targeting the abstract class, with chained
   `method()`/`willReturn()` configs collected as stubbed members. A planted stale abstract member
@@ -150,9 +164,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   `experiments/` E1–E8 spikes stay as reference, gitignored + self-audit-excluded). No code
   change — 156 tests, typecheck, and self-audit remain green.
 - **Last verified:** the local git branch was renamed `master` → `main` (no remote; reversible),
-  aligning it with `ci.yml`/`release.yml`/`action.yml`. This unblocked the changesets flow:
-  `changeset status` now reports "packages changed, no changesets" (expected pre-release) instead
-  of the `HEAD diverged from "main"` error.
+  aligning it with `ci.yml`/`release-please.yml`/`action.yml`. (Historically this unblocked
+  the changesets flow; changesets is since replaced by release-please.)
 - **Last verified (final green gate):** typecheck 0 errors; 158 tests; `audit-self` CLEAN (34
   files); `npm pack --dry-run` clean for all five packages (incl. the new `publishConfig.access`);
   `changeset status` wired. The build plan is now fully marked done except Step 5 (Phase 4
@@ -481,7 +494,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos plus itself (dogfooding) and fixing every
   false-positive/perf gap they expose, keeping `docs/11-real-world-findings.md` as the live
   record. Phase 4 publishing (npm/MCP registry) is **deferred indefinitely** per project
-  preference — the in-repo scaffolding (action, changesets, annotate-pr) stays as-is.
+  preference — the in-repo scaffolding (action, release-please, annotate-pr) stays as-is.
   Chaos-MCP is now **0 errors / 4 warnings** (all MOCK-001 over-mocking heuristics); Knossos-MCP
   is **6 genuine sentinel errors / 0 warnings**; Momus-on-Momus is **0 issues** (drift, tautology,
   and git-diff all clean). Test-subject repos are read-only except for temp files I create and
@@ -604,8 +617,10 @@ packages/server/           # MCP server: 5 tools, annotations + structuredConten
 packages/cli/              # momus audit|drift|precommit|hook|annotate|annotate-pr|contract|rules|serve|init|doctor
   src/fix.ts              #   audit --fix: collect/diff/apply span-based rule fixes
 packages/action/           # composite GitHub Action: diff-scoped audit + annotate-pr (Phase 4)
-.github/workflows/         # ci.yml (PR gates) + release.yml (changesets version→publish)
-.changeset/                # changesets config + pending changeset markdown files
+.github/workflows/         # ci.yml (PR gates) + pr-title.yml (conventional titles) + release-please.yml (version→publish)
+release-please-config.json # single lockstep version (0.0.1 baseline) for all @momus/* packages
+.release-please-manifest.json # release-please version manifest
+scripts/publish.mjs        # npm publish -w @momus/* in dependency order (release_created step)
 schemas/momusrc.schema.json # .momusrc JSON Schema (referenced by `momus init`)
 test/golden/audit.test.ts  # exact issue set from planted fixtures + suppression e2e
 test/integration/mcp.test.ts # in-memory MCP client round-trip, all 5 tools
@@ -677,11 +692,9 @@ npx momus rules / init / doctor / serve --root DIR
     `process.argv[1]` is the symlink path while `import.meta.url` is the realpath, so a guard
     comparing `resolve(argv[1])` silently skips `main()` (exit 0, no report). Compare
     `realpathSync` on both sides; regression test spawns the bin through the symlink.
-16. **changesets `baseBranch` must exist in git history** — `changeset status`/`version` fail
-    with `Failed to find where HEAD diverged from "main"` when the local branch isn't named
-    `main`. `ci.yml`/`release.yml`/`action.yml` all assume `main`; the local branch was renamed
-    `master` → `main` (verified: `changeset status` now reports changed packages, no divergence
-    error).
+16. **Git default branch must be `main`** — CI assumes `main`; the local branch was renamed
+    `master` → `main`. (Historically required for changesets' divergence check; release-please
+    also defaults to `main`.)
 17. **PHP mock bindings are function-scoped and line-resolved** — `extractMocks` keys `byBinding`
     by `scope:name` and stores assignments in line order (`recordBinding`); `nearestBinding` picks
     the latest assignment at/before a config or assertion line, so two test fns reusing `$mock`
@@ -817,7 +830,7 @@ in `audit.ts` — only inline comments are. (Verify before relying on it.)
    the remaining `format/markdown`/`drift`/`dataflow` branch edges; add perf-budget asserts (§2.7)
    and the incremental `ts.createWatchProgram` program.
 3. **Phase 4 (publishing + MCP registry) is deferred indefinitely** — do not spend cycles on it
-   unless the project preference changes; the in-repo scaffolding (action, changesets,
+   unless the project preference changes; the in-repo scaffolding (action, release-please,
    annotate-pr, registry draft) remains available.
 
 **Guardrails:** read-only tools only; deterministic output (golden-tested); <100 tokens/issue

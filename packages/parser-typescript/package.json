@@ -1,6 +1,6 @@
 {
   "name": "@momus/parser-typescript",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "publishConfig": {
     "access": "public"
   },
@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@momus/core": "0.1.0",
+    "@momus/core": "~0.0.1",
     "typescript": "^5.9.0"
   }
 }

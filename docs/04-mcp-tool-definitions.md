@@ -13,9 +13,12 @@
     "tools": { "listChanged": true },
     "resources": { "subscribe": false, "listChanged": false }
   },
-  "serverInfo": { "name": "momus-mcp", "version": "0.1.0" }
+  "serverInfo": { "name": "momus-mcp", "version": "0.0.1" }
 }
 ```
+
+`serverInfo.version` is read from `@momus/mcp-server`'s package.json at runtime (release-please
+bumps it in lockstep with the other `@momus/*` packages).
 
 - **Transport:** `stdio` by default; `--transport http` enables Streamable HTTP (implemented).
 - **Tools are returned in deterministic order** (catalog order below) for client caching and

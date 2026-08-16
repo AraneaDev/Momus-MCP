@@ -41,6 +41,14 @@ describe('Momus MCP server (in-memory transport)', () => {
     await cleanup();
   });
 
+  it('reports the released package version in serverInfo', async () => {
+    const init = await client.getServerVersion();
+    expect(init.name).toBe('momus-mcp');
+    // Tracks @momus/mcp-server's package.json (read at runtime), which release-please
+    // bumps in lockstep; must equal the manifest-pinned 0.0.1 baseline.
+    expect(init.version).toBe('0.0.1');
+  });
+
   it('advertises exactly the five tools with annotations', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([

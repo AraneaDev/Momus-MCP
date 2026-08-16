@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "changelog-path": "CHANGELOG.md",
+      "include-component-in-tag": false,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "packages/core/package.json"
+        },
+        {
+          "type": "json",
+          "path": "packages/parser-typescript/package.json"
+        },
+        {
+          "type": "json",
+          "path": "packages/parser-php/package.json"
+        },
+        {
+          "type": "json",
+          "path": "packages/server/package.json"
+        },
+        {
+          "type": "json",
+          "path": "packages/cli/package.json"
+        }
+      ]
+    }
+  }
+}

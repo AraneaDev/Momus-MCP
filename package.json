@@ -1,6 +1,6 @@
 {
   "name": "momus-mcp",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "description": "Momus-MCP — unsparing mock & test integrity auditor for coding agents",
@@ -24,11 +24,9 @@
     "format:check": "prettier --check .",
     "audit-self": "tsx packages/cli/src/index.ts audit . --max-issues 0",
     "serve": "tsx packages/cli/src/index.ts serve",
-    "changeset": "changeset",
-    "release": "changeset publish"
+    "publish": "node scripts/publish.mjs"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.31.1",
     "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^24.0.0",

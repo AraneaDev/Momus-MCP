@@ -1,0 +1,63 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write # npm provenance (see note below)
+
+jobs:
+  release-please:
+    name: Release PR + tag/release on merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Opens/updates the Release PR from Conventional Commits (release-please-config.json
+      # + .release-please-manifest.json; single lockstep version for all @momus/* packages
+      # via json extra-files). On merge of that PR, creates the vX.Y.Z tag + GitHub Release
+      # and sets release_created=true.
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Everything below runs ONLY on the merge that cut a release. Because the
+      # tag/release are made with GITHUB_TOKEN, no separate tag-triggered
+      # workflow would fire — so build/verify/publish live here instead.
+      - name: Checkout
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm ci --no-audit --no-fund
+
+      # Same gate that runs on every PR, against the released tree.
+      - name: Typecheck + test
+        if: ${{ steps.release.outputs.release_created }}
+        run: |
+          npm run typecheck
+          npm test
+
+      # `npm run publish` → scripts/publish.mjs → `npm publish -w @momus/*` in
+      # dependency order. `access: public` comes from each package's publishConfig.
+      # npm provenance is pre-wired (`id-token: write`); to enable it, add
+      # `"publishConfig": { "provenance": true }` to each published package and
+      # publish with an OIDC-capable token instead of NPM_TOKEN.
+      - name: Publish to npm
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm run publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

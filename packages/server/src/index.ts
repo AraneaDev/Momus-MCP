@@ -5,6 +5,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -127,13 +128,24 @@ const RULE_LIST = [
 
 const ANN = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
+// Server version tracks the released package version (release-please bumps all
+// @momus/* package.jsons in lockstep; package.json always ships with src/).
+const SERVER_VERSION = (() => {
+  try {
+    const require = createRequire(import.meta.url);
+    return (require('../package.json') as { version?: string }).version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+})();
+
 export function createMomusServer(opts: MomusServerOptions): McpServer {
   const root = opts.root;
   const config = opts.config ?? loadConfig(root);
   const parser = new CompositeParser([new TypeScriptParser(), new PhpParser()]);
   const cache = opts.cache ?? openParseCache(root, config.cache);
   const server = new McpServer(
-    { name: 'momus-mcp', version: '0.1.0' },
+    { name: 'momus-mcp', version: SERVER_VERSION },
     { capabilities: { tools: { listChanged: true } } },
   );
   // Only close the cache when this server opened it (serveHttp shares a single cache).

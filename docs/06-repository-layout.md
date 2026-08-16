@@ -17,7 +17,7 @@
 | CLI framework | none (hand-rolled arg parsing, implemented) | Only 7 subcommands; avoids a dep. |
 | Test runner | `vitest` | Same ecosystem; fast; snapshot support. |
 | Lint/format | shipped — ESLint 10 (flat config, typescript-eslint) + Prettier (`lint`, `lint:fix`, `format`, `format:check` scripts) | Consistent authoring style; fixtures/`experiments` excluded. |
-| Releases | `changesets` | Monorepo versioning + changelogs. |
+| Releases | `release-please` (single lockstep version, Knossos-style) | Conventional-commit → version PR → npm publish + GitHub Release. |
 | CI | GitHub Actions | Free, ubiquitous; action artifact in-repo. |
 | License | MIT | Chosen in §1.7. |
 
@@ -44,7 +44,8 @@ momus-mcp/
 ├─ .github/
 │  ├─ workflows/
 │  │  ├─ ci.yml                     # unit + integration + self-audit + benchmarks (smoke)
-│  │  └─ release.yml                # changesets → npm publish + GitHub Release
+│  │  ├─ pr-title.yml               # conventional-commit PR title gate (release-please input)
+│  │  └─ release-please.yml         # release-please → npm publish + GitHub Release
 │  └─ actions/momus/                # the Phase-4 GitHub Action (composite)
 ├─ packages/
 │  ├─ core/                         # @momus/core — engine (no MCP, no CLI)
@@ -164,16 +165,18 @@ counts (`summary.totalErrors`), so `--max-issues 0` (summary-only) never masks f
 | `bench-smoke` | deferred until Phase 2 (perf budgets §2.7) | under budget |
 | `coverage` | `npm run test:coverage` (v8) — floors 80% statements/lines, 75% branches, 90% functions | ~85% lines (CLI entrypoint is exercised end-to-end via bin spawns, not subprocess-instrumented) |
 
-### 6.5.2 `release.yml` (shipped in-repo)
+### 6.5.2 `release-please.yml` (shipped in-repo)
 
-`changesets` version bump → `changeset publish` (`npm publish`, `access: public`) → tag `v*` +
-GitHub Release with the generated changelog (`.github/workflows/release.yml`, via
-`changesets/action` with `createGithubReleases: true`). Root scripts `changeset` / `release`;
-`.changeset/config.json` pins `baseBranch: main`, `access: public`, and `patch`-level internal
-`@momus/*` dependency bumps. npm provenance is pre-wired (`id-token: write`); enable it per
-package via `publishConfig.provenance`. Publishing is blocked until an `NPM_TOKEN` secret
-exists. The action (`momus-mcp/action`) is published as a separate release artifact pointing
-at `@momus/cli@<tag>`.
+`release-please` reads Conventional Commits on `main` and opens/updates a version PR; on merge
+it creates the `vX.Y.Z` tag + GitHub Release, then the workflow's `release_created` steps run
+the same CI gate (typecheck + test) and publish (`scripts/publish.mjs` → `npm publish -w
+@momus/*` in dependency order, `access: public` from each package's `publishConfig`). All five
+packages share **one lockstep version** (`release-please-config.json` bumps every workspace
+`package.json` via `json` extra-files; internal `@momus/*` deps use `~0.0.1` ranges so they
+track in lockstep). npm provenance is pre-wired (`id-token: write`); enable it per package via
+`publishConfig.provenance`. Publishing is blocked until an `NPM_TOKEN` secret exists. The
+action (`momus-mcp/action`) is published as a separate release artifact pointing at
+`@momus/cli@<tag>`. Versioned from **0.0.1** (`.release-please-manifest.json`).
 
 ### 6.5.3 The GitHub Action (Phase 4, shipped in-repo)
 
@@ -245,10 +248,12 @@ Byte-exact snapshot tests run on linux CI (line endings normalized on Windows/ma
 
 ## 6.7 Release process (normative)
 
-1. PRs merge to `main`; `changesets` files accompany rule/API changes.
-2. `release.yml` on `main`: version bump → changelogs → publish `@momus/core`,
+1. PRs merge to `main` with Conventional Commit titles (`pr-title.yml` gates them;
+   `feat`/`fix`/`!` cut a release).
+2. `release-please.yml` on `main`: release-please bumps the lockstep version → `CHANGELOG.md`
+   → tag `vX.Y.Z` + GitHub Release → the workflow publishes `@momus/core`,
    `@momus/parser-typescript`, `@momus/parser-php`, `@momus/mcp-server`, `@momus/cli`
-   (version-locked together via changesets) → tag `vX.Y.Z`.
+   (all at the same version) via `npm run publish`.
 3. `@momus/cli` is the only package with a `bin` (`momus`).
 4. The MCP server is registered on public registries (Phase 4) with install command
    `npx -y @momus/mcp-server@latest` (stdio) and a documented `claude_desktop_config.json` /
