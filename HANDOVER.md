@@ -1,6 +1,6 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 285 tests passing, ~90.6% statements / ~86.7% branches / ~94.6% functions,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 292 tests passing, ~91.5% statements / ~86.7% branches / ~95.2% functions,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials (Phase 4 deferred indefinitely). Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
@@ -416,6 +416,16 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   text; removed the dead `extractCommentsForModule` wrapper; `typeAssignable` and
   `phpReturnAssignable` hit 100% stmts (named-primitive branches, void/literal fallthroughs,
   prod-kind-null). 285 tests; overall coverage 90.56% stmts / 86.7% branches / 94.64% funcs.
+- **Last verified (round 20):** coverage + perf-budget round — **real PHP bug fixed**: `phpValue`
+  classified `new X()` as a literal (`constant: true`), so `assertNotSame(new Engine(), $engine)`
+  could read as a self-comparison; `new` now classifies via `exprKind` → `'new'` (re-evaluating,
+  never constant), regression-pinned. New `EdgeCasesTest.php` fixture covers variable class
+  targets, non-`$this` property assignments (never bound as `this:` mocks), and dynamic member
+  names (conservatively unbound). CLI `main` is exported + direct-tested (help variants,
+  unknown-command exit 2, `init` dispatch, `doctor` incl. broken-config tolerance) — entrypoint
+  37.8% → 46.3%. §2.7 `tools/list < 4 KB` budget asserted in the MCP integration test.
+  292 tests; overall coverage 91.48% stmts / 86.71% branches / 95.23% funcs. Self-audit
+  CLEAN; Knossos re-audit unchanged (6 sentinel errors); Chaos unchanged (4 MOCK-001).
   Self-audit CLEAN; Chaos 0 errors / 4 MOCK-001 and Knossos 6 sentinel errors — both
   unchanged; precommit on the working tree is CLEAN.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
@@ -434,6 +444,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   round-18 coverage pass (symbolIndex/markdown/typeAssignable/CLI dispatch extraction),
   round-19 items (SYS-004 perf budget, ci.yml lint/format gates, dataflow block-body
   implementation extraction, dead `extractCommentsForModule` removal),
+  round-20 items (PHP `new`-expression literal bug, CLI main export + dispatch tests,
+  EdgeCasesTest.php fixture, tools/list size budget assert),
   PHP function-scoped mock bindings, PHP setUp/property mock bindings, PHP same-variable
   reassignment, the test-coverage tooling, the contract-synthesis public-member/`?`-ordering
   fixes, the persistent IR cache, the ESLint/Prettier setup, the real-codebase Chaos-MCP
@@ -489,8 +501,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 26 files, 285 tests, all pass
-npm run test:coverage    # v8: ~90.6% statements / ~86.7% branches / ~94.6% functions (floors 80/75/90/80)
+npm test                 # 26 files, 292 tests, all pass
+npm run test:coverage    # v8: ~91.5% statements / ~86.7% branches / ~95.2% functions (floors 80/75/90/80)
 npm run lint             # eslint .  — clean
 npm run format:check     # prettier --check .  — clean
 npm run check:commits    # fails if any commit carries the Codebuff attribution footer

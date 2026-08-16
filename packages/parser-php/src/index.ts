@@ -877,7 +877,10 @@ function phpExpr(
   methods: PhpNode[],
   classes: PhpNode[],
 ): ExprIR {
-  const literal = phpValue(node);
+  // `new` must not count as a literal: each evaluation creates a fresh object, so TAUT-001
+  // self-comparison must never fire on `assertNotSame(new X(), $x)` (re-evaluating expressions
+  // fall through to exprKind → 'new'). phpValue still maps `new` → named for configured values.
+  const literal = node.kind === 'new' ? undefined : phpValue(node);
   if (literal) return { kind: 'literal', text: valueText(node), mockRefs: [], provenance: 'literal', constant: true };
   const root = bindingName(node);
   const mock = root

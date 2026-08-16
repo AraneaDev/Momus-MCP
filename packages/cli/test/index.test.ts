@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,6 +13,8 @@ import {
   runDrift,
   runRules,
   runInit,
+  runDoctor,
+  main,
 } from '../src/index.ts';
 import { DEFAULT_CONFIG } from '@momus/core';
 
@@ -232,6 +234,92 @@ describe('extracted command functions (no subprocess)', () => {
       expect(runInit(dir, ['init', '--force'])).toBe(0);
       expect(existsSync(join(dir, '.momusrc'))).toBe(true);
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('main dispatch', () => {
+  it('prints help for help/--help/-h and returns 0', async () => {
+    for (const cmd of ['help', '--help', '-h']) {
+      const out: string[] = [];
+      const spy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+        out.push(String(chunk));
+        return true;
+      });
+      try {
+        expect(await main([cmd])).toBe(0);
+        expect(out.join('')).toContain('momus — unsparing mock & test integrity auditor');
+      } finally {
+        spy.mockRestore();
+      }
+    }
+  });
+
+  it('rejects unknown commands with exit code 2 and a hint on stderr', async () => {
+    const err: string[] = [];
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      err.push(String(chunk));
+      return true;
+    });
+    try {
+      expect(await main(['frobnicate'])).toBe(2);
+      expect(err.join('')).toContain("unknown command 'frobnicate'");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('dispatches init through main and writes the .momusrc template', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-init-main-'));
+    const out: string[] = [];
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      out.push(String(chunk));
+      return true;
+    });
+    try {
+      expect(await main(['init', '--root', dir, '--force'])).toBe(0);
+      const written = readFileSync(join(dir, '.momusrc'), 'utf8');
+      expect(written).toContain('$schema');
+      expect(written).toContain('mockSaturationThreshold');
+      expect(out.join('')).toContain('wrote');
+    } finally {
+      spy.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('runs doctor without a subprocess and reports the environment', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-doctor-main-'));
+    const out: string[] = [];
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      out.push(String(chunk));
+      return true;
+    });
+    try {
+      expect(await main(['doctor', '--root', dir])).toBe(0);
+      const text = out.join('');
+      expect(text).toContain('momus doctor');
+      expect(text).toContain('php readiness');
+    } finally {
+      spy.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('runDoctor tolerates a broken .momusrc and still reports defaults', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-doctor-badcfg-'));
+    const out: string[] = [];
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      out.push(String(chunk));
+      return true;
+    });
+    try {
+      writeFileSync(join(dir, '.momusrc'), '{ not json }\n');
+      expect(await runDoctor(dir, ['doctor'])).toBe(0);
+      expect(out.join('')).toContain('config error');
+    } finally {
+      spy.mockRestore();
       rmSync(dir, { recursive: true, force: true });
     }
   });

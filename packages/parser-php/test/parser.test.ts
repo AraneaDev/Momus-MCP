@@ -296,6 +296,34 @@ describe('PHP parser', () => {
     ]);
   });
 
+  it('handles variable class targets, foreign-property assignments, and dynamic members', () => {
+    const module = parse(join(ROOT, 'tests', 'EdgeCasesTest.php'));
+    // variable-target + $this->createMock + foreign-property createMock all parse without crash
+    expect(module.mocks.length).toBeGreaterThanOrEqual(3);
+    // a foreign-property assignment ($holder->repo = ...) is NOT a property-mock binding
+    const bound = module.mocks.filter((mock) => mock.id.startsWith('this:'));
+    expect(bound).toHaveLength(0);
+    // the variable-target mock still binds its configured member with the value
+    const dynamic = module.mocks[0]!;
+    expect(dynamic.target?.exportName).toBe('className');
+    expect(dynamic.stubbedMembers.map((m) => m.name)).toEqual(['findById']);
+    expect(dynamic.stubbedMembers[0]?.returnValues[0]?.value).toMatchObject({ kind: 'literal', value: 42 });
+    // a dynamic member name ($member) is conservatively NOT bound to a stub
+    const variableMember = module.mocks.find((mock) => mock.target?.exportName === 'InvoiceRepository');
+    expect(variableMember?.stubbedMembers).toHaveLength(0);
+    expect(module.diagnostics).toHaveLength(0);
+  });
+
+  it('classifies a new expression as a re-evaluating operand, never a literal', () => {
+    const module = parse(join(ROOT, 'tests', 'EdgeCasesTest.php'));
+    const notSame = module.assertions.find((a) => a.api === 'assertNotSame')!;
+    expect(notSame.operands[0]!.kind).toBe('new');
+    expect(notSame.operands[0]!.constant).toBe(false);
+    expect(notSame.operands[0]!.provenance).not.toBe('literal');
+    // the second operand ($engine) is a stable read
+    expect(notSame.operands[1]!.kind).toBe('identifier');
+  });
+
   it('honors the PHP language gate in the composite parser', () => {
     const result = new AuditEngine({ root: ROOT, parser: new CompositeParser([parser]) }).run();
     expect(result.issues).toHaveLength(0);

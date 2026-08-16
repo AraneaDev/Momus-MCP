@@ -592,7 +592,7 @@ export async function runDoctor(root: string, _argv: string[]): Promise<number> 
   return 0;
 }
 
-async function main(argv: string[]): Promise<number> {
+export async function main(argv: string[]): Promise<number> {
   const cmd = argv[0];
   // `--root DIR` is honored by every command (not just serve): audit/drift/hook/contract run
   // against DIR while the CLI process itself may live anywhere (mirrors the MCP server's

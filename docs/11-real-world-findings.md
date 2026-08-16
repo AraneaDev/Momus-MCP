@@ -56,6 +56,10 @@
 | 35 | *(coverage pass)* | `SYS-004` (perf budget §2.7) was declared in the IR taxonomy but **never emitted** — the spec's "degrades to info, never crashes" contract was unexercised | a per-file parse-time budget (`parseBudgetMs`, default 2s) now emits a SYS-004 info diagnostic; deterministic busy-wait-parser tests cover the fires + quiet paths |
 | 36 | *(coverage pass)* | `dataflow.ts` block-bodied `mockImplementation` returns (`{ return 42; }`, `function () {}`) fell back to raw source text; the `extractCommentsForModule` wrapper was dead code | literal extraction now walks block bodies (arrow + function-expression), non-literal blocks keep full text; dead wrapper removed; `typeAssignable`/`phpReturnAssignable` named-primitive + void/literal fallthrough branches covered |
 | 37 | *(process)* | lint + format:check were scripts but not wired into CI | `ci.yml` test job now runs both gates after the test step |
+| 38 | *(coverage pass)* | `phpValue` classified `new X()` as a **literal** (`constant: true`), so a fresh-object comparison (`assertNotSame(new Engine(), $engine)`) could be read as a self-comparison by TAUT-001 | `new` expressions now skip the literal path and classify via `exprKind` → `'new'` (re-evaluating, never constant); regression test pins the classification |
+| 39 | *(coverage pass)* | CLI `main` wasn't exported, so help/unknown-command/`init`/`doctor` dispatch cases (lines 602-634) were subprocess-only (37.8% stmts) | `main` exported; direct tests cover help variants, unknown-command exit 2 + stderr hint, `init` via `main`, and `doctor` incl. broken-config tolerance — entrypoint 37.8% → 46.3% |
+| 40 | *(coverage pass)* | PHP parser edge branches uncovered: variable class target (`createMock($className)`), foreign-property assignment, dynamic member name, `new` operand | new `EdgeCasesTest.php` fixture + tests cover all four conservatively (variable target binds its members; foreign property never becomes a `this:` mock; dynamic member not bound; `new` classified re-evaluating) — parser-php 79.4% → 80.8% branches |
+| 41 | *(perf budget)* | §2.7 `MCP tools/list < 4 KB` budget was asserted nowhere | MCP integration test serializes the live `ListToolsResult` and asserts < 4096 bytes |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -192,3 +196,17 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
     tests drive a busy-wait parser against a 1ms budget (fires) and a 5s budget (quiet). Row 35.
 16. ✅ CI now runs `npm run lint` + `npm run format:check` in the test job — the style gates
     were script-only before.
+17. ✅ CLI entrypoint coverage 37.8% → 46.3%: `main` is now exported, and direct tests (no
+    subprocess) cover help/`--help`/`-h`, unknown-command exit 2, `init` dispatch through
+    `main`, and `doctor` incl. a broken-`.momusrc` tolerance path (rows 39–40).
+18. ✅ PHP parser branch coverage 79.4% → 80.8% + a **real bug fixed**: `phpValue` classified
+    `new X()` as a literal (`constant: true`), so `assertNotSame(new Engine(), $engine)` could
+    be read as a self-comparison; a `new` expression re-evaluates (fresh object), so it now
+    falls through to `exprKind` → `'new'` (row 38). New `EdgeCasesTest.php` fixture also
+    covers variable class targets (`createMock($className)`), non-`$this` property
+    assignments (correctly not bound as `this:` mocks), and dynamic member names
+    (conservatively not bound). Knossos re-audit unchanged.
+19. ✅ §2.7 perf budget `MCP tools/list serialized size < 4 KB` is now asserted in the MCP
+    integration test (the SDK's `ListToolsResult` payload is serialized and measured); the
+    workspace-time budget stays documented-only because a wall-clock assert on a 100k-LOC
+    workspace would flake under CI/coverage instrumentation.

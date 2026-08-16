@@ -53,6 +53,11 @@ describe('Momus MCP server (in-memory transport)', () => {
     const audit = tools.find((t) => t.name === 'audit_test_fidelity')!;
     expect(audit.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
     expect(audit.inputSchema.properties?.filePath).toBeDefined();
+
+    // Perf budget §2.7: serialized tools/list must fit one prompt context page (< 4 KB).
+    // The SDK's ListToolsResult shape is { tools: [...] }, so serialize the tool array.
+    const payload = JSON.stringify({ tools });
+    expect(Buffer.byteLength(payload, 'utf8')).toBeLessThan(4096);
   });
 
   it('audit_test_fidelity returns findings in markdown + structuredContent', async () => {
