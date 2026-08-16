@@ -42,6 +42,9 @@ describe('PHP parser', () => {
       kind: 'union',
       members: [{ kind: 'named', name: 'string' }, { kind: 'null' }],
     });
+    // @throws annotations surface as the exception class names (leading \ stripped)
+    const publish = service?.members.find((member) => member.name === 'publish');
+    expect(publish?.signature?.throws).toEqual(['RuntimeException', 'InvalidArgumentException']);
   });
 
   it('resolves PSR-4 namespaces and falls back to the Composer classmap', () => {
@@ -73,6 +76,55 @@ describe('PHP parser', () => {
         assertion.api === 'assertSame' && assertion.operands.some((operand) => operand.provenance === 'mock-config'),
     );
     expect(echo?.operands.find((operand) => operand.provenance === 'mock-config')?.configuredValue).toBe('42');
+  });
+
+  it('parses PHPDoc type-syntax variants (nullable, nested arrays, generics, intersections)', () => {
+    const module = parse(join(ROOT, 'src', 'DocblockTypes.php'));
+    const cls = module.symbols.find((symbol) => symbol.name === 'DocblockTypes');
+    const sig = (name: string) => cls?.members.find((member) => member.name === name)?.signature;
+    expect(sig('nested')?.returnType).toMatchObject({
+      kind: 'array',
+      element: { kind: 'array', element: { kind: 'named', name: 'Invoice' } },
+    });
+    expect(sig('nested')?.parameters[0]?.type).toMatchObject({
+      kind: 'union',
+      members: [{ kind: 'named', name: 'Invoice' }, { kind: 'null' }],
+    });
+    expect(sig('genericMap')?.returnType).toMatchObject({
+      kind: 'array',
+      element: { kind: 'named', name: 'Invoice' },
+    });
+    expect(sig('combined')?.parameters[0]?.type).toMatchObject({
+      kind: 'intersection',
+      members: [
+        { kind: 'named', name: 'CollabA' },
+        { kind: 'named', name: 'CollabB' },
+      ],
+    });
+    expect(sig('combined')?.returnType).toMatchObject({ kind: 'array', element: { kind: 'named', name: 'string' } });
+    expect(sig('nonEmpty')?.returnType).toMatchObject({ kind: 'array', element: { kind: 'named', name: 'int' } });
+  });
+
+  it('reports a SYS-001 diagnostic and an empty module for a PHP parse error', () => {
+    const module = parse(join(ROOT, 'tests', 'BrokenTest.php'));
+    expect(module.symbols).toHaveLength(0);
+    expect(module.mocks).toHaveLength(0);
+    expect(module.diagnostics.some((diagnostic) => diagnostic.message.startsWith('SYS-001'))).toBe(true);
+  });
+
+  it('extracts createPartialMock member lists and createConfiguredMock array values', () => {
+    const module = parse(join(ROOT, 'tests', 'PartialMockTest.php'));
+    expect(module.mocks).toHaveLength(2);
+    const [partial, configured] = module.mocks;
+    // createPartialMock($class, ['findById']) → the listed member becomes a stub
+    expect(partial?.pattern).toBe('createPartialMock');
+    expect(partial?.stubbedMembers.map((member) => member.name)).toEqual(['findById']);
+    // createConfiguredMock($class, ['save' => true]) → the array value becomes a configured return
+    expect(configured?.pattern).toBe('createConfiguredMock');
+    expect(configured?.stubbedMembers.map((member) => member.name)).toEqual(['save']);
+    expect(configured?.configuredValues[0]).toMatchObject({ api: 'literal' });
+    expect(configured?.configuredValues[0]?.value).toMatchObject({ kind: 'literal', value: true });
+    expect(configured?.configuredValues[0]?.assignable).toBe('unknown');
   });
 
   it('recognizes willThrowException as a config call that marks the mock reachable', () => {
@@ -259,7 +311,8 @@ describe('PHP parser', () => {
     expect(result.issues.filter((issue) => issue.rule === 'DRIFT-001')).toHaveLength(7);
     const drift003 = result.issues.filter((issue) => issue.rule === 'DRIFT-003');
     // 2 planted in Drift003Test + InvoiceTest echo willReturn(42) + 2 docblock-typed + SetUpMockTest echo willReturn(42)
-    expect(drift003).toHaveLength(7);
+    // + PartialMockTest: willReturn(null) on Invoice-returning findById + createConfiguredMock save=>true on void save
+    expect(drift003).toHaveLength(9);
     const drift004 = result.issues.filter((issue) => issue.rule === 'DRIFT-004');
     expect(drift004).toHaveLength(1);
     expect(drift004[0]?.message).toMatch(/requires 1/);

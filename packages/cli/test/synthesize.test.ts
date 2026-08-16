@@ -174,10 +174,12 @@ describe('synthesizeForCli', () => {
         [
           'export interface Address { city: string; zip?: number }',
           'export interface User { id: number; name: string; address: Address; active: boolean }',
+          'export interface Session { token: string; close(): void; refresh(): Promise<string> }',
           'export class Named {',
           '  find(): Promise<User> { return Promise.resolve({} as User); }',
           '  home(): Address { return {} as Address; }',
           '  onlyMethods(): { run(): void } { return { run() {} }; }',
+          '  session(): Session { return {} as Session; }',
           '}',
           '',
         ].join('\n'),
@@ -190,8 +192,12 @@ describe('synthesizeForCli', () => {
       );
       // named interface (non-Promise) resolves to a data-shape literal too
       expect(template).toContain("home: vi.fn<[], Address>().mockReturnValue({ city: '', zip: 0 }),");
-      // an inline type with only methods has no data properties → empty shape
-      expect(template).toContain('onlyMethods: vi.fn<[], { run(): void }>().mockReturnValue({}),');
+      // an inline type with only methods → vi.fn stubs (not an empty shape)
+      expect(template).toContain('onlyMethods: vi.fn<[], { run(): void }>().mockReturnValue({ run: vi.fn() }),');
+      // a named interface with methods → data properties as values, methods as vi.fn stubs
+      expect(template).toContain(
+        "session: vi.fn<[], Session>().mockReturnValue({ token: '', close: vi.fn(), refresh: vi.fn() }),",
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

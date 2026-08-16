@@ -311,8 +311,12 @@ describe('Momus MCP server (PHP language selection)', () => {
     expect(text).toContain("method('findById')");
     expect(text).toContain("method('fetchIds')");
     expect(text).toContain('willReturn');
+    // @throws-documented methods surface as commented willThrowException stubs
+    expect(text).toContain(
+      "// @throws RuntimeException → $mock->method('publish')->willThrowException(new \\RuntimeException());",
+    );
     const sc = res.structuredContent as { result: { summary: { members: number } } };
-    expect(sc.result.summary.members).toBe(3);
+    expect(sc.result.summary.members).toBe(4);
   });
 
   it('synthesizes a pest mock template from a PHP production class', async () => {
@@ -327,5 +331,25 @@ describe('Momus MCP server (PHP language selection)', () => {
     expect(text).toContain('andReturn');
     const sc = res.structuredContent as { result: { summary: { members: number } } };
     expect(sc.result.summary.members).toBe(2);
+  });
+
+  it('renders docblock type syntax and @throws into a pest template', async () => {
+    const res = await client.callTool({
+      name: 'synthesize_mock_contract',
+      arguments: { targetPath: 'src/DocblockTypes.php', framework: 'pest' },
+    });
+    expect(res.isError).toBeFalsy();
+    const text = res.content[0]!.text;
+    // nullable (rendered as a union) + nested-array + @throws rendering on the same method
+    expect(text).toContain('nested(Invoice|null $maybe): Invoice[][]');
+    expect(text).toContain(
+      "// @throws DomainException → $mock->shouldReceive('nested')->andThrow(new \\DomainException());",
+    );
+    // intersection params and generic array returns render through the TypeIR printer
+    expect(text).toContain('combined(CollabA&CollabB $both): string[]');
+    expect(text).toContain('genericMap(): Invoice[]');
+    expect(text).toContain("shouldReceive('combined')->andReturn([]);");
+    const sc = res.structuredContent as { result: { summary: { members: number } } };
+    expect(sc.result.summary.members).toBe(4);
   });
 });

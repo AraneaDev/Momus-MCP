@@ -44,6 +44,7 @@
 | 23 | *(open items)* | PHP `willThrowException` was recognized for reachability but its exception value never reached the IR | throw-configured mocks couldn't be inspected; open improvement §5.1 — now recorded (mock-level config, deliberately not a return value so DRIFT-003 never compares an exception against the production return type) |
 | 24 | *(open items)* | `synthesize_mock_contract` emitted `undefined` for `Record<K, V>` / `NodeJS.ProcessEnv` index-signature types (no named properties in `getPropertiesOfType`) | `{}` is the type-correct placeholder; index-signature detection added to both the syntax-only and checker paths |
 | 25 | *(open items)* | synthesized contracts emitted bare `(x)` for unannotated parameters | `paramTypeText` now infers `number`/`string`/`boolean`/`unknown[]`/`Record<string, unknown>` from the default initializer; `unknown` only when no signal exists |
+| 26 | *(coverage pass)* | PHPDoc `@return array<int, Invoice>` (generics containing spaces) was truncated to `array<int,` — the first-whitespace token split | wrong TypeIR (`named: 'array<int,'` instead of `array` of `Invoice`); `docTypeFromRest` now consumes tokens until a `$` or a description word |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -122,13 +123,23 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
 2. ✅ TS synthesis now resolves **named** interface/class returns through the type checker
    (`tsReturnExampleChecked`), so `User` / `Promise<User>` emit data-shape literals
    (`mockResolvedValue({ id: 0, … })`) instead of `undefined`. `Record<K, V>` / index-signature
-   types (`NodeJS.ProcessEnv`) emit `{}`. Remaining nuance: optional members are included with
-   their example value (`zip?: number` → `zip: 0`), and method-only inline types emit `{}`.
-3. MOCK-001 (over-mocking) remains a heuristic warning — it intentionally flags mock-heavy unit
+   types (`NodeJS.ProcessEnv`) emit `{}`. Method-bearing shapes now emit `vi.fn()` stubs too:
+   inline type literals with method signatures (`{ run(): void }` → `{ run: vi.fn() }`),
+   function-typed properties (`cb: (x: number) => void` → `cb: vi.fn()`), and named
+   interfaces with methods (data properties as values, methods as `vi.fn`). Remaining nuance:
+   optional members are included with their example value (`zip?: number` → `zip: 0`).
+3. ✅ PHP synthesis surfaces `@throws` docblocks: the parser now extracts exception class names
+   into `SignatureIR.throws` (IR schema v3), and `synthesize_mock_contract` emits a commented
+   `willThrowException` (phpunit) / `andThrow` (pest) alternative per `@throws`-documented method.
+   The doc-type tokenizer also handles generics with spaces (`array<int, Invoice>`) — see row 26.
+4. MOCK-001 (over-mocking) remains a heuristic warning — it intentionally flags mock-heavy unit
    tests; tuning its threshold or production-assertion counting is a judgment call, not a bug.
-4. TAUT-004's last survivor is a dynamic-`import()` + indirect signal-handler invocation
+5. TAUT-004's last survivor is a dynamic-`import()` + indirect signal-handler invocation
    (`(sigCall[1])()` from a spy's `.mock.calls`) — statically untraceable without full
    interprocedural analysis.
-5. The pre-existing git-diff MCP integration test flaked under parallel coverage (5s default
-   timeout); raised to 20s for that one test — it no longer flakes across three full coverage
-   runs.
+6. ✅ The 5s vitest default timeout flaked under parallel coverage on three tests (git-diff MCP,
+   syntax-only, in-memory audit); a global `testTimeout: 15s` now covers instrumentation headroom
+   without masking real hangs. Coverage gate holds at 80/75/90.
+7. PHP parser coverage raised 88.4→96.6% stmts / 100% funcs via new fixtures: `createPartialMock`
+   member lists, `createConfiguredMock` array values, PHPDoc type-syntax variants, and a
+   deliberately broken file exercising the SYS-001 parse-error diagnostic.

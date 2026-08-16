@@ -8,7 +8,7 @@
  * invalidates cached modules even when the audited workspace is unchanged. Bump whenever the
  * ModuleIR shape or any parser's extraction changes in a way that would make cached IR stale.
  */
-export const IR_SCHEMA_VERSION = '2';
+export const IR_SCHEMA_VERSION = '3'; // 3: SignatureIR.throws (PHP @throws docblocks)
 
 export type Language = 'typescript' | 'php';
 export type Severity = 'error' | 'warning' | 'info';
@@ -121,6 +121,8 @@ export interface SignatureIR {
   parameters: ParamIR[];
   returnType?: TypeIR;
   typeParams: string[];
+  /** Exception class names documented via `@throws` (PHP docblocks). */
+  throws?: string[];
 }
 
 export interface ParamIR {

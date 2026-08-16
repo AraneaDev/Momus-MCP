@@ -37,7 +37,8 @@ describe('tsReturnExample (syntax-only type nodes)', () => {
     expect(tsReturnExample(parseType('[string, number]'))).toBe('[]');
     expect(tsReturnExample(parseType('{ a: number; b: string }'))).toBe("{ a: 0, b: '' }");
     expect(tsReturnExample(parseType('{}'))).toBe('{}');
-    expect(tsReturnExample(parseType('{ run(): void }'))).toBe('{}'); // method-only → empty shape
+    expect(tsReturnExample(parseType('{ run(): void }'))).toBe('{ run: vi.fn() }'); // method-only → vi.fn stub
+    expect(tsReturnExample(parseType('{ cb: (x: number) => void }'))).toBe('{ cb: vi.fn() }'); // fn-typed prop
   });
 
   it('picks the first non-nullish union member', () => {

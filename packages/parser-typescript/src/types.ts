@@ -104,13 +104,17 @@ export function tsReturnExample(type: ts.TypeNode | undefined): string {
     return 'undefined';
   }
   if (ts.isArrayTypeNode(type) || ts.isTupleTypeNode(type)) return '[]';
+  if (ts.isFunctionTypeNode(type) || ts.isConstructorTypeNode(type)) return 'vi.fn()';
   if (ts.isTypeLiteralNode(type)) {
     const props = type.members
       .filter(
-        (m): m is ts.PropertySignature =>
-          ts.isPropertySignature(m) && !!m.name && ts.isIdentifier(m.name) && m.type !== undefined,
+        (m): m is ts.PropertySignature | ts.MethodSignature =>
+          (ts.isPropertySignature(m) || ts.isMethodSignature(m)) && !!m.name && ts.isIdentifier(m.name),
       )
-      .map((m) => `${m.name.getText()}: ${tsReturnExample(m.type)}`);
+      .map((m) => {
+        if (ts.isMethodSignature(m)) return `${m.name.getText()}: vi.fn()`;
+        return m.type ? `${m.name.getText()}: ${tsReturnExample(m.type)}` : `${m.name.getText()}: undefined`;
+      });
     return props.length > 0 ? `{ ${props.join(', ')} }` : '{}';
   }
   if (ts.isUnionTypeNode(type)) {
@@ -205,7 +209,14 @@ function resolveNamedType(checker: ts.TypeChecker, typeNode: ts.TypeNode, depth:
   const entries: string[] = [];
   for (const prop of checker.getPropertiesOfType(type)) {
     const decl = prop.valueDeclaration ?? prop.declarations?.[0];
-    if (!decl || !(ts.isPropertySignature(decl) || ts.isPropertyDeclaration(decl))) continue;
+    if (!decl) continue;
+    // Methods on a named interface/class become `vi.fn()` stubs in the literal (consistent with
+    // the mock contract template; better than dropping them or emitting `undefined`).
+    if (ts.isMethodSignature(decl) || ts.isMethodDeclaration(decl)) {
+      entries.push(`${prop.getName()}: vi.fn()`);
+      continue;
+    }
+    if (!(ts.isPropertySignature(decl) || ts.isPropertyDeclaration(decl))) continue;
     entries.push(`${prop.getName()}: ${tsReturnExampleChecked(checker, decl.type, depth + 1)}`);
   }
   if (entries.length > 0) return `{ ${entries.join(', ')} }`;
@@ -239,14 +250,20 @@ export function tsReturnExampleChecked(checker: ts.TypeChecker, typeNode: ts.Typ
     }
   }
   // Inline object type literals recurse through the checker so nested named members
-  // (e.g. `{ lang: Language }`) resolve to real literals, not `undefined`.
+  // (e.g. `{ lang: Language }`) resolve to real literals, not `undefined`. Method signatures
+  // (callbacks/event handlers) become `vi.fn()` stubs instead of being dropped.
   if (ts.isTypeLiteralNode(typeNode)) {
     const props = typeNode.members
       .filter(
-        (m): m is ts.PropertySignature =>
-          ts.isPropertySignature(m) && !!m.name && ts.isIdentifier(m.name) && m.type !== undefined,
+        (m): m is ts.PropertySignature | ts.MethodSignature =>
+          (ts.isPropertySignature(m) || ts.isMethodSignature(m)) && !!m.name && ts.isIdentifier(m.name),
       )
-      .map((m) => `${m.name.getText()}: ${tsReturnExampleChecked(checker, m.type, depth + 1)}`);
+      .map((m) => {
+        if (ts.isMethodSignature(m)) return `${m.name.getText()}: vi.fn()`;
+        return m.type
+          ? `${m.name.getText()}: ${tsReturnExampleChecked(checker, m.type, depth + 1)}`
+          : `${m.name.getText()}: undefined`;
+      });
     return props.length > 0 ? `{ ${props.join(', ')} }` : '{}';
   }
   return tsReturnExample(typeNode);

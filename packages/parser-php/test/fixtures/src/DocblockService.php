@@ -30,4 +30,14 @@ class DocblockService
     public function tag($label)
     {
     }
+
+    /**
+     * Publish the invoice to the ledger.
+     *
+     * @throws \RuntimeException when the ledger is unavailable
+     * @throws InvalidArgumentException
+     */
+    public function publish()
+    {
+    }
 }

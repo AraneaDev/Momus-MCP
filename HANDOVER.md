@@ -1,6 +1,6 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 257 tests passing, ~86% statements / ~84% branches / ~93% functions,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 261 tests passing, ~87% statements / ~85% branches / ~94% functions,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials. Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
@@ -356,6 +356,19 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   parallel-coverage flake (5000ms) is gone across three full coverage runs. Full gate green: 257
   tests, typecheck/lint/format clean, coverage 85.8% stmts / 84.4% branches / 92.9% funcs,
   self-audit clean. Knossos re-audit unchanged: 6 genuine sentinel errors, 0 new findings.
+- **Last verified (round 15, open items + coverage):** (a) inline type literals with method
+  signatures now synthesize `vi.fn()` stubs (`{ run(): void }` → `{ run: vi.fn() }`), and named
+  interfaces with methods emit data values + `vi.fn` stubs (was `{}`/`undefined`); (b) PHP
+  `@throws` docblocks are extracted into `SignatureIR.throws` (IR schema v3) and surfaced in
+  `synthesize_mock_contract` as commented `willThrowException` (phpunit) / `andThrow` (pest)
+  lines; (c) real bug found by a coverage-pass test: PHPDoc generics containing spaces
+  (`@return array<int, Invoice>`) were truncated to `array<int,` — `docTypeFromRest` now
+  consumes tokens until a `$` or a description word; (d) new PHP fixtures raise parser-php to
+  96.6% stmts / 100% funcs (`createPartialMock` member lists, `createConfiguredMock` array
+  values, doc-type variants, SYS-001 parse-error path); (e) global `testTimeout: 15s` replaces
+  the 5s default that flaked under parallel coverage. Full gate green: 261 tests, typecheck/lint/
+  format clean, coverage 87.3% stmts / 84.9% branches / 93.8% funcs, self-audit clean. Knossos
+  re-audit unchanged: 6 genuine sentinel errors, 0 diagnostics.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
   real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos plus itself (dogfooding) and fixing every
   false-positive/perf gap they expose, keeping `docs/11-real-world-findings.md` as the live
@@ -387,7 +400,12 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   interface targets with data values + method stubs), the union `null`-as-`LiteralType` fix, the
   git subdir-root path normalization (`relToRoot` strip/prepend), the PHP `willThrowException`
   IR-value capture, the `Record`/index-signature `{}` synthesis, the synthesis param-default type
-  inference, or the git-diff MCP test timeout bump (20s) for the parallel-coverage flake.
+  inference, the git-diff MCP test timeout bump (20s) for the parallel-coverage flake, the
+  inline-literal method-stub synthesis (`vi.fn()` for method signatures/function-typed
+  properties/named-interface methods), the PHP `@throws` extraction + synth surfacing
+  (`SignatureIR.throws`, IR schema v3), the PHPDoc generic-with-spaces tokenizer fix
+  (`docTypeFromRest`), the `createPartialMock`/`createConfiguredMock` fixtures, or the global
+  `testTimeout: 15s` for parallel-coverage headroom.
 
 ---
 
@@ -415,7 +433,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 25 files, 257 tests, all pass
+npm test                 # 25 files, 261 tests, all pass
 npm run test:coverage    # v8: ~86% statements / ~84% branches / ~93% functions (floors 80/75/90/80)
 npm run lint             # eslint .  — clean
 npm run format:check     # prettier --check .  — clean

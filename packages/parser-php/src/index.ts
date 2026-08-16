@@ -231,6 +231,7 @@ function methodSignature(node: PhpNode, doc?: DocblockTypes): SignatureIR {
     parameters,
     returnType: phpType(node.type) ?? doc?.returns,
     typeParams: [],
+    throws: doc?.throws.length ? doc.throws : undefined,
   };
 }
 
@@ -247,6 +248,7 @@ function parameterToIR(node: PhpNode): ParamIR {
 interface DocblockTypes {
   returns?: TypeIR;
   params: Map<string, TypeIR>;
+  throws: string[];
 }
 
 /** The PHPDoc `/** ... *​/` block attached to a method (php-parser `extractDoc`). */
@@ -255,22 +257,80 @@ function docblockOf(node: PhpNode): string | undefined {
   return typeof comment?.value === 'string' ? comment.value : undefined;
 }
 
-/** Parse `@param` / `@return` annotations out of a PHPDoc block. */
+/** Lowercase doc-type keywords that may legally appear inside a type expression. */
+const DOC_TYPE_KEYWORDS = new Set([
+  'array',
+  'list',
+  'non-empty-array',
+  'non-empty-list',
+  'int',
+  'integer',
+  'float',
+  'double',
+  'string',
+  'bool',
+  'boolean',
+  'mixed',
+  'void',
+  'null',
+  'false',
+  'true',
+  'callable',
+  'object',
+  'iterable',
+  'self',
+  'static',
+  'parent',
+  'resource',
+  'scalar',
+  'numeric',
+  'positive-int',
+  'negative-int',
+  'non-zero-int',
+  'class-string',
+  'array-key',
+  'never',
+]);
+
+/**
+ * Split a docblock annotation's rest-of-line into `{ typeText, varName? }`. The type runs until
+ * the first `$` (a `@param` variable) or the first lowercase word that can't extend a type
+ * (a description). Generics may contain spaces (`array<int, Foo>`), which a naive first-token
+ * split truncated to `array<int,`.
+ */
+function docTypeFromRest(rest: string): { typeText: string; varName?: string } {
+  const tokens = rest.split(/\s+/).filter(Boolean);
+  let typeText = '';
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (token.startsWith('$')) return { typeText: typeText.trim(), varName: token };
+    if (i > 0 && /^[a-z][a-zA-Z0-9_-]*$/.test(token) && !DOC_TYPE_KEYWORDS.has(token)) break;
+    typeText += (i === 0 ? '' : ' ') + token;
+  }
+  return { typeText: typeText.trim() };
+}
+
+/** Parse `@param` / `@return` / `@throws` annotations out of a PHPDoc block. */
 function parseDocblock(doc: string | undefined): DocblockTypes {
-  const result: DocblockTypes = { params: new Map() };
+  const result: DocblockTypes = { params: new Map(), throws: [] };
   if (!doc) return result;
   for (const line of doc.split(/\r?\n/)) {
-    const match = /@(param|return|returns)\b/.exec(line);
+    const match = /@(param|return|returns|throws|throw)\b/.exec(line);
     if (!match) continue;
     const rest = line.slice(match.index! + match[0].length).trim();
     const tag = match[1]!;
     if (tag === 'return' || tag === 'returns') {
-      const typeText = rest.split(/\s+/, 1)[0] ?? '';
+      const { typeText } = docTypeFromRest(rest);
       const parsed = parseDocType(typeText);
       if (parsed) result.returns = parsed;
+    } else if (tag === 'throws' || tag === 'throw') {
+      // `@throws \RuntimeException` or `@throws RuntimeException when …` — take the first token
+      const typeText = rest.split(/\s+/, 1)[0] ?? '';
+      const cls = typeText.replace(/^\\/, '');
+      if (cls && !result.throws.includes(cls)) result.throws.push(cls);
     } else {
-      const [typeText, varName] = rest.split(/\s+/);
-      const parsed = parseDocType(typeText ?? '');
+      const { typeText, varName } = docTypeFromRest(rest);
+      const parsed = parseDocType(typeText);
       const name = varName?.replace(/^[&$.]+/, '');
       if (parsed && name) result.params.set(name, parsed);
     }
