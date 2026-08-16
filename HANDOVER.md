@@ -6,6 +6,23 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ## Current checkpoint — 2026-08-16
 
+- **Last verified (live release flow):** repo pushed to `https://github.com/AraneaDev/Momus-MCP`
+  (first push ever — CI had never run before, which is how several latent CI bugs survived).
+  Release-please now works end-to-end against the real GitHub API: **v0.0.1** bootstrapped
+  (tag + release, since the manifest baseline is 0.0.1 and the first run would have proposed
+  0.1.0 from the 4 early `feat` commits) and **v0.0.2 cut automatically** (PR #2 → merge →
+  tag + GitHub Release with changelog). Live bugs found & fixed: (1) `json` extra-files need
+  a `jsonpath` property (release-please rejects `{type:'json', path}` — caught on the first
+  real run); (2) `bump-patch-for-minor-pre-major: true` added so pre-1.0 releases stay in
+  0.0.x and the `~0.0.1` internal dep ranges always resolve (`npm ci` on the release branch
+  had E404'd when 0.1.0 was proposed); (3) the `release-config` check asserts the ~ range
+  *admits* the current version, not equals it; (4) CI env bugs: serverInfo test hardcoded
+  0.0.1, `--fix` tests inherited `CI=true` on runners, and the **CLI smoke step was
+  false-green since the first commit** (absolute path + `--max-issues 0` → audited nothing;
+  never surfaced because the repo was never pushed). All CI runs on main now green; release
+  PRs get the same gates (commit-hygiene, release-config, conventional-title, test). The
+  **npm publish step is dormant** during pre-release — gated on `NPM_TOKEN != ''` so 0.0.x
+  tags never auto-publish (user direction: pre-release).
 - **Last verified:** release-please round-trip verified end-to-end: `scripts/simulate-release.mjs`
   creates an isolated worktree, bumps 0.0.1 → 0.0.2 exactly as release-please's json extra-files
   would (root + all five packages + manifest + CHANGELOG), runs `npm ci` + the publish step
@@ -20,7 +37,9 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   re-pinned `~0.0.1` to track in lockstep, `release-please-config.json` (json extra-files bump
   every workspace `package.json`) + `.release-please-manifest.json` (`".": "0.0.1"`),
   `.github/workflows/release-please.yml` (release-please-action@v4 → version PR → `v*` tag +
-  GitHub Release → gate + `npm run publish` on `release_created`), `.github/workflows/pr-title.yml`
+  GitHub Release → gate on `release_created`; the npm publish step is **dormant during
+  pre-release** (activates only when an `NPM_TOKEN` secret exists)),
+  `.github/workflows/pr-title.yml`
   (conventional-commit title gate, payload-only `pull_request_target`, `permissions: {}`), and
   `scripts/publish.mjs` (`npm publish -w` in dependency order, `NPM_PUBLISH_DRY_RUN=1`
   supported). `@changesets/cli`, `.changeset/`, and `release.yml` removed. MCP serverInfo

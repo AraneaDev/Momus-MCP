@@ -56,8 +56,12 @@ jobs:
       # npm provenance is pre-wired (`id-token: write`); to enable it, add
       # `"publishConfig": { "provenance": true }` to each published package and
       # publish with an OIDC-capable token instead of NPM_TOKEN.
+      #
+      # DORMANT until publishing is approved: pre-release (0.0.x) tags must never
+      # auto-publish. The step only activates once an NPM_TOKEN secret exists --
+      # add it when the first public release is sanctioned, nothing else changes.
       - name: Publish to npm
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs.release_created && secrets.NPM_TOKEN != '' }}
         run: npm run publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

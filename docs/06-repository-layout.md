@@ -169,8 +169,10 @@ counts (`summary.totalErrors`), so `--max-issues 0` (summary-only) never masks f
 
 `release-please` reads Conventional Commits on `main` and opens/updates a version PR; on merge
 it creates the `vX.Y.Z` tag + GitHub Release, then the workflow's `release_created` steps run
-the same CI gate (typecheck + test) and publish (`scripts/publish.mjs` → `npm publish -w
-@momus/*` in dependency order, `access: public` from each package's `publishConfig`). All five
+the same CI gate (typecheck + test). A publish step (`scripts/publish.mjs` → `npm publish -w
+@momus/*` in dependency order, `access: public` from each package's `publishConfig`) is
+**dormant during pre-release**: it only activates when an `NPM_TOKEN` secret exists, so 0.0.x
+tags never auto-publish. All five
 packages share **one lockstep version** (`release-please-config.json` bumps every workspace
 `package.json` via `json` extra-files; internal `@momus/*` deps use `~0.0.1` ranges so they
 track in lockstep). npm provenance is pre-wired (`id-token: write`); enable it per package via
@@ -253,7 +255,8 @@ Byte-exact snapshot tests run on linux CI (line endings normalized on Windows/ma
 2. `release-please.yml` on `main`: release-please bumps the lockstep version → `CHANGELOG.md`
    → tag `vX.Y.Z` + GitHub Release → the workflow publishes `@momus/core`,
    `@momus/parser-typescript`, `@momus/parser-php`, `@momus/mcp-server`, `@momus/cli`
-   (all at the same version) via `npm run publish`.
+   (all at the same version) via `npm run publish` — **dormant until an `NPM_TOKEN`
+   secret exists** (pre-release 0.0.x tags never auto-publish).
 3. `@momus/cli` is the only package with a `bin` (`momus`).
 4. The MCP server is registered on public registries (Phase 4) with install command
    `npx -y @momus/mcp-server@latest` (stdio) and a documented `claude_desktop_config.json` /

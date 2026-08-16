@@ -166,9 +166,9 @@ covered by a bin-symlink regression test); TAUT-003/TAUT-006 and invocation-site
    `release-please-config.json` + `.release-please-manifest.json` pin a single lockstep version
    from **0.0.1**, bumping all five workspace `package.json`s via `json` extra-files;
    `pr-title.yml` gates Conventional Commit titles; on `release_created` the workflow runs the
-   CI gate and `npm run publish` (`scripts/publish.mjs`, dependency order). Publishing
-   `@momus/*` to npm and registering `momus-mcp` in the MCP registry remain blocked on
-   credentials.
+   CI gate. A publish step (`scripts/publish.mjs`, dependency order) is **dormant during
+   pre-release** — it only activates once an `NPM_TOKEN` secret exists. Publishing `@momus/*`
+   to npm and registering `momus-mcp` in the MCP registry remain blocked on credentials.
    **Acceptance:** a PR on any TS repo shows Momus annotations; `npx -y momus-mcp` serves.
 
 ## 10.4 Rules of engagement (hard constraints from §1)

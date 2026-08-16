@@ -70,4 +70,20 @@ describe('release-please config', () => {
       expect(f.jsonpath).toBe('$.version');
     }
   });
+
+  it('pre-1.0 releases stay on patch bumps (bump-patch-for-minor-pre-major)', () => {
+    const cfg = JSON.parse(readFileSync(join(ROOT, 'release-please-config.json'), 'utf8')).packages['.'];
+    expect(cfg['bump-patch-for-minor-pre-major']).toBe(true);
+  });
+
+  it('npm publish step stays dormant until NPM_TOKEN exists (pre-release never auto-publishes)', () => {
+    const wf = readFileSync(join(ROOT, '.github', 'workflows', 'release-please.yml'), 'utf8');
+    expect(wf).toContain("secrets.NPM_TOKEN != ''");
+    expect(wf).toContain('Publish to npm');
+    // The gate must be on the publish step itself, not a job-level condition that
+    // could be bypassed by reordering steps.
+    const m = wf.match(/name: Publish to npm[\s\S]*?run: npm run publish/);
+    expect(m).not.toBeNull();
+    expect(m![0]).toContain('secrets.NPM_TOKEN');
+  });
 });
