@@ -149,6 +149,7 @@ export type TypeIR =
 export type MockPattern =
   | 'vi.mock'
   | 'jest.mock'
+  | 'jest.doMock'
   | 'vi.spyOn'
   | 'jest.spyOn'
   | 'vi.fn'

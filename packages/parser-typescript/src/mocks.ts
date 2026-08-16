@@ -124,8 +124,8 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
     }
     const name = callName(node.expression);
 
-    // ---- vi.mock('mod', factory)
-    if (name === 'vi.mock' || name === 'jest.mock') {
+    // ---- vi.mock('mod', factory) / jest.mock / jest.doMock (one-off, same factory shape)
+    if (name === 'vi.mock' || name === 'jest.mock' || name === 'jest.doMock') {
       const specifier = node.arguments[0] && ts.isStringLiteral(node.arguments[0]) ? node.arguments[0].text : undefined;
       const resolvedPath = specifier ? ctx.resolveImport(specifier) : undefined;
       const factory = node.arguments[1] ? unwrap(node.arguments[1]) : undefined;

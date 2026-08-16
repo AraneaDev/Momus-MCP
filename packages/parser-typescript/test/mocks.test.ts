@@ -76,6 +76,18 @@ describe('mock detection (fixture test file)', () => {
     expect(mock?.stubbedMembers.every((s) => s.api === 'mockFactoryKey')).toBe(true);
   });
 
+  it('detects jest.doMock one-off module mocks with factory keys', () => {
+    const src = ["import { jest } from '@jest/globals';", "jest.doMock('./mod', () => ({ fn: jest.fn() }));", ''].join(
+      '\n',
+    );
+    const p = join(FIXTURES, 'tests', 'jest-domock.test.ts');
+    const mod = parser.parseModule(p, src, { config: undefined, resolveImport: () => null });
+    const mock = mod.mocks.find((m) => m.pattern === 'jest.doMock');
+    expect(mock?.target?.specifier).toBe('./mod');
+    expect(mock?.stubbedMembers.map((s) => s.name)).toEqual(['fn']);
+    expect(mock?.stubbedMembers[0]?.api).toBe('mockFactoryKey');
+  });
+
   it('leaves factory keys empty when the block factory returns nothing object-like', () => {
     const src = [
       "import { vi } from 'vitest';",

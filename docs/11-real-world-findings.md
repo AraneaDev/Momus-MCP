@@ -63,6 +63,8 @@
 | 42 | *(dogfood, Chaos)* | `importOriginal` partial-mock factories (`vi.mock('mod', async (io) => { const a = await io(); return { ...a, key: vi.fn() }; })`) extracted **zero** factory keys — only expression-bodied factories were scanned | block-bodied factories are now scanned via `findReturnedObjectLiteral` (first object-literal return wins; `...actual` spread preserved as non-stub) — the stubbed exports (`readdirSync`, `runShellCommand`, …) become real members for DRIFT-005/TAUT; Chaos re-audit unchanged, no false positives |
 | 43 | *(coverage pass)* | `phpReturnExample`/`renderPhpType` union, intersection, and callable return branches in the PHP synth path were uncovered | `DocblockTypes.php` gains `either()` (`int|string` → `andReturn(0)`), `both()` (`CollabA&CollabB` → `null`), `factory()` (`callable(): int` → `null`); MCP test asserts all three renderings |
 | 44 | *(dogfood, git-diff on temp Chaos clone)* | module-target mocks (`vi.mock` factories) have no `symbolId`, and `diffRelevant` required one — in precommit/`--git-diff` mode they were **silently out of scope**: a renamed export left the factory key dangling and `momus precommit` reported CLEAN (exit 0) while a plain audit fired DRIFT-005 | `diffRelevant` now resolves module-target mocks via their changed `modulePath`; DRIFT-006 gained a module-target branch (module file changed + mock file untouched → stale, message lists module basename + exports, budget-fitted). Planted rename on the temp clone fires DRIFT-005 errors + DRIFT-006 warnings with exit 1; healthy twin clears. Rule-level + CLI e2e regression tests |
+| 45 | *(dogfood, MCP git-diff on temp Knossos clone)* | PHP class-target mocks in the MCP `verify_mock_drift` git-diff scope had no regression coverage | planted `client()` → `clientRenamed()` fired 8 DRIFT-001 + 11 DRIFT-006 via the MCP tool; healthy twin → 0. New PHP git-diff MCP integration test (`.momusrc` php:true fixture repo) pins the path |
+| 46 | *(Jest probe)* | `jest.doMock('mod', factory)` — Jest's one-off module mock with identical factory semantics — was invisible (only its inner `jest.fn` was extracted) | matched as its own `jest.doMock` pattern with `mockFactoryKey` members; `MockPattern` union extended; regression test pins factory-key extraction |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -235,3 +237,13 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
     clone now fires DRIFT-005 errors + DRIFT-006 warnings across every affected test file with exit 1; the
     healthy twin (factory key updated alongside) clears. Regression tests at rule level (diff.test.ts) and
     CLI end-to-end (row 44).
+23. ✅ Dogfooded the **MCP `verify_mock_drift` git-diff scope on a temp clone of Knossos-MCP (PHP)**: planted
+    `client()` → `clientRenamed()` in `LanguageWorkerPool.php` with `LanguageScanRunnerTest`'s `createStub`
+    + `->method('client')` untouched → the tool surfaced **8 DRIFT-001 errors + 11 DRIFT-006 warnings**; the
+    healthy twin (stub updated to `clientRenamed`) cleared to 0. PHP class-target mocks participate in diff
+    scope exactly like TS. Added a PHP git-diff MCP integration test (fixture repo with `.momusrc` php:true)
+    so the path stays regressed (row 45).
+24. ✅ Jest probe: `jest.doMock('mod', () => ({...}))` (one-off module mock, same factory semantics as
+    `jest.mock`) was invisible — only its inner `jest.fn` was caught. Now matched as its own `jest.doMock`
+    pattern with `mockFactoryKey` members; `MockPattern` union extended. Regression test pins the factory-key
+    extraction (row 46).

@@ -1,6 +1,6 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 298 tests passing, ~91.6% statements / ~86.9% branches / ~95.3% functions,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 300 tests passing, ~91.6% statements / ~86.9% branches / ~95.3% functions,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
 **Next session: MCP registry listing draft; publishing blocked on credentials (Phase 4 deferred indefinitely). Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
@@ -453,6 +453,17 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   end-to-end (renamed export vs untouched factory → exit 1 + DRIFT-005/006; healthy twin
   → exit 0). 298 tests; coverage 91.6% stmts / 86.85% branches / 95.26% funcs; self-audit
   CLEAN. Temp clone removed; Chaos/Knossos working trees clean.
+- **Last verified (round 23):** dogfooded the **MCP `verify_mock_drift` git-diff scope on a
+  temp clone of Knossos-MCP (PHP)** — planted `client()` → `clientRenamed()` in
+  `LanguageWorkerPool.php` with the `createStub` + `->method('client')` test untouched: the
+  tool surfaced **8 DRIFT-001 errors + 11 DRIFT-006 warnings**, healthy twin cleared to 0.
+  PHP class-target mocks participate in diff scope exactly like TS. Added a PHP git-diff MCP
+  integration test (`.momusrc` php:true fixture repo) so the path stays regressed. Jest
+  probe: **`jest.doMock` (one-off module mock) was invisible** — now matched as its own
+  pattern with `mockFactoryKey` members; `MockPattern` union extended + regression test.
+  300 tests; coverage 91.6% stmts / 86.92% branches / 95.26% funcs; self-audit CLEAN.
+  Chaos re-audit unchanged (4 MOCK-001 / 0 errors); temp clone removed; both test repos
+  working trees clean.
   Self-audit CLEAN; Chaos 0 errors / 4 MOCK-001 and Knossos 6 sentinel errors — both
   unchanged; precommit on the working tree is CLEAN.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
@@ -477,6 +488,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   return examples),
   round-22 items (module-target diff relevance — diffRelevant + DRIFT-006 module branch,
   precommit git-diff dogfood on temp Chaos clone),
+  round-23 items (PHP MCP git-diff dogfood + regression test, jest.doMock pattern),
   PHP function-scoped mock bindings, PHP setUp/property mock bindings, PHP same-variable
   reassignment, the test-coverage tooling, the contract-synthesis public-member/`?`-ordering
   fixes, the persistent IR cache, the ESLint/Prettier setup, the real-codebase Chaos-MCP
@@ -532,7 +544,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 26 files, 298 tests, all pass
+npm test                 # 26 files, 300 tests, all pass
 npm run test:coverage    # v8: ~91.6% statements / ~86.9% branches / ~95.3% functions (floors 80/75/90/80)
 npm run lint             # eslint .  — clean
 npm run format:check     # prettier --check .  — clean

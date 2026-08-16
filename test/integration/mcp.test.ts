@@ -211,6 +211,59 @@ describe('Momus MCP server (git-diff scope)', () => {
     // git repo setup + a full workspace parse can exceed the 5s default under parallel
     // coverage instrumentation (this test flaked twice with a 5000ms timeout)
   }, 20_000);
+
+  it('verify_mock_drift scope=git-diff surfaces PHP drift for a renamed method', { timeout: 20_000 }, async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'momus-mcp-php-git-'));
+    const run = (cmd: string) =>
+      execFileSync('git', ['-C', repo, ...cmd.split(' ').filter(Boolean).slice(1)], {
+        encoding: 'utf8',
+        stdio: 'pipe',
+      });
+    try {
+      run('git init -q -b main');
+      run('git config user.email mcp@momus.dev');
+      run('git config user.name mcp');
+      mkdirSync(join(repo, 'src'), { recursive: true });
+      mkdirSync(join(repo, 'tests'), { recursive: true });
+      writeFileSync(join(repo, '.momusrc'), '{ "languages": { "php": true, "typescript": false } }\n');
+      writeFileSync(
+        join(repo, 'src', 'Worker.php'),
+        '<?php\nclass Worker {\n  public function client(\n    $descriptor,\n    $policy\n  ): ProcessScannerClient {\n    return new ProcessScannerClient();\n  }\n}\n',
+      );
+      writeFileSync(
+        join(repo, 'tests', 'WorkerTest.php'),
+        "<?php\nclass WorkerTest extends TestCase {\n  public function testStub() {\n    $pool = $this->createStub(Worker::class);\n    $pool->method('client')->willReturn(new ProcessScannerClient());\n  }\n}\n",
+      );
+      run('git add -A');
+      run('git commit -qm initial');
+      // rename the method in production; the test's stub is now stale
+      writeFileSync(
+        join(repo, 'src', 'Worker.php'),
+        '<?php\nclass Worker {\n  public function clientRenamed(\n    $descriptor,\n    $policy\n  ): ProcessScannerClient {\n    return new ProcessScannerClient();\n  }\n}\n',
+      );
+
+      const pair = InMemoryTransport.createLinkedPair();
+      const server = createMomusServer({ root: repo });
+      await server.connect(pair[0]);
+      const client = new Client({ name: 'momus-php-git-test', version: '1.0.0' }, { capabilities: {} });
+      await client.connect(pair[1]);
+      try {
+        const res = await client.callTool({
+          name: 'verify_mock_drift',
+          arguments: { scope: 'git-diff', baseRef: 'HEAD' },
+        });
+        expect(res.isError).toBeFalsy();
+        const sc = res.structuredContent as { result: { issues: Array<{ rule: string }> } };
+        // PHP class-target mocks participate in diff scope like TS ones
+        expect(sc.result.issues.some((issue) => issue.rule === 'DRIFT-001')).toBe(true);
+        expect(sc.result.issues.some((issue) => issue.rule === 'DRIFT-006')).toBe(true);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('Momus MCP server (Streamable HTTP)', () => {
