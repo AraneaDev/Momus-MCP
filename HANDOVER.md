@@ -305,13 +305,24 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   `list_rules`→14, `verify_mock_drift`→0, `detect_tautological_assertions`→6 sentinels,
   `audit_test_fidelity` on `CliHelpersTest.php`→6, `synthesize_mock_contract` on
   `LanguageWorkerPool.php`→correct `phpunit` template.
+- **Last verified (round 10):** (a) **real stdio MCP round-trip vs Knossos** — spawned the
+  `momus-mcp` stdio server as a subprocess (`MOMUS_ROOT=/root/Knossos-MCP`, temp `.momusrc` with
+  PHP enabled + cache disabled, removed after) and drove all 5 tools through
+  `StdioClientTransport`; results match the in-memory round-trip (5 tools, 14 rules, 0 drift, 6
+  sentinel TAUTs, correct `phpunit` template). (b) **Chaos TAUT-004 dynamic-import fix** —
+  `productionCalls` now counts a dynamic `import()` as executing production code (the
+  `vi.resetModules()` + re-import + signal-handler-invoke pattern in `sandbox.test.ts` was
+  misread as mock-only); Chaos TAUT-004: **1 → 0** (now 0 errors / 4 MOCK-001 warnings). (c)
+  **Knossos sentinel decision** — the 6 `assertSame(true, true)` hits are correct true positives
+  (author's `// sentinel` smoke/skip markers), not a Momus bug; documented a Knossos-side
+  recommendation (`expectNotToPerformAssertions()` / `assertTrue` / `markTestSkipped`).
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
   real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos and fixing every false-positive/perf gap
   they expose, keeping `docs/11-real-world-findings.md` as the live record. Phase 4 publishing
   (npm/MCP registry) remains blocked on credentials (no `NPM_TOKEN`). Chaos-MCP is now **0 errors /
-  5 warnings** (1 untraceable TAUT-004 + 4 MOCK-001 heuristics); Knossos-MCP is **6 genuine
-  sentinel errors / 0 warnings**. Both test-subject repos are kept clean (read-only validation;
-  PHP enabled in-memory, cache disabled).
+  4 warnings** (all MOCK-001 over-mocking heuristics, working as intended); Knossos-MCP is **6
+  genuine sentinel errors / 0 warnings**. Test-subject repos are treated as read-only except for
+  temporary files I create and remove (`.momusrc`, cache dirs).
 - **Safe resume point:** if interrupted, resume wherever you stopped; do not revisit PHP
   closure-form/DRIFT-003, docblock typing, synth templates, anonymous-class doubles, git-diff
   plumbing, DRIFT-006, precommit, annotate-pr, the action, the `--fix` mechanism,
@@ -328,8 +339,9 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   ignore pattern, the TAUT-001 `REEVALUATING_KINDS` decision + PHP `exprKind` mapper, the
   TAUT-006 `spiedObjects` hand-off, the `vi.fn<[...]>` typed-generic/object-shape synthesis, or the
   TAUT-004 `productionCalls` guards (setup bindings, local-helper tracing, `it.each` collection), or the
-  PHP constructor/call/return hand-off reachability (`return`/`new`/`call` walk in `extractMocks`), or the
-  named-type object-shape synthesis (`tsReturnExampleChecked` + `getProgram` in `synthesizeContract`).
+  PHP constructor/call/return hand-off reachability (`return`/`new`/`call` walk in `extractMocks`), the
+  named-type object-shape synthesis (`tsReturnExampleChecked` + `getProgram` in `synthesizeContract`), or the
+  dynamic-`import()` production-call counting in `productionCalls`.
 
 ---
 

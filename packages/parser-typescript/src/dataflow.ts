@@ -276,6 +276,13 @@ export function analyzeAssertions(
       if (seen.has(n)) return;
       seen.add(n);
       if (ts.isCallExpression(n)) {
+        // Dynamic `import('./mod')` (and `vi.resetModules()` + re-import) executes real module
+        // code, so it counts as exercising production — otherwise a test that registers and
+        // invokes a production signal handler via a re-import reads as mock-only (TAUT-004).
+        if (n.expression.kind === ts.SyntaxKind.ImportKeyword) {
+          count++;
+          return;
+        }
         const root = rootOf(n.expression);
         if (!root || HELPER_ROOTS.has(root)) {
           ts.forEachChild(n, visit);

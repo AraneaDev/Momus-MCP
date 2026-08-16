@@ -214,4 +214,22 @@ describe('production-call detection (TAUT-004 false-positive guards)', () => {
     expect(mod.functions[0]!.hasProductionCalls).toBe(true);
     expect(mod.assertions[0]!.fnId).toBe(mod.functions[0]!.id);
   });
+
+  it('counts a dynamic import() as production (re-import + signal-handler pattern)', () => {
+    const src = [
+      "import { it, expect, vi } from 'vitest';",
+      'it("invokes the registered handler", async () => {',
+      '  vi.resetModules();',
+      '  const onSpy = vi.spyOn(process, "on");',
+      "  await import('../utils/sandbox.js');",
+      "  const sigCall = onSpy.mock.calls.find((c) => c[0] === 'SIGTERM');",
+      '  (sigCall![1] as () => void)();',
+      '  expect(onSpy).toHaveBeenCalled();',
+      '});',
+      '',
+    ].join('\n');
+    const mod = parse(src);
+    expect(mod.functions).toHaveLength(1);
+    expect(mod.functions[0]!.hasProductionCalls).toBe(true);
+  });
 });

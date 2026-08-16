@@ -31,6 +31,7 @@
 | 12 | *(this round)* | Default `ignorePatterns` omitted `**/vendor/**` (Composer deps) | Knossos audit scanned 3,808 files incl. 3,915 vendor `.php` files (70s) instead of 403 files (8.5s) |
 | 13 | *(this round)* | `productionCalls` missed a SUT assigned in `beforeEach`, local helpers wrapping the SUT, and `it.each` parameterized tests | 21 false TAUT-004 "mock-only-assertion" on Chaos-MCP |
 | 14 | *(this round)* | PHP mocks handed to production via `new Foo($mock)`, passed as a call argument, or returned from a `willReturnCallback` closure were never marked reachable | 5 false TAUT-005 "zero-reach" on Knossos-MCP |
+| 15 | *(this round)* | `productionCalls` did not count dynamic `import()` as executing production code | 1 false TAUT-004 on Chaos-MCP `sandbox.test.ts` (signal-handler re-import pattern) |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -40,14 +41,14 @@ Verified against source after fixes; working tree at commit `a65faae`.
   `handler-container.test.ts` mock `estimateAudit`/`estimateNeedsSandbox`/`createExecutionSession`
   from `core/estimate.ts`, `estimate-handler.ts`, `utils/execution.ts`, which changed in that
   range while the test files did not. **True positives.**
-- **Remaining warnings (0 errors):** TAUT-004 (1, a dynamic-`import()` + indirect handler
-  invocation Momus can't statically trace) + MOCK-001 (4, mock-heavy unit tests — heuristic,
-  working as intended).
+- **Remaining warnings (0 errors):** MOCK-001 (4, mock-heavy unit tests — heuristic, working as
+  intended: `handler-container`, `index`, `python-interpreter-memo`, `triage-discover-targets`).
 - **Resolved false positives:** TAUT-005 (scope-aware hand-off, **107 → 0**), TAUT-006
   (spied-object hand-off, **5 → 0**), the TAUT-001 determinism test
   (`expect(f(x)).toBe(f(x))` — a re-evaluating call, now correctly not flagged), and TAUT-004
-  (**21 → 1** — `productionCalls` now sees SUT instances assigned in `beforeEach`, traces local
-  helper functions that wrap the SUT, and collects `it.each`/`test.each` tests).
+  (**21 → 0** — `productionCalls` now sees SUT instances assigned in `beforeEach`, traces local
+  helper functions that wrap the SUT, collects `it.each`/`test.each` tests, and counts a dynamic
+  `import()` as executing production code).
 
 ## 4. Findings about `/root/Knossos-MCP` (PHP)
 
@@ -69,11 +70,17 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
   (the author's own `// sentinel` comments).
 - **DRIFT-001 / DRIFT-003 drill-down: 0 issues** on the full corpus — the drift rules produce no
   false positives (and no true positives: Knossos genuinely has no planted drift).
-- **MCP round-trip verified** against Knossos over the MCP transport with all 5 tools
-  (`listTools`, `list_rules` → 14 rules, `verify_mock_drift` → 0, `detect_tautological_assertions`
-  → 6 sentinels, `audit_test_fidelity` on `CliHelpersTest.php` → 6, `synthesize_mock_contract` on
-  `LanguageWorkerPool.php` → correct `phpunit` template). No files were written into Knossos
-  (PHP enabled in-memory, cache disabled).
+- **MCP round-trip verified** against Knossos with all 5 tools, twice: once over the in-memory
+  transport and once over a **real stdio subprocess** (temp `.momusrc` with PHP enabled + cache
+  disabled, removed after). Both give: `listTools` → 5, `list_rules` → 14, `verify_mock_drift` →
+  0, `detect_tautological_assertions` → 6 sentinels, `audit_test_fidelity` on
+  `CliHelpersTest.php` → 6, `synthesize_mock_contract` on `LanguageWorkerPool.php` → correct
+  `phpunit` template.
+- **Sentinel decision:** the 6 `assertSame(true, true)` hits are correct true positives, not a
+  Momus bug. The author uses them as no-op smoke/skip markers (`// sentinel` — `assertTrue` is
+  absent from `Support/Assertions.php`). Recommendation for Knossos (not a Momus change): add
+  `assertTrue` to the assertion shim, or use PHPUnit's `expectNotToPerformAssertions()` / a
+  proper `markTestSkipped` for the pcntl-guard case — the current lines give false confidence.
 
 ## 5. Open / candidate improvements
 
