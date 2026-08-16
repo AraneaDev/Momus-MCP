@@ -35,7 +35,14 @@ const MOCK_FACTORIES = new Set([
   'getMockForAbstractClass',
 ]);
 const MOCKERY_FACTORIES = new Set(['mock', 'spy']);
-const CONFIG_CALLS = new Set(['method', 'shouldReceive', 'willReturn', 'andReturn', 'willReturnCallback']);
+const CONFIG_CALLS = new Set([
+  'method',
+  'shouldReceive',
+  'willReturn',
+  'andReturn',
+  'willReturnCallback',
+  'willThrowException',
+]);
 
 interface PhpMockState {
   mocks: MockIR[];

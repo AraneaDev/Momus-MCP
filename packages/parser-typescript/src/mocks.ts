@@ -54,7 +54,30 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
   const handle = getProgram(file);
   const checker = handle.program.getTypeChecker();
   const mocks: MockIR[] = [];
+  // `instanceIds` (name -> most-recent mock id) is kept for the dataflow caller, but
+  // resolution here must be position-aware: the same name (`mockRun`) is reused across
+  // many test scopes, and a flat map would resolve every use to the last binding.
   const instanceIds = new Map<string, string>();
+  const instanceBindingLines = new Map<string, Array<{ line: number; id: string }>>();
+  const bindInstance = (name: string, id: string): void => {
+    instanceIds.set(name, id);
+    const entries = instanceBindingLines.get(name) ?? [];
+    entries.push({ line: mockLineOfId(id), id });
+    instanceBindingLines.set(name, entries);
+  };
+  const resolveInstance = (name: string, line: number): string | undefined => {
+    const entries = instanceBindingLines.get(name);
+    if (!entries) return undefined;
+    let best: string | undefined;
+    let bestLine = -1;
+    for (const entry of entries) {
+      if (entry.line <= line && entry.line > bestLine) {
+        best = entry.id;
+        bestLine = entry.line;
+      }
+    }
+    return best;
+  };
   const pos = (n: ts.Node) => sf.getLineAndCharacterOfPosition(n.getStart());
   const endPos = (n: ts.Node) => sf.getLineAndCharacterOfPosition(n.getEnd());
   const mkSpan = (n: ts.Node): SourceSpan =>
@@ -134,7 +157,7 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
         isAutomock: true,
       });
       const binding = findBinding(node, sf);
-      if (binding) instanceIds.set(binding, id);
+      if (binding) bindInstance(binding, id);
     }
 
     // ---- vi.stubGlobal('name', value)
@@ -231,7 +254,7 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
         });
         // spy result bound to an identifier
         const binding = findBinding(node, sf);
-        if (binding) instanceIds.set(binding, id);
+        if (binding) bindInstance(binding, id);
       }
     }
 
@@ -257,7 +280,7 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
           });
           explicitMockIds.add(id);
           const binding = findBinding(node, sf);
-          if (binding) instanceIds.set(binding, id);
+          if (binding) bindInstance(binding, id);
         }
       }
     }
@@ -297,7 +320,7 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
           isAutomock: false,
         });
 
-        instanceIds.set(node.name.text, id);
+        bindInstance(node.name.text, id);
       } else if (ts.isObjectLiteralExpression(init)) {
         const members: StubbedMemberIR[] = [];
         for (const p of init.properties) {
@@ -337,27 +360,26 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
             invocationSites: [],
             isAutomock: false,
           });
-          instanceIds.set(node.name.text, id);
+          bindInstance(node.name.text, id);
         }
-      } else if (
-        ts.isCallExpression(init) &&
-        (callName(init.expression) === 'vi.fn' || callName(init.expression) === 'jest.fn')
-      ) {
-        // direct const f = vi.fn()/jest.fn() — bind the visitor's mock to the name
-        const id = mockId(init);
+      } else if (ts.isCallExpression(init) && findMockFactoryCall(init)) {
+        // direct const f = vi.fn() / vi.fn().mockReturnValue(...) — bind the
+        // visitor's mock to the name so later hand-offs and configs resolve it.
+        const factory = findMockFactoryCall(init)!;
+        const id = mockId(factory);
         if (!mocks.some((m) => m.id === id)) {
           mocks.push({
             id,
-            span: mkSpan(init),
+            span: mkSpan(factory),
             framework: ctx.framework,
-            pattern: callName(init.expression) as 'vi.fn' | 'jest.fn',
+            pattern: (callName(factory.expression) ?? 'vi.fn') as 'vi.fn' | 'jest.fn',
             stubbedMembers: [],
             configuredValues: [],
             invocationSites: [],
             isAutomock: false,
           });
         }
-        instanceIds.set(node.name.text, id);
+        bindInstance(node.name.text, id);
       } else if (ts.isNewExpression(init) && ctx.typeAware && isProductionClass(init, checker, sf)) {
         // const svc = new LedgerService(...) — production instance; mock members via later configs
         const type = checker.getTypeAtLocation(init);
@@ -375,7 +397,7 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
             invocationSites: [],
             isAutomock: false,
           });
-          instanceIds.set(node.name.text, id);
+          bindInstance(node.name.text, id);
         }
       }
     }
@@ -525,20 +547,19 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
       if (!isConfigCall && !isHelperCall) {
         for (const arg of n.arguments) {
           const a = stripCast(arg);
-          if (ts.isIdentifier(a) && instanceIds.has(a.text)) {
-            const mock = mocks.find((m) => m.id === instanceIds.get(a.text));
-            if (mock && !mock.invocationSites.some((s) => s.startLine === pos(n).line + 1)) {
-              mock.invocationSites.push(mkSpan(n));
-            }
+          const aid = ts.isIdentifier(a) ? resolveInstance(a.text, pos(a).line + 1) : undefined;
+          const mock = aid ? mocks.find((m) => m.id === aid) : undefined;
+          if (mock && !mock.invocationSites.some((s) => s.startLine === pos(n).line + 1)) {
+            mock.invocationSites.push(mkSpan(n));
           }
         }
       }
       if (!isConfigCall) {
         const base = ts.isPropertyAccessExpression(n.expression) ? n.expression.expression : n.expression;
         const owner = findInstanceOwner(base.getText(sf), sf);
-        if (owner && instanceIds.has(owner)) {
-          const id = instanceIds.get(owner)!;
-          const mock = mocks.find((m) => m.id === id);
+        const oid = owner ? resolveInstance(owner, pos(n).line + 1) : undefined;
+        if (oid) {
+          const mock = mocks.find((m) => m.id === oid);
           if (mock && !mock.invocationSites.some((s) => s.startLine === pos(n).line + 1)) {
             mock.invocationSites.push(mkSpan(n));
           }
@@ -555,6 +576,34 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
           }
         }
       }
+    }
+    // A mock embedded as an object-literal value / array element is handed off to the SUT
+    // (`{ run: mockRun }`, `{ deadline }`, `{ run: vi.fn().mockResolvedValue(x) }`). Treat it
+    // as reachable even though it is never directly invoked in-file — otherwise TAUT-005
+    // flags these as zero-reach stubs.
+    const markHandedOff = (expr: ts.Expression | undefined) => {
+      if (!expr) return;
+      const a = stripCast(expr);
+      let id: string | undefined;
+      if (ts.isIdentifier(a)) {
+        id = resolveInstance(a.text, pos(a).line + 1);
+      } else {
+        const factory = findMockFactoryCall(a);
+        if (factory) id = mockId(factory);
+      }
+      if (!id) return;
+      const mock = mocks.find((m) => m.id === id);
+      if (mock && !mock.invocationSites.some((s) => s.startLine === pos(n).line + 1)) {
+        mock.invocationSites.push(mkSpan(n));
+      }
+    };
+    if (ts.isObjectLiteralExpression(n)) {
+      for (const prop of n.properties) {
+        if (ts.isPropertyAssignment(prop)) markHandedOff(prop.initializer);
+        else if (ts.isShorthandPropertyAssignment(prop)) markHandedOff(prop.name);
+      }
+    } else if (ts.isArrayLiteralExpression(n)) {
+      for (const el of n.elements) markHandedOff(el);
     }
     ts.forEachChild(n, reachable);
   };
@@ -619,6 +668,31 @@ function findBinding(node: ts.Node, _sf: ts.SourceFile): string | undefined {
     p = p.parent;
   }
   return undefined;
+}
+
+/** Extract the 1-based source line from a `mockId` (`file#mock:LINE:COL`). */
+function mockLineOfId(id: string): number {
+  const m = id.match(/#mock:(\d+):\d+$/);
+  return m ? Number(m[1]) : 0;
+}
+
+/**
+ * Walk a call/property-access chain down to the `vi.fn()` / `jest.fn()` factory call.
+ * Handles both bare `vi.fn()` and chained forms like `vi.fn().mockReturnValue(1)`.
+ */
+function findMockFactoryCall(expr: ts.Expression): ts.CallExpression | undefined {
+  let cur: ts.Expression = unwrap(stripCast(expr));
+  for (;;) {
+    if (ts.isCallExpression(cur)) {
+      const name = callName(cur.expression);
+      if (name === 'vi.fn' || name === 'jest.fn') return cur;
+      cur = cur.expression;
+    } else if (ts.isPropertyAccessExpression(cur)) {
+      cur = cur.expression;
+    } else {
+      return undefined;
+    }
+  }
 }
 
 function isProductionClass(init: ts.NewExpression, checker: ts.TypeChecker, _sf: ts.SourceFile): boolean {

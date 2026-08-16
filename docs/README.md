@@ -24,6 +24,7 @@ interface, rule, schema, and phase below is normative unless explicitly marked *
 | [`07-roadmap.md`](./07-roadmap.md) | Phased implementation plan with acceptance criteria | Scheduling work |
 | [`09-validation-report.md`](./09-validation-report.md) | Spike results: what was experimentally proven buildable, and the spec deltas it forced | Before Phase 1, and whenever a spec section seems risky |
 | [`10-build-plan.md`](./10-build-plan.md) | **The achievable goal**: what is already built & verified, and the sequenced plan to v0.1 → Phase 4 | Starting work today |
+| [`11-real-world-findings.md`](./11-real-world-findings.md) | Live record of Momus findings + Momus bugs on the real Chaos-MCP / Knossos-MCP repos | Validating against real codebases |
 
 **Reading order for a new contributor:** `01` → `02` → `03` → `06` (build the engine), then
 `04` → `05` (expose it), then `10` → `07` (what's done, what's next).

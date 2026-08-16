@@ -139,6 +139,32 @@ describe('synthesizeForCli', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('synthesizes a phpunit template for a PHP class (not a TS stub)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-synth-php-'));
+    try {
+      writeFileSync(
+        join(dir, 'svc.php'),
+        [
+          '<?php',
+          'namespace App;',
+          'class Svc {',
+          '  public function totalFor(string $id): int { return 0; }',
+          '  public function ping(): void {}',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      const out = synthesizeForCli(dir, 'svc.php', undefined, 'phpunit');
+      const template = (out as { template: string }).template;
+      expect(template).toContain('$mock = $this->createMock(Svc::class);');
+      expect(template).toContain("$mock->method('totalFor')->willReturn(0);");
+      expect(template).toContain("$mock->method('ping')->willReturn(null);");
+      expect(template).not.toContain('satisfies Partial');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('RULES_CATALOG', () => {

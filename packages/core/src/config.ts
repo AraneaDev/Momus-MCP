@@ -25,7 +25,7 @@ export const DEFAULT_CONFIG: MomusConfig = {
   testFilePatterns: ['**/*.{test,spec}.{ts,tsx,js,jsx,mjs}', '**/__tests__/**'],
   rules: {},
   mockSaturationThreshold: 0.7,
-  ignorePatterns: ['**/node_modules/**', '**/dist/**', '**/.git/**'],
+  ignorePatterns: ['**/node_modules/**', '**/vendor/**', '**/dist/**', '**/.git/**'],
   suppressions: [],
   tokenBudget: { maxIssuesPerReport: 50, maxIssueLineTokens: 100, verbosity: 'issues' },
   maxFileSizeBytes: 2 * 1024 * 1024,

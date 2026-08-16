@@ -150,6 +150,40 @@ describe('mock detection (fixture test file)', () => {
   });
 });
 
+describe('mock hand-off reachability (TAUT-005 scope isolation)', () => {
+  const p = join(FIXTURES, 'tests', 'handoff.fixture.ts');
+  const handoff = parser.parseModule(p, readFileSync(p, 'utf8'), {
+    config: undefined,
+    resolveImport: (spec) => parser.resolveImport(spec, p),
+  });
+
+  it('marks a chained-config mock handed off by name as reachable', () => {
+    const first = handoff.mocks.find((m) => m.pattern === 'vi.fn' && m.span.startLine === 11);
+    expect(first?.configuredValues).toHaveLength(1);
+    expect(first?.invocationSites.map((s) => s.startLine)).toEqual([12]);
+  });
+
+  it('resolves the same name independently across test scopes', () => {
+    // Both `const mockRun = vi.fn(...)` declarations share the identifier name but live in
+    // different `it` scopes; each must resolve to its own mock, not the last one.
+    const first = handoff.mocks.find((m) => m.pattern === 'vi.fn' && m.span.startLine === 11)!;
+    const second = handoff.mocks.find((m) => m.pattern === 'vi.fn' && m.span.startLine === 17)!;
+    expect(first.id).not.toBe(second.id);
+    expect(first.invocationSites.map((s) => s.startLine)).toEqual([12]);
+    expect(second.invocationSites.map((s) => s.startLine)).toEqual([18]);
+  });
+
+  it('marks an inline vi.fn().mockResolvedValue() inside an object literal as reachable', () => {
+    const inline = handoff.mocks.find((m) => m.pattern === 'vi.fn' && m.span.startLine === 24);
+    expect(inline?.invocationSites.map((s) => s.startLine)).toEqual([23]);
+  });
+
+  it('marks a mock embedded in an array literal as reachable', () => {
+    const arr = handoff.mocks.find((m) => m.pattern === 'vi.fn' && m.span.startLine === 31);
+    expect(arr?.invocationSites.map((s) => s.startLine)).toEqual([32]);
+  });
+});
+
 describe('suppression comments', () => {
   it('extracts trailing vs standalone line comments', () => {
     const src = 'const a = 1; // @momus-ignore\n// @momus-ignore:TAUT-002\nconst b = 2;';

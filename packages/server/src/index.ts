@@ -457,7 +457,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as ts from 'typescript';
 
-function synthesizeContract(
+export function synthesizeContract(
   root: string,
   targetPath: string,
   symbolName: string | undefined,

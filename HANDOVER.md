@@ -1,8 +1,8 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 215 tests passing, ~84% statements / ~82% branches,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 221 tests passing, ~84% statements / ~83% branches,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
-**Next session: MCP registry listing draft; publishing blocked on credentials. Real-codebase validation done against `/root/Chaos-MCP`.**
+**Next session: MCP registry listing draft; publishing blocked on credentials. Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
 
 ## Current checkpoint — 2026-08-16
 
@@ -247,13 +247,27 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   through the SUT). Drift scan on Knossos is CLEAN (mocks target `LanguageWorkerPool`/`PDO` and
   resolve correctly; no planted drift). Regression test pins `assertSame($a, $b)` ≠ self-comparison
   while `assertSame($a, $a)` still is.
-- **Active task:** real-world validation against both a TypeScript (`Chaos-MCP`) and a PHP
-  (`Knossos-MCP`) codebase is complete; the functional build (Phases 1–3), persistent IR cache,
-  ESLint+Prettier, coverage tooling, and the footer-free/identity-standardized history are shipped
-  and green. Phase 4 publishing (npm/MCP registry) remains the only item, blocked on credentials
-  (no `NPM_TOKEN`). Next: MCP registry listing draft + install snippets, and triaging the TAUT-001
-  determinism-test pattern (a legitimate-looking false-positive class worth a suppression/refinement
-  decision).
+- **Last verified (round 5):** TS mock reachability is now **scope-aware** — `instanceIds` was a
+  flat name→id map, so a name reused across test scopes (`mockRun` in `handler.test.ts`) resolved
+  every use to the **last** binding, leaving the earlier mocks unmarked and producing **82 false
+  TAUT-005** on Chaos-MCP. Added `instanceBindingLines` (name → ordered `{line,id}` bindings) +
+  `resolveInstance(name, line)` nearest-preceding-binding lookup, and taught `reachable` to mark
+  mocks handed off via object/array literals (`{ run: mockRun }`, inline `run: vi.fn().mockResolvedValue(...)`,
+  `[mockRun]`). Chained-config initializers (`const f = vi.fn().mockReturnValue(1)`) are now bound
+  via a new `findMockFactoryCall` (walks the `.mock*` chain down to the `vi.fn()`). Chaos-MCP
+  TAUT-005: **107 → 0**. Also: (a) `momus contract` now delegates to the server's shared
+  `synthesizeContract` (exported), so PHP classes emit correct `phpunit`/`pest` templates instead
+  of a TS-only `satisfies Partial` stub — previously `--framework phpunit` was ignored; (b) PHP
+  `willThrowException` added to `CONFIG_CALLS` (treated like `willReturnCallback` → reachable),
+  cutting Knossos TAUT-005 8 → 5; (c) default `ignorePatterns` now excludes `**/vendor/**`
+  (Composer deps) — Knossos audit went from scanning 3,808 files (incl. 3,915 vendor `.php`
+  files, ~70s) to 403 files (~8.5s).
+- **Active task:** continuing the real-codebase hardening loop — validating Momus against the
+  real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos and fixing every false-positive/perf gap
+  they expose, keeping `docs/11-real-world-findings.md` as the live record. Phase 4 publishing
+  (npm/MCP registry) remains blocked on credentials (no `NPM_TOKEN`). Next: TAUT-006 spy-through-
+  SUT tracing, the TAUT-001 determinism-test pattern decision, and `vi.fn<[...]>` typed-generic
+  synthesis.
 - **Safe resume point:** if interrupted, resume wherever you stopped; do not revisit PHP
   closure-form/DRIFT-003, docblock typing, synth templates, anonymous-class doubles, git-diff
   plumbing, DRIFT-006, precommit, annotate-pr, the action, the `--fix` mechanism,
@@ -262,9 +276,12 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   reassignment, the test-coverage tooling, the contract-synthesis public-member/`?`-ordering
   fixes, the persistent IR cache, the ESLint/Prettier setup, the real-codebase Chaos-MCP
   validation, the CLI `positionalArgs` flag-value fix, the DRIFT-005 full-export-name fix, the
-  barrel re-export extraction, the `IR_SCHEMA_VERSION` cache invalidation,  the `tsReturnExample` type-derived synthesize return values, the `filterResult` drift-summary fix,
-  the `promiseTypeArg` `mockResolvedValue` synthesis, or the PHP `valueText` `loc.source`
-  self-comparison fix.
+  barrel re-export extraction, the `IR_SCHEMA_VERSION` cache invalidation, the `tsReturnExample`
+  type-derived synthesize return values, the `filterResult` drift-summary fix, the
+  `promiseTypeArg` `mockResolvedValue` synthesis, the PHP `valueText` `loc.source` self-comparison
+  fix, the TS scope-aware `resolveInstance` hand-off reachability, the CLI-contract
+  server-delegation, the PHP `willThrowException` config detection, or the `**/vendor/**` default
+  ignore pattern.
 
 ---
 

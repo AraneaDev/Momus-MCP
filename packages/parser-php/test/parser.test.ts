@@ -75,6 +75,26 @@ describe('PHP parser', () => {
     expect(echo?.operands.find((operand) => operand.provenance === 'mock-config')?.configuredValue).toBe('42');
   });
 
+  it('recognizes willThrowException as a config call that marks the mock reachable', () => {
+    const src = [
+      '<?php',
+      'use PHPUnit\\Framework\\TestCase;',
+      'final class ThrowConfigTest extends TestCase {',
+      '  public function testThrows(): void {',
+      '    $pdo = $this->createStub(PDO::class);',
+      "    $pdo->method('prepare')->willThrowException(new RuntimeException('boom'));",
+      '  }',
+      '}',
+    ].join('\n');
+    const module = parser.parseModule('/ws/tests/ThrowConfigTest.php', src, {
+      config: undefined,
+      resolveImport: () => null,
+    });
+    const mock = module.mocks.find((m) => m.pattern === 'createStub');
+    expect(mock?.stubbedMembers.map((s) => s.name)).toEqual(['prepare']);
+    expect(mock?.invocationSites.map((s) => s.startLine)).toEqual([6]);
+  });
+
   it('keeps distinct operand source text so assertSame($a, $b) is not a self-comparison', () => {
     const src = [
       '<?php',
