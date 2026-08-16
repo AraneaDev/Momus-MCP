@@ -78,12 +78,13 @@ describe('release-please config', () => {
 
   it('npm publish step stays dormant until NPM_TOKEN exists (pre-release never auto-publishes)', () => {
     const wf = readFileSync(join(ROOT, '.github', 'workflows', 'release-please.yml'), 'utf8');
-    expect(wf).toContain("secrets.NPM_TOKEN != ''");
     expect(wf).toContain('Publish to npm');
     // The gate must be on the publish step itself, not a job-level condition that
-    // could be bypassed by reordering steps.
-    const m = wf.match(/name: Publish to npm[\s\S]*?run: npm run publish/);
+    // could be bypassed by reordering steps. `secrets` is unavailable in step `if`
+    // expressions, so the token is mirrored to job-level env (MOMUS_NPM_TOKEN) and
+    // the step gates on that; the publish env still consumes it.
+    const m = wf.match(/name: Publish to npm[\s\S]*?NODE_AUTH_TOKEN: \$\{\{ env\.MOMUS_NPM_TOKEN \}\}/);
     expect(m).not.toBeNull();
-    expect(m![0]).toContain('secrets.NPM_TOKEN');
+    expect(m![0]).toContain("env.MOMUS_NPM_TOKEN != ''");
   });
 });

@@ -14,6 +14,10 @@ jobs:
     name: Release PR + tag/release on merge
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Job-level env is visible to step `if` conditions (secrets context is not), so the
+    # publish gate below checks this instead of secrets directly.
+    env:
+      MOMUS_NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       # Opens/updates the Release PR from Conventional Commits (release-please-config.json
       # + .release-please-manifest.json; single lockstep version for all @momus/* packages
@@ -61,7 +65,7 @@ jobs:
       # auto-publish. The step only activates once an NPM_TOKEN secret exists --
       # add it when the first public release is sanctioned, nothing else changes.
       - name: Publish to npm
-        if: ${{ steps.release.outputs.release_created && secrets.NPM_TOKEN != '' }}
+        if: ${{ steps.release.outputs.release_created && env.MOMUS_NPM_TOKEN != '' }}
         run: npm run publish
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ env.MOMUS_NPM_TOKEN }}
