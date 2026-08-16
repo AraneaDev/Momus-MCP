@@ -90,10 +90,14 @@ try {
     const p = JSON.parse(readFileSync(join(work, 'packages', dir, 'package.json'), 'utf8'));
     for (const [dep, range] of Object.entries(p.dependencies ?? {})) {
       if (dep.startsWith('@momus/')) {
-        // ~0.0.1 must admit 0.0.2 (and every future patch in the same minor)
-        const ok = range === `~${manifest['.']}`;
+        // ~0.0.1 must admit 0.0.2 (same major+minor, patch >= baseline); release-please
+        // leaves dep ranges at the baseline while bumping version fields.
+        const m = /^~(\d+)\.(\d+)\.(\d+)$/.exec(range);
+        const [rMaj, rMin, rPat] = (m?.slice(1) ?? ['0', '0', '0']).map(Number);
+        const [tMaj, tMin, tPat] = TO.split('.').map(Number);
+        const ok = !!m && tMaj === rMaj && tMin === rMin && tPat >= rPat;
         console.log(`  ${ok ? '✓' : '✗'} ${name}: ${dep} "${range}" admits v${TO}`);
-        if (!ok) failures.push(`${name}: ${dep} "${range}" should be "~${manifest['.']}"`);
+        if (!ok) failures.push(`${name}: ${dep} "${range}" must be a ~ range admitting v${TO}`);
       }
     }
   }

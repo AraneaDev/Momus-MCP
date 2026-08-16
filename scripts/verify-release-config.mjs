@@ -57,9 +57,17 @@ for (const name of readdirSync(packagesDir)) {
   check(pkg.version === expected, `${rel}: version ${pkg.version} !== manifest ${expected}`);
   check(extraPaths.has(rel), `${rel}: missing from config extra-files (release-please would not bump it)`);
   for (const [dep, range] of Object.entries(pkg.dependencies ?? {})) {
-    if (dep.startsWith('@momus/')) {
-      check(range === `~${expected}`, `${rel}: internal dep ${dep} range "${range}" !== "~${expected}" (lockstep)`);
-    }
+    if (!dep.startsWith('@momus/')) continue;
+    // Internal deps are `~` ranges pinned to the *baseline* version; release-please bumps
+    // version fields but leaves dep ranges untouched, so the invariant is that the range
+    // ADMITS the current version (and every bump in the same minor), not that it equals it.
+    const m = /^~(\d+)\.(\d+)\.(\d+)$/.exec(range);
+    check(!!m, `${rel}: internal dep ${dep} range "${range}" must be a ~ range (lockstep)`);
+    if (!m) continue;
+    const [rMaj, rMin, rPat] = m.slice(1).map(Number);
+    const [eMaj, eMin, ePat] = expected.split('.').map(Number);
+    const admits = eMaj === rMaj && eMin === rMin && ePat >= rPat;
+    check(admits, `${rel}: internal dep ${dep} range "${range}" does not admit current version ${expected}`);
   }
 }
 

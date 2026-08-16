@@ -19,7 +19,7 @@ describe('release-please config', () => {
     expect(out).toContain('release-please config consistent');
   });
 
-  it('all five packages are version-locked with ~ internal deps', () => {
+  it('all five packages are version-locked with ~ internal deps admitting the version', () => {
     const manifest = JSON.parse(readFileSync(join(ROOT, '.release-please-manifest.json'), 'utf8'));
     const version = manifest['.'];
     expect(version).toMatch(/^\d+\.\d+\.\d+$/);
@@ -37,7 +37,17 @@ describe('release-please config', () => {
       expect(pkg.version).toBe(version);
       expect(extraFiles).toContain(rel);
       for (const [dep, range] of Object.entries(pkg.dependencies ?? {})) {
-        if (dep.startsWith('@momus/')) expect(range).toBe(`~${version}`);
+        if (!dep.startsWith('@momus/')) continue;
+        // ~ ranges pinned to the baseline; release-please bumps version fields but leaves
+        // dep ranges untouched, so the range must ADMIT the current version (same major+
+        // minor, patch >= baseline) rather than equal it.
+        const m = /^~(\d+)\.(\d+)\.(\d+)$/.exec(range);
+        expect(m).not.toBeNull();
+        const [, rMaj, rMin, rPat] = m!.map(Number);
+        const [eMaj, eMin, ePat] = version.split('.').map(Number);
+        expect(eMaj).toBe(rMaj);
+        expect(eMin).toBe(rMin);
+        expect(ePat).toBeGreaterThanOrEqual(rPat);
       }
     }
     expect(checked).toEqual(['cli', 'core', 'parser-php', 'parser-typescript', 'server']);
