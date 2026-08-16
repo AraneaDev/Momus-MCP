@@ -35,6 +35,16 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   Also fixed: the `--fix` CLI smoke step was false-green since the first commit (absolute
   path + `--max-issues 0` audited nothing) — now `cd`s into the fixture, audits '.', and
   drops `--max-issues`; verified locally + green in CI.
+- **Last verified:** npm publishing **removed from CI entirely** per user direction ("publish
+  dormant until I say so — just remove it"): `release-please.yml` no longer contains a
+  publish step, `MOMUS_NPM_TOKEN` env, or `id-token` permission; `test/release-config.test.ts`
+  now asserts the workflow contains no `npm run publish` step / `NPM_TOKEN` reference (pinned),
+  and docs/06/07/10/11 + HANDOVER updated. Landed via PR #4 (`ci: remove npm publishing from
+  release workflow entirely`) — all four gates green, merged, CI + Release Please green on
+  main. Tags + GitHub Releases still cut automatically by release-please; `scripts/publish.mjs`
+  stays in-repo for a deliberate manual `npm run publish` when sanctioned. (Mystery resolved:
+  a stray `npm run publish` fired during the PR-4 command chain was my own final verify step
+  running after `gh pr create` — no hooks/CI/process trigger; failed ENEEDAUTH, nothing published.)
 - **Last verified:** release-please round-trip verified end-to-end: `scripts/simulate-release.mjs`
   creates an isolated worktree, bumps 0.0.1 → 0.0.2 exactly as release-please's json extra-files
   would (root + all five packages + manifest + CHANGELOG), runs `npm ci` + the publish step
@@ -49,9 +59,8 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   re-pinned `~0.0.1` to track in lockstep, `release-please-config.json` (json extra-files bump
   every workspace `package.json`) + `.release-please-manifest.json` (`".": "0.0.1"`),
   `.github/workflows/release-please.yml` (release-please-action@v4 → version PR → `v*` tag +
-  GitHub Release → gate on `release_created`; the npm publish step is **dormant during
-  pre-release** (activates only when an `NPM_TOKEN` secret exists)),
-  `.github/workflows/pr-title.yml`
+  GitHub Release; **no npm publish step at all** — manual-only per user direction, pinned by
+  the release-config test), `.github/workflows/pr-title.yml`
   (conventional-commit title gate, payload-only `pull_request_target`, `permissions: {}`), and
   `scripts/publish.mjs` (`npm publish -w` in dependency order, `NPM_PUBLISH_DRY_RUN=1`
   supported). `@changesets/cli`, `.changeset/`, and `release.yml` removed. MCP serverInfo
@@ -657,10 +666,10 @@ packages/server/           # MCP server: 5 tools, annotations + structuredConten
 packages/cli/              # momus audit|drift|precommit|hook|annotate|annotate-pr|contract|rules|serve|init|doctor
   src/fix.ts              #   audit --fix: collect/diff/apply span-based rule fixes
 packages/action/           # composite GitHub Action: diff-scoped audit + annotate-pr (Phase 4)
-.github/workflows/         # ci.yml (PR gates + release-config check) + pr-title.yml (conventional titles) + release-please.yml (version→publish)
+.github/workflows/         # ci.yml (PR gates + release-config check) + pr-title.yml (conventional titles) + release-please.yml (version PR → tag + release only)
 release-please-config.json # single lockstep version (0.0.1 baseline) for all @momus/* packages
 .release-please-manifest.json # release-please version manifest
-scripts/publish.mjs        # npm publish -w @momus/* in dependency order (release_created step)
+scripts/publish.mjs        # npm publish -w @momus/* in dependency order (manual-only, never invoked by CI)
 scripts/verify-release-config.mjs # deterministic release-please consistency check (ci.yml + test)
 scripts/simulate-release.mjs # round-trips the release flow in a worktree (bump → ci → publish dry-run)
 schemas/momusrc.schema.json # .momusrc JSON Schema (referenced by `momus init`)
