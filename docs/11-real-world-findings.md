@@ -275,10 +275,11 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
     runtime (was hardcoded `0.1.0`); pinned by an integration test. First live runs against
     the real GitHub API surfaced three more fixes: `json` extra-files need a `jsonpath`
     property; `bump-patch-for-minor-pre-major: true` keeps pre-1.0 releases in 0.0.x so the
-    `~0.0.1` internal dep ranges resolve on release branches; and the publish step is now
-    **dormant during pre-release** (gated on `NPM_TOKEN != ''`), since 0.0.x tags must never
-    auto-publish. v0.0.1 bootstrapped + v0.0.2 cut automatically (PR → merge → tag +
-    release with changelog).
+    `~0.0.1` internal dep ranges resolve on release branches; and **npm publishing was removed
+    from CI entirely** (manual-only by decision — tags/releases cut automatically, npm never
+    touched until publishing is sanctioned). v0.0.1 bootstrapped + v0.0.2 cut automatically
+    (PR → merge → tag + release with changelog); main branch protected (PRs only, required
+    checks, strict up-to-date, enforced for admins).
 27. ✅ Dogfood probe round (no code gaps found): `vi.hoisted(() => vi.fn())` and
     `vi.hoisted(() => ({ key: vi.fn() }))` — the pervasive real-world pattern for sharing mock fns
     with `vi.mock` factories — resolve correctly on Chaos-MCP: the hoisted `vi.fn` is a standalone

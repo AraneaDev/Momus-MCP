@@ -7,17 +7,12 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  id-token: write # npm provenance (see note below)
 
 jobs:
   release-please:
     name: Release PR + tag/release on merge
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Job-level env is visible to step `if` conditions (secrets context is not), so the
-    # publish gate below checks this instead of secrets directly.
-    env:
-      MOMUS_NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       # Opens/updates the Release PR from Conventional Commits (release-please-config.json
       # + .release-please-manifest.json; single lockstep version for all @momus/* packages
@@ -31,7 +26,7 @@ jobs:
 
       # Everything below runs ONLY on the merge that cut a release. Because the
       # tag/release are made with GITHUB_TOKEN, no separate tag-triggered
-      # workflow would fire — so build/verify/publish live here instead.
+      # workflow would fire — so the released tree is verified here.
       - name: Checkout
         if: ${{ steps.release.outputs.release_created }}
         uses: actions/checkout@v4
@@ -42,7 +37,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          registry-url: https://registry.npmjs.org
 
       - name: Install
         if: ${{ steps.release.outputs.release_created }}
@@ -55,17 +49,6 @@ jobs:
           npm run typecheck
           npm test
 
-      # `npm run publish` → scripts/publish.mjs → `npm publish -w @momus/*` in
-      # dependency order. `access: public` comes from each package's publishConfig.
-      # npm provenance is pre-wired (`id-token: write`); to enable it, add
-      # `"publishConfig": { "provenance": true }` to each published package and
-      # publish with an OIDC-capable token instead of NPM_TOKEN.
-      #
-      # DORMANT until publishing is approved: pre-release (0.0.x) tags must never
-      # auto-publish. The step only activates once an NPM_TOKEN secret exists --
-      # add it when the first public release is sanctioned, nothing else changes.
-      - name: Publish to npm
-        if: ${{ steps.release.outputs.release_created && env.MOMUS_NPM_TOKEN != '' }}
-        run: npm run publish
-        env:
-          NODE_AUTH_TOKEN: ${{ env.MOMUS_NPM_TOKEN }}
+      # NO npm publish step: publishing is a deliberate manual action (scripts/publish.mjs)
+      # and is NOT part of CI, by project decision. Tags and GitHub Releases are cut
+      # automatically; npm stays untouched until publishing is sanctioned.
