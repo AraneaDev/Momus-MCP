@@ -3,6 +3,19 @@
 > Normative. This document defines *why* Momus-MCP exists and the constraints every later
 > design decision must respect.
 
+## 1.0 Naming
+
+**Momus** (Μῶμος) is the ancient Greek spirit and personification of **satire, mockery, blame,
+and harsh criticism** — the one deity whose entire office was to find fault, and who was cast out
+of Olympus for doing it too well. His name literally translates to **"blame"** or **"censure"**.
+
+The name is deliberate and doubly apt:
+
+- Momus is the **ultimate critic among the deities**, and this project is an *unsparing
+  fault-finder* for test suites — see principle P5 (*unsparing but fair*).
+- Momus is the god of **mockery**, and the subject of this tool is **mock objects** — the test
+  doubles that stand in for production code.
+
 ## 1.1 Vision
 
 Coding agents routinely declare tasks finished on the strength of tests that cannot fail in the

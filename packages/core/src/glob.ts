@@ -41,7 +41,11 @@ export function toRegExp(pattern: string): RegExp {
     if (c === '{') {
       const end = p.indexOf('}', i);
       if (end > 0) {
-        const alts = p.slice(i + 1, end).split(',').map(escapeRegex).join('|');
+        const alts = p
+          .slice(i + 1, end)
+          .split(',')
+          .map(escapeRegex)
+          .join('|');
         out += '(?:' + alts + ')';
         i = end + 1;
         continue;
@@ -62,5 +66,5 @@ export function toRegExp(pattern: string): RegExp {
 }
 
 function escapeRegex(s: string): string {
-  return s.replace(/[.+^$()|\\]/g, '\\$&');
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

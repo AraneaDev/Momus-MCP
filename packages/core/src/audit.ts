@@ -1,15 +1,16 @@
 /** Audit pipeline (spec docs/02 §2.1): discover → parse → index → rules → format. */
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { relative, resolve } from 'node:path';
+import { relative, resolve, join } from 'node:path';
 import { anyMatch } from './glob.ts';
 import type { AuditResult, ModuleIR, Issue, ParseDiagnostic } from './ir.ts';
-import type { LanguageParser } from './parser.ts';
+import type { LanguageParser, ParseCache } from './parser.ts';
 import type { MomusConfig } from './config.ts';
 import { DEFAULT_CONFIG } from './config.ts';
 import { discoverFiles } from './discovery.ts';
 import { SymbolIndex } from './symbolIndex.ts';
-import { runRules, sortIssues } from './rules/engine.ts';
+import { runRules, sortIssues, type DiffScope } from './rules/engine.ts';
+import type { SymbolIR } from './ir.ts';
 import { tautologyRules } from './rules/tautology.ts';
 import { driftRules } from './rules/drift.ts';
 import { hygieneRules } from './rules/hygiene.ts';
@@ -27,6 +28,10 @@ export interface AuditOptions {
   maxIssues?: number;
   includeSuppressed?: boolean;
   includeUnresolved?: boolean;
+  /** git-diff mode: restrict drift checks to mocks whose targets changed vs baseRef. */
+  diff?: { baseRef: string; changedPaths: string[] };
+  /** Advisory persistent parse cache (keyed by file hash + workspace digest). */
+  cache?: ParseCache;
 }
 
 export class AuditEngine {
@@ -61,29 +66,71 @@ export class AuditEngine {
     }));
     const pathFilter = this.pathFilter();
 
+    // Pass 1: read + content-hash every claimable file so the workspace digest (which the
+    // cache key depends on) can be computed before any parse is served from cache.
+    const hashOf = (s: string): string => createHash('sha256').update(s).digest('hex').slice(0, 16);
+    const candidates: Array<{ f: (typeof files)[number]; source: string; hash: string }> = [];
+    const digestParts: string[] = [];
     for (const f of files) {
+      const source = readFileSync(f.path, 'utf8');
+      const hash = hashOf(source);
+      if (!parser.canParse(f.path, source)) continue;
+      candidates.push({ f, source, hash });
+      digestParts.push(`${relative(root, f.path).replace(/\\/g, '/')}\u0000${hash}`);
+    }
+    // Type-aware TS parsing depends on tsconfig; PHP resolution on composer.json — fold them in.
+    for (const cfgName of ['tsconfig.json', 'composer.json']) {
+      const cfgPath = join(root, cfgName);
+      if (existsSync(cfgPath)) digestParts.push(`${cfgName}\u0000${hashOf(readFileSync(cfgPath, 'utf8'))}`);
+    }
+    const workspaceHash = hashOf(digestParts.sort().join('\n'));
+    const cache = this.opts.cache;
+
+    for (const { f, source, hash } of candidates) {
       // Production files are ALWAYS indexed (rules need the workspace symbol graph);
       // the path filter restricts which TEST files get audited.
-      const source = readFileSync(f.path, 'utf8');
-      const hash = createHash('sha256').update(source).digest('hex').slice(0, 16);
-      if (!parser.canParse(f.path, source)) continue;
-      let module: ModuleIR;
-      try {
-        module = parser.parseModule(f.path, source, { config: this.config, resolveImport: (spec) => parser.resolveImport(spec, f.path) });
-      } catch (e) {
-        diagnostics.push({
-          severity: 'error',
-          span: { file: f.path, startLine: 1, startCol: 1, endLine: 1, endCol: 1 },
-          message: `SYS-001: parse error: ${(e as Error).message}`.slice(0, 120),
-        });
-        continue;
+      let module = cache?.get(f.path, hash, workspaceHash);
+      if (!module) {
+        try {
+          module = parser.parseModule(f.path, source, {
+            config: this.config,
+            resolveImport: (spec) => parser.resolveImport(spec, f.path),
+          });
+        } catch (e) {
+          diagnostics.push({
+            severity: 'error',
+            span: { file: f.path, startLine: 1, startCol: 1, endLine: 1, endCol: 1 },
+            message: `SYS-001: parse error: ${(e as Error).message}`.slice(0, 120),
+          });
+          continue;
+        }
+        module.hash = hash;
+        cache?.put(f.path, hash, workspaceHash, module);
       }
-      module.hash = hash;
+      if (module.language === 'typescript' && !this.config.languages.typescript) continue;
+      if (module.language === 'php' && !this.config.languages.php) continue;
       if (module.kind === 'test') testModules.push(module);
       else production.push(module);
     }
 
     const index = new SymbolIndex(production);
+    const diff = this.buildDiffScope(root, production);
+    // Syntax-only parser passes preserve a syntactic target name instead of relying on
+    // checker identity. Resolve that name against the production index before rules run.
+    for (const module of testModules) {
+      for (const mock of module.mocks) {
+        const target = mock.target;
+        if (
+          !target ||
+          target.symbolId ||
+          !target.exportName ||
+          (target.kind !== 'class' && target.kind !== 'instance-member')
+        )
+          continue;
+        const symbol = index.resolveByName(target.exportName, module.path);
+        if (symbol) target.symbolId = symbol.id;
+      }
+    }
     const issues: Issue[] = [];
     const suppressed: Issue[] = [];
     const selected = pathFilter
@@ -92,7 +139,7 @@ export class AuditEngine {
 
     for (const m of selected) {
       const state = buildSuppressionState(m.comments, m.path, m.functions);
-      const ctx = { index, module: m, config: this.config };
+      const ctx = { index, module: m, config: this.config, ...(diff ? { diff } : {}) };
       const found = runRules(ALL_RULES, ctx);
       for (const issue of found) {
         issue.tokens = issueTokens(issue, root);
@@ -130,6 +177,22 @@ export class AuditEngine {
       diagnostics,
       indexStats: index.stats(),
     };
+  }
+
+  private buildDiffScope(root: string, production: ModuleIR[]): DiffScope | undefined {
+    const input = this.opts.diff;
+    if (!input) return undefined;
+    const changed = new Set(input.changedPaths.map((p) => resolve(root, p)));
+    const changedSymbolIds = new Set<string>();
+    const collect = (s: SymbolIR): void => {
+      changedSymbolIds.add(s.id);
+      for (const member of s.members) collect(member);
+    };
+    for (const prod of production) {
+      if (!changed.has(prod.path)) continue;
+      for (const s of prod.symbols) collect(s);
+    }
+    return { baseRef: input.baseRef, changedPaths: [...changed], changedSymbolIds };
   }
 
   private pathFilter(): ((rel: string) => boolean) | undefined {

@@ -21,10 +21,28 @@ describe('matchGlob(pattern, path)', () => {
     expect(matchGlob('**/node_modules/**', 'src/node_modules/x/y.ts')).toBe(true);
   });
 
-  it('matches character classes', () => {
+  it('matches {a,b} alternation', () => {
     expect(matchGlob('src/*.{test,spec}.ts', 'src/a.test.ts')).toBe(true);
     expect(matchGlob('src/*.{test,spec}.ts', 'src/a.spec.ts')).toBe(true);
     expect(matchGlob('src/*.{test,spec}.ts', 'src/a.ts')).toBe(false);
+  });
+
+  it('matches ? single characters within a segment', () => {
+    expect(matchGlob('src/a?c.ts', 'src/abc.ts')).toBe(true);
+    expect(matchGlob('src/a?c.ts', 'src/abbc.ts')).toBe(false);
+    expect(matchGlob('src/?', 'src/x')).toBe(true);
+    expect(matchGlob('src/?', 'src/x/y')).toBe(false); // ? never crosses '/'
+  });
+
+  it('matches [abc] character classes', () => {
+    expect(matchGlob('src/[ab].ts', 'src/a.ts')).toBe(true);
+    expect(matchGlob('src/[ab].ts', 'src/b.ts')).toBe(true);
+    expect(matchGlob('src/[ab].ts', 'src/c.ts')).toBe(false);
+  });
+
+  it('treats unbalanced special chars as literals', () => {
+    expect(matchGlob('src/a{b.ts', 'src/a{b.ts')).toBe(true);
+    expect(matchGlob('src/a[b.ts', 'src/a[b.ts')).toBe(true);
   });
 
   it('normalizes windows separators', () => {

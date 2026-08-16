@@ -1,0 +1,50 @@
+name: Release
+
+# Changesets flow (docs/06 §6.5.2, docs/10 Step 5):
+#   push to main with a .changeset/*.md → "Version Packages" PR (version bump + CHANGELOG)
+#   merge that PR → changeset publish → npm publish for the changed @momus/* packages,
+#   plus a v* tag and GitHub Release whose body is the generated changelog.
+#
+# Publishing is blocked until an NPM_TOKEN secret is configured; `id-token: write` is
+# pre-wired for npm provenance — to enable it, add `"publishConfig": { "provenance": true }`
+# to each published package and use an OIDC-capable token.
+
+on:
+  push:
+    branches: [main]
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write # tags + GitHub Releases
+  pull-requests: write # "Version Packages" PR
+  id-token: write # npm provenance (see note above)
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Create release pull request or publish to npm
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          # `npm run release` → `changeset publish` → `npm publish` per changed package
+          # (`access: public` comes from .changeset/config.json + publishConfig).
+          publish: npm run release
+          createGithubReleases: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -3,10 +3,18 @@ import type { Issue, ModuleIR, RuleId, Severity } from '../ir.ts';
 import type { SymbolIndex } from '../symbolIndex.ts';
 import type { MomusConfig } from '../config.ts';
 
+/** Present only in git-diff mode (spec docs/03 §3.1). */
+export interface DiffScope {
+  baseRef: string;
+  changedPaths: string[]; // absolute paths of files changed vs baseRef
+  changedSymbolIds: Set<string>; // production symbol ids whose defining file changed
+}
+
 export interface RuleContext {
   index: SymbolIndex;
-  module: ModuleIR;             // the test file under audit
+  module: ModuleIR; // the test file under audit
   config: MomusConfig;
+  diff?: DiffScope;
 }
 
 export interface Rule {

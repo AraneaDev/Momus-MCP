@@ -11,7 +11,7 @@ export class SymbolIndex {
   private modules = new Map<string, ModuleIR>();
   private symbols = new Map<string, SymbolIR>();
   private moduleExports = new Map<string, SymbolIR[]>();
-  private byName = new Map<string, SymbolIR[]>();   // name -> symbols (for loose resolution)
+  private byName = new Map<string, SymbolIR[]>(); // name -> symbols (for loose resolution)
 
   constructor(productionModules: ModuleIR[]) {
     for (const m of productionModules) this.addModule(m);
@@ -30,8 +30,12 @@ export class SymbolIndex {
     this.moduleExports.set(m.path, exports);
   }
 
-  getModule(path: string): ModuleIR | undefined { return this.modules.get(path); }
-  getSymbol(id: string): SymbolIR | undefined { return this.symbols.get(id); }
+  getModule(path: string): ModuleIR | undefined {
+    return this.modules.get(path);
+  }
+  getSymbol(id: string): SymbolIR | undefined {
+    return this.symbols.get(id);
+  }
 
   /** Members of a symbol including inherited (via extendsIds, recursive). */
   membersOf(id: string): SymbolIR[] {
@@ -50,7 +54,9 @@ export class SymbolIndex {
   }
 
   /** Named exports of a module path (empty when the module is not indexed). */
-  exportsOf(path: string): SymbolIR[] { return this.moduleExports.get(path) ?? []; }
+  exportsOf(path: string): SymbolIR[] {
+    return this.moduleExports.get(path) ?? [];
+  }
 
   /** Loose name-based resolution (syntax-only mode). */
   resolveByName(name: string, fromModule: string): SymbolIR | undefined {

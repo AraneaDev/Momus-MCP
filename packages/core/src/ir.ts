@@ -6,19 +6,42 @@ export type Language = 'typescript' | 'php';
 export type Severity = 'error' | 'warning' | 'info';
 
 export type RuleId =
-  | 'TAUT-001' | 'TAUT-002' | 'TAUT-003' | 'TAUT-004' | 'TAUT-005' | 'TAUT-006'
-  | 'DRIFT-000' | 'DRIFT-001' | 'DRIFT-002' | 'DRIFT-003' | 'DRIFT-004' | 'DRIFT-005' | 'DRIFT-006'
-  | 'MOCK-001' | 'MOCK-002'
-  | 'SYS-001' | 'SYS-002' | 'SYS-003' | 'SYS-004' | 'SYS-005';
+  | 'TAUT-001'
+  | 'TAUT-002'
+  | 'TAUT-003'
+  | 'TAUT-004'
+  | 'TAUT-005'
+  | 'TAUT-006'
+  | 'DRIFT-000'
+  | 'DRIFT-001'
+  | 'DRIFT-002'
+  | 'DRIFT-003'
+  | 'DRIFT-004'
+  | 'DRIFT-005'
+  | 'DRIFT-006'
+  | 'MOCK-001'
+  | 'MOCK-002'
+  | 'SYS-001'
+  | 'SYS-002'
+  | 'SYS-003'
+  | 'SYS-004'
+  | 'SYS-005';
 
 export interface SourceSpan {
-  file: string;               // absolute path
-  startLine: number; startCol: number;
-  endLine: number;   endCol: number;
+  file: string; // absolute path
+  startLine: number;
+  startCol: number;
+  endLine: number;
+  endCol: number;
 }
 
-export const span = (file: string, sl: number, sc: number, el: number, ec: number): SourceSpan =>
-  ({ file, startLine: sl, startCol: sc, endLine: el, endCol: ec });
+export const span = (file: string, sl: number, sc: number, el: number, ec: number): SourceSpan => ({
+  file,
+  startLine: sl,
+  startCol: sc,
+  endLine: el,
+  endCol: ec,
+});
 
 export interface ParseDiagnostic {
   severity: 'error' | 'warning' | 'info';
@@ -37,18 +60,18 @@ export interface ModuleIR {
   framework?: MockFramework;
   imports: ImportIR[];
   symbols: SymbolIR[];
-  exports: string[];            // exported names of this module
+  exports: string[]; // exported names of this module
   mocks: MockIR[];
   assertions: AssertionIR[];
-  functions: TestFnIR[];        // test functions/blocks (TAUT-004 / MOCK-001 stats)
-  comments: RawComment[];       // for suppression handling
+  functions: TestFnIR[]; // test functions/blocks (TAUT-004 / MOCK-001 stats)
+  comments: RawComment[]; // for suppression handling
   diagnostics: ParseDiagnostic[];
-  hash: string;                 // sha256 of file bytes
+  hash: string; // sha256 of file bytes
 }
 
 export interface RawComment {
   text: string;
-  line: number;                 // 1-based line the comment starts on
+  line: number; // 1-based line the comment starts on
   kind: 'line' | 'docblock';
   /** Line comments only: true when code precedes the comment on the same line. */
   trailing?: boolean;
@@ -57,11 +80,11 @@ export interface RawComment {
 export interface ImportIR {
   specifier: string;
   resolvedPath?: string;
-  names: string[];              // local names imported
+  names: string[]; // local names imported
 }
 
 export interface TestFnIR {
-  id: string;                   // `${path}#fn:${startLine}`
+  id: string; // `${path}#fn:${startLine}`
   span: SourceSpan;
   hasProductionCalls: boolean;
   productionCallCount: number;
@@ -70,19 +93,17 @@ export interface TestFnIR {
 
 // ---------------------------------------------------------------- symbols
 
-export type SymbolKind =
-  | 'class' | 'interface' | 'function' | 'method' | 'property'
-  | 'type-alias' | 'enum' | 'const';
+export type SymbolKind = 'class' | 'interface' | 'function' | 'method' | 'property' | 'type-alias' | 'enum' | 'const';
 
 export interface SymbolIR {
-  id: string;                   // `${modulePath}#${name}` (methods: `${parentId}.${name}`)
+  id: string; // `${modulePath}#${name}` (methods: `${parentId}.${name}`)
   name: string;
   kind: SymbolKind;
   span: SourceSpan;
-  members: SymbolIR[];          // for class/interface
-  extendsIds: string[];         // resolved symbol ids
+  members: SymbolIR[]; // for class/interface
+  extendsIds: string[]; // resolved symbol ids
   implementsIds: string[];
-  signature?: SignatureIR;      // functions and methods
+  signature?: SignatureIR; // functions and methods
   visibility?: 'public' | 'protected' | 'private';
   isStatic?: boolean;
   isAbstract?: boolean;
@@ -110,17 +131,38 @@ export type TypeIR =
   | { kind: 'array'; element?: TypeIR }
   | { kind: 'tuple'; elements: TypeIR[] }
   | { kind: 'function'; params: ParamIR[]; returnType?: TypeIR }
-  | { kind: 'unknown' }         // any / mixed / untyped
+  | { kind: 'unknown' } // any / mixed / untyped
   | { kind: 'void' | 'never' | 'null' | 'undefined' };
 
 // ---------------------------------------------------------------- mocks
 
 export type MockPattern =
-  | 'vi.mock' | 'jest.mock' | 'vi.spyOn' | 'jest.spyOn' | 'vi.fn' | 'jest.fn'
-  | 'vi.mocked-instance' | 'object-literal' | 'proxy' | 'unknown';
+  | 'vi.mock'
+  | 'jest.mock'
+  | 'vi.spyOn'
+  | 'jest.spyOn'
+  | 'vi.fn'
+  | 'jest.fn'
+  | 'vi.mocked-instance'
+  | 'vi.importMock'
+  | 'jest.requireMock'
+  | 'jest.createMockFromModule'
+  | 'vi.stubGlobal'
+  | 'createMock'
+  | 'createStub'
+  | 'createConfiguredMock'
+  | 'createPartialMock'
+  | 'getMockBuilder'
+  | 'getMockForAbstractClass'
+  | 'mockery'
+  | 'pest-mock'
+  | 'anonymous-class'
+  | 'object-literal'
+  | 'proxy'
+  | 'unknown';
 
 export interface MockIR {
-  id: string;                   // `${file}#mock:${startLine}:${startCol}`
+  id: string; // `${file}#mock:${startLine}:${startCol}`
   span: SourceSpan;
   framework: MockFramework;
   pattern: MockPattern;
@@ -129,13 +171,15 @@ export interface MockIR {
   configuredValues: ConfiguredValueIR[];
   invocationSites: SourceSpan[];
   isAutomock: boolean;
+  /** PHP constructor arguments supplied when original construction is explicitly enabled. */
+  constructorArgs?: { count: number; span: SourceSpan };
 }
 
 export interface MockTarget {
   kind: 'module' | 'class' | 'instance-member' | 'global' | 'unknown';
   modulePath?: string;
   exportName?: string;
-  symbolId?: string;            // resolved production class/interface id
+  symbolId?: string; // resolved production class/interface id
   memberName?: string;
   specifier?: string;
   span: SourceSpan;
@@ -144,14 +188,14 @@ export interface MockTarget {
 export interface StubbedMemberIR {
   name: string;
   span: SourceSpan;
-  signature?: SignatureIR;      // arity/types as declared on the stub
+  signature?: SignatureIR; // arity/types as declared on the stub
   returnValues: ConfiguredValueIR[];
   api: 'spyOn' | 'shouldReceive' | 'mockFactoryKey' | 'objectLiteralKey' | 'instance-member' | 'unknown';
 }
 
 export interface ConfiguredValueIR {
   span: SourceSpan;
-  api: string;                  // mockReturnValue | mockResolvedValue | willReturn | literal | ...
+  api: string; // mockReturnValue | mockResolvedValue | willReturn | literal | ...
   value?: TypeIR;
   once: boolean;
   /** Parser-enriched: is the configured value assignable to the production return type?
@@ -166,16 +210,16 @@ export type SourceKind = 'mock-config' | 'mock-call' | 'production' | 'literal' 
 export interface AssertionIR {
   id: string;
   span: SourceSpan;
-  api: string;                  // toBe | toEqual | assertSame | toHaveBeenCalled ...
+  api: string; // toBe | toEqual | assertSame | toHaveBeenCalled ...
   operands: ExprIR[];
-  fnId: string;                 // enclosing TestFnIR.id
+  fnId: string; // enclosing TestFnIR.id
 }
 
 export interface ExprIR {
   kind: 'identifier' | 'call' | 'member' | 'new' | 'literal' | 'template' | 'unknown';
-  text: string;                 // source text
-  mockRefs: string[];           // mock ids this expression provably flows from
-  provenance: SourceKind;       // dominant provenance of this operand
+  text: string; // source text
+  mockRefs: string[]; // mock ids this expression provably flows from
+  provenance: SourceKind; // dominant provenance of this operand
   /** When provenance is 'mock-config': the configured value's source text. */
   configuredValue?: string;
   constant: boolean;
@@ -187,23 +231,23 @@ export interface FixSuggestion {
   kind: 'replace' | 'insert' | 'delete';
   span?: SourceSpan;
   code: string;
-  description: string;          // ≤ 60 chars
+  description: string; // ≤ 60 chars
 }
 
 export interface Issue {
-  id: string;                   // stable dedupe id
+  id: string; // stable dedupe id
   rule: RuleId;
   severity: Severity;
   span: SourceSpan;
-  message: string;              // ≤ 80 chars
-  evidence?: string;            // ≤ 60 chars
+  message: string; // ≤ 80 chars
+  evidence?: string; // ≤ 60 chars
   fix?: FixSuggestion;
-  tokens: number;               // estimated tokens of the rendered line
+  tokens: number; // estimated tokens of the rendered line
 }
 
 export interface Summary {
   filesAudited: number;
-  issues: number;             // shown (post-truncation)
+  issues: number; // shown (post-truncation)
   errors: number;
   warnings: number;
   infos: number;

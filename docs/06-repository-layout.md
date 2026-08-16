@@ -12,11 +12,11 @@
 | MCP SDK | `@modelcontextprotocol/sdk@^1.29` via **subpath imports** | Canonical; stdio + Streamable HTTP; `McpServer` class. The published tarball has never shipped the root `index.js` its exports map points at (validated 1.12–1.30 — `09-validation-report.md` F2): import `@modelcontextprotocol/sdk/server/mcp.js`, `/server/stdio.js`, `/client/index.js`, `/client/stdio.js`. `zod` is a required peer for tool schemas. |
 | TS parsing | `typescript@^5.9` (compiler API) | Type-aware analysis, zero extra deps (§2.2.2). Pin `^5.9`: TS7's npm package exposes no programmatic API from ESM (F1). |
 | PHP parsing | `php-parser` (glayzzle) | Pure JS, no PHP runtime (§2.2.3). |
-| Index cache | `better-sqlite3` (deferred — not needed for Phase 1; in-memory `SymbolIndex` only) | Synchronous, embedded, fast for IR cache. |
-| Watcher | `chokidar` (deferred — Phase 3; `momus serve` starts a fresh audit per tool call) | File watching for `momus serve`. |
+| Index cache | `better-sqlite3` (shipped — `.momus/cache/`, keyed by file content hash + workspace digest) | Synchronous, embedded, fast for IR cache. |
+| Watcher | `chokidar` (shipped — `momus serve --watch` invalidates the `ts.Program` cache on source add/change/unlink) | File watching for `momus serve`. |
 | CLI framework | none (hand-rolled arg parsing, implemented) | Only 7 subcommands; avoids a dep. |
 | Test runner | `vitest` | Same ecosystem; fast; snapshot support. |
-| Lint/format | deferred — `typecheck` + `test` + `audit-self` gate in CI (eslint/prettier optional later) | Standard, but not a Phase-1 blocker. |
+| Lint/format | shipped — ESLint 10 (flat config, typescript-eslint) + Prettier (`lint`, `lint:fix`, `format`, `format:check` scripts) | Consistent authoring style; fixtures/`experiments` excluded. |
 | Releases | `changesets` | Monorepo versioning + changelogs. |
 | CI | GitHub Actions | Free, ubiquitous; action artifact in-repo. |
 | License | MIT | Chosen in §1.7. |
@@ -162,41 +162,42 @@ counts (`summary.totalErrors`), so `--max-issues 0` (summary-only) never masks f
 | `fixture-smoke` | copy fixture gallery to a temp dir (no `.momusrc`), audit it: exit code must be 1 and the report must contain `TAUT-002`/`DRIFT-001` | exit 1 (anti-patterns caught) |
 | `lint` | deferred (authoring lints: message ≤ 80 chars, token budget §5.1 are asserted in unit tests) | clean when added |
 | `bench-smoke` | deferred until Phase 2 (perf budgets §2.7) | under budget |
-| `coverage` | deferred | ≥ 85% lines |
+| `coverage` | `npm run test:coverage` (v8) — floors 80% statements/lines, 75% branches, 90% functions | ~85% lines (CLI entrypoint is exercised end-to-end via bin spawns, not subprocess-instrumented) |
 
-### 6.5.2 `release.yml`
+### 6.5.2 `release.yml` (shipped in-repo)
 
-`changesets` version bump → `npm publish --workspaces` (npm, `--provenance` when available) → tag
-`v*` + GitHub Release with changelog. The action (`momus-mcp/action`) is published as a
-separate release artifact pointing at `@momus/cli@<tag>`.
+`changesets` version bump → `changeset publish` (`npm publish`, `access: public`) → tag `v*` +
+GitHub Release with the generated changelog (`.github/workflows/release.yml`, via
+`changesets/action` with `createGithubReleases: true`). Root scripts `changeset` / `release`;
+`.changeset/config.json` pins `baseBranch: main`, `access: public`, and `patch`-level internal
+`@momus/*` dependency bumps. npm provenance is pre-wired (`id-token: write`); enable it per
+package via `publishConfig.provenance`. Publishing is blocked until an `NPM_TOKEN` secret
+exists. The action (`momus-mcp/action`) is published as a separate release artifact pointing
+at `@momus/cli@<tag>`.
 
-### 6.5.3 The GitHub Action (Phase 4, spec now)
+### 6.5.3 The GitHub Action (Phase 4, shipped in-repo)
 
-`packages/action/action.yml` — composite action:
+`packages/action/action.yml` — composite action (implemented):
 
 ```yaml
 name: 'Momus Mock & Test Integrity Audit'
-description: 'Run Momus-MCP static audit on the diff and annotate the PR.'
+description: 'Run the Momus static audit on the diff and post PR check annotations.'
 inputs:
-  base:
-    description: 'Base ref for diff-scoped audit (default: merge base with default branch).'
-    required: false
-  fail-on:
-    description: 'error | warning | none'
-    default: 'error'
-    required: false
+  base:       # base ref; defaults to PR base SHA, then main
+  fail-on:    # error | warning | none (default error)
 runs:
   using: 'composite'
   steps:
-    - run: npx -y @momus/cli@latest audit --git-diff --base "${{ inputs.base }}"
-      shell: bash
-    - run: npx -y @momus/cli@latest annotate-pr   # posts findings as PR comments/checks
-      shell: bash
+    - run: npx -y @momus/cli@latest audit . --git-diff --base "${{ inputs.base || github.event.pull_request.base.sha || 'main' }}" --json --max-issues 50 || true
+    - run: npx -y @momus/cli@latest annotate-pr --base "${{ inputs.base || github.event.pull_request.base.sha || 'main' }}"
+      env: { GITHUB_TOKEN: ${{ github.token }}, MOMUS_FAIL_ON: ${{ inputs.fail-on || 'error' }} }
 ```
 
-Behavior contract: reads `GITHUB_TOKEN`, posts check annotations at exact file:line, fails the
-check when `error`-severity findings exist on changed lines (configurable), and never writes
-to the user's repo beyond its own action artifacts.
+Behavior contract (implemented in `momus annotate-pr`): reads `GITHUB_TOKEN`,
+`GITHUB_REPOSITORY`, `GITHUB_SHA`; posts a GitHub Checks API run with annotations at exact
+file:line (`failure` for errors, `warning` otherwise, ≤ 50 per run); conclusion fails when
+`error`-severity findings exist (or `warning` with `fail-on: warning`); never writes to the
+user's repo. Depends on `@momus/cli` being published (`npx -y @momus/cli@latest`).
 
 ## 6.6 Testing strategy
 

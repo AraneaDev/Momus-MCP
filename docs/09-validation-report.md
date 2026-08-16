@@ -163,8 +163,8 @@ file-banner, and both negative cases (misspelled directive, space after colon) s
 | Risk | Why it remains | Suggested spike (Phase 1) |
 |---|---|---|
 | Large-repo perf (10k+ LOC budgets §2.7) | Spike used a 200-LOC fixture | bench fixture repo; measure program build + incremental |
-| `beforeEach`-configured mocks across `describe` scopes | Spike was intra-test-function | extend provenance to describe/beforeEach blocks |
-| PHP type resolution across files (FQCN matching for DRIFT-003) | E6 validated syntax only | small cross-file PHP spike |
+| `beforeEach`-configured mocks across `describe` scopes | Spike was intra-test-function | ✅ resolved in Step 2: module and nested `describe` scopes are fixture-tested |
+| PHP type resolution across files (FQCN matching for DRIFT-003) | E6 validated syntax only | ✅ initial slice: Composer PSR-4 + classmap resolution are fixture-tested; DRIFT-003 assignability for PHP remains |
 | Jest automock (`jest.mock('x')` no factory) member checks | Out of scope by design (DRIFT-000) | none needed |
 | Mockery closure-form (`Mockery::mock('F', fn($m) => …)`) | Not in spike fixture | add fixture in Phase 2 |
 

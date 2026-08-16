@@ -1,18 +1,30 @@
 {
   "name": "@momus/mcp-server",
   "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "description": "Momus-MCP: MCP server exposing mock & test integrity audit tools",
-  "files": ["src"],
-  "exports": { ".": "./src/index.ts" },
-  "bin": { "momus-mcp": "./src/cli.ts" },
+  "files": [
+    "src"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "momus-mcp": "./src/cli.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@momus/core": "0.1.0",
-    "@momus/parser-typescript": "0.1.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@momus/core": "0.1.0",
+    "@momus/parser-php": "0.1.0",
+    "@momus/parser-typescript": "0.1.0",
+    "better-sqlite3": "^13.0.0",
+    "chokidar": "^5.0.0",
     "zod": "^3.24.0"
   }
 }

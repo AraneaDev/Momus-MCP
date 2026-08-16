@@ -5,8 +5,12 @@ import { join } from 'node:path';
 import { loadConfig, stripJsonComments, ConfigError, DEFAULT_CONFIG, effectiveSeverity } from '../src/config.ts';
 
 let dir: string;
-beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'momus-cfg-')); });
-afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'momus-cfg-'));
+});
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true });
+});
 
 describe('stripJsonComments', () => {
   it('strips line and block comments outside strings', () => {
@@ -26,11 +30,14 @@ describe('loadConfig', () => {
   });
 
   it('deep-merges nested sections', () => {
-    writeFileSync(join(dir, '.momusrc'), JSON.stringify({
-      languages: { php: true },
-      tokenBudget: { maxIssuesPerReport: 10 },
-      rules: { 'TAUT-002': 'warning' },
-    }));
+    writeFileSync(
+      join(dir, '.momusrc'),
+      JSON.stringify({
+        languages: { php: true },
+        tokenBudget: { maxIssuesPerReport: 10 },
+        rules: { 'TAUT-002': 'warning' },
+      }),
+    );
     const cfg = loadConfig(dir);
     expect(cfg.languages.typescript).toBe(true); // untouched default preserved
     expect(cfg.languages.php).toBe(true);

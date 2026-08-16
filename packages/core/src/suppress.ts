@@ -42,11 +42,7 @@ export interface SuppressionState {
  *    (when one starts within DOCBLOCK_FN_GAP lines), else its own line
  *  - `// @momus-ignore-file`: whole file, only honored in the first 10 lines
  */
-export function buildSuppressionState(
-  comments: RawComment[],
-  _file: string,
-  fns?: TestFnIR[],
-): SuppressionState {
+export function buildSuppressionState(comments: RawComment[], _file: string, fns?: TestFnIR[]): SuppressionState {
   const state: SuppressionState = { fileIgnored: false, perLine: new Map() };
   const add = (line: number, rules: RuleId[] | undefined) => {
     // later comments win; null = all rules

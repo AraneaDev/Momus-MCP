@@ -1,10 +1,17 @@
 {
   "name": "@momus/core",
   "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "description": "Momus engine: IR, symbol index, rules, formatters (no MCP, no parsers)",
-  "files": ["src"],
-  "exports": { ".": "./src/index.ts" },
+  "files": [
+    "src"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },

@@ -1,17 +1,27 @@
 {
   "name": "@momus/cli",
   "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
-  "description": "Momus CLI: audit, drift, contract, rules, serve, init, doctor",
-  "files": ["src"],
-  "exports": { ".": "./src/index.ts" },
-  "bin": { "momus": "./src/index.ts" },
+  "description": "Momus CLI: audit, drift, precommit, hook, annotate, annotate-pr, contract, rules, serve, init, doctor",
+  "files": [
+    "src"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "momus": "./src/index.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@momus/core": "0.1.0",
     "@momus/mcp-server": "0.1.0",
-    "@momus/parser-typescript": "0.1.0"
+    "@momus/parser-typescript": "0.1.0",
+    "@momus/parser-php": "0.1.0"
   }
 }

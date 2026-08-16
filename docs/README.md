@@ -33,6 +33,10 @@ interface, rule, schema, and phase below is normative unless explicitly marked *
 ## Canonical facts (defined once here, referenced everywhere)
 
 - **Project name:** Momus-MCP · binary/CLI: `momus` · npm scope: `@momus/*` · MCP server name: `momus-mcp`
+- **Why "Momus":** the ancient Greek spirit and personification of satire, mockery, blame, and
+  harsh criticism — the ultimate critic among the deities; his name means "blame" or "censure".
+  Apt both because the tool is an unsparing critic of test suites and because its subject is
+  *mock* objects.
 - **Language of implementation:** TypeScript (Node.js ≥ 20, ESM). Rationale in §2 of `01-executive-summary.md`.
 - **Package manager:** `npm` workspaces (confirmed in this environment; pnpm unconfirmed — swap is drop-in). **Test runner:** `vitest`. **License:** MIT.
 - **Phase-1 languages/frameworks:** TypeScript/JavaScript with Vitest and Jest.
@@ -65,11 +69,13 @@ interface, rule, schema, and phase below is normative unless explicitly marked *
 ## Status
 
 - [x] **Pre-implementation spike** (`09-validation-report.md`) — all experiments green, spec deltas applied
-- [x] **Phase 1 implementation** — built and verified: `@momus/core` (rules engine, suppression, formatters), `@momus/parser-typescript` (custom-host program, mock detection, dataflow), `@momus/mcp-server` (5 tools), `@momus/cli` (audit/drift/contract/rules/serve/init/doctor). 96 tests green, self-audit clean, CI workflow in place. See `10-build-plan.md`.
+- [x] **Phase 1 implementation** — built and verified: `@momus/core` (rules engine, suppression, formatters), `@momus/parser-typescript` (custom-host program, mock detection, dataflow), `@momus/mcp-server` (5 tools), `@momus/cli` (audit/drift/contract/rules/serve/init/doctor). 207 tests green, self-audit clean, CI workflow in place. See `10-build-plan.md`.
 - [x] **v0.1 packaging** (Step 1 of `10-build-plan.md`) — README, npm pack dry-run, `npx momus` verification
-- [ ] Phase 2 (PHP support) — not started
-- [ ] Phase 3 (git-diff hooks + CLI companion) — not started
-- [ ] Phase 4 (CI action + registry publishing) — not started
+- [x] Phase 2 (PHP support) — complete: PHPUnit/Mockery/Pest mocks (incl. closure-form, `getMockForAbstractClass`, `setUp` property mocks, docblock typing, DRIFT-003/004, Composer PSR-4 + classmap resolution); see `10-build-plan.md` Step 3
+- [x] Phase 3 (git-diff hooks + CLI companion) — `precommit`, `audit|drift --git-diff`, DRIFT-006, MCP git-diff scope, `hook`, `serve --transport http`, `serve --watch` (chokidar), `annotate` (JSONL), and `audit --fix` (DRIFT-001 rename fix; TAUT-* are semantic and intentionally descriptive-only).
+- [x] Test-coverage tooling — `npm run test:coverage` (v8) with floors 80% statements/lines, 75% branches, 90% functions; currently ~84% statements / ~82% branches across library modules.
+- [x] Persistent IR cache — `better-sqlite3` at `.momus/cache/`, keyed by file content hash + workspace digest (advisory, deterministic); ESLint + Prettier authoring gates (`lint`/`format` scripts) shipped.
+- [ ] Phase 4 (CI action + registry publishing) — action + `annotate-pr` + `release.yml`/changesets shipped in-repo; npm/MCP publishing pending credentials
 
 See [`10-build-plan.md`](./10-build-plan.md) for the achievable goal and sequenced work, and
 [`07-roadmap.md`](./07-roadmap.md) for the original phased plan.

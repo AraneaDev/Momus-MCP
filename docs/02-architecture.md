@@ -425,11 +425,14 @@ export interface SymbolIndex {
 ### 2.4.3 Persistence & incremental updates
 
 - **In-memory** is the source of truth for a session (server or one CLI invocation).
-- **Persistent cache** (`.momus/cache/`): SQLite via `better-sqlite3`, keyed by file hash;
-  stores `ModuleIR` serialized as JSON. Warm start of a large workspace reads IR from cache
-  instead of re-parsing (measured target: 100k LOC warm < 1 s).
-- **Watcher** (`chokidar`) in server mode (`momus serve`) triggers `updateFile` on
-  save/delete; the MCP daemon stays warm and incremental across tool calls.
+- **Persistent cache** (`.momus/cache/`): SQLite via `better-sqlite3`, keyed by file content
+  hash **plus a workspace digest** (over every source file + tsconfig/composer); stores
+  `ModuleIR` serialized as JSON. Warm start of an unchanged workspace reads IR from cache
+  instead of re-parsing (measured target: 100k LOC warm < 1 s). Any source/config change flips
+  the digest and forces a reparse, so the cache is advisory-only and never breaks determinism.
+- **Watcher** (`chokidar`, shipped) in server mode (`momus serve --watch`) invalidates the
+  memoized `ts.Program` cache on save/delete, so the next tool call reflects on-disk edits
+  without a restart.
 - **Determinism contract:** results must be identical whether computed cold or warm; cache is
   never the source of truth for correctness, only for speed.
 
@@ -455,7 +458,7 @@ export interface SymbolIndex {
 
 | Pattern | AST trigger | Produces |
 |---|---|---|
-| `$this->createMock(Foo::class)` / `static::createMock` / `$this->createStub` | method call | `MockIR{pattern:'createMock', target:{kind:'class'}}` |
+| `$this->createMock(Foo::class)` / `static::createMock` / `$this->createStub` (incl. `$this->prop = …` in `setUp`) | method call | `MockIR{pattern:'createMock', target:{kind:'class'}}` (property form binds class-scoped as `this:prop`) |
 | `$this->createConfiguredMock(Foo::class, ['m' => $v])` | method call | mock + `StubbedMemberIR` + `ConfiguredValueIR{api:'literal'}` per array key |
 | `$this->createPartialMock(Foo::class, ['m'])` | method call | mock with only-methods list (used for DRIFT-001: named methods must exist) |
 | `$this->getMockBuilder(Foo::class)->onlyMethods([...])->getMock()` | method chain | mock + members |

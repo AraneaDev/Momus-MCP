@@ -14,7 +14,8 @@ export function buildMarkdownReport(result: AuditResult, opts: MarkdownOptions):
   const s = result.summary;
   // CLEAN reflects the full (pre-truncation) picture so summary-only runs stay honest
   const clean = s.totalErrors === 0 && s.totalWarnings === 0;
-  const header = `# Momus audit — ${scopeLabel}\n\n` +
+  const header =
+    `# Momus audit — ${scopeLabel}\n\n` +
     `Audited ${s.filesAudited} file${s.filesAudited === 1 ? '' : 's'} · ${s.issues} issue${s.issues === 1 ? '' : 's'} ` +
     `(${s.errors} error · ${s.warnings} warning · ${s.infos} info) · ${s.durationMs}ms — CLEAN:${clean}`;
 
@@ -39,14 +40,17 @@ export function buildMarkdownReport(result: AuditResult, opts: MarkdownOptions):
 
   section('Errors', bySeverity('error'));
   section('Warnings', bySeverity('warning'));
-  section('Notes', [...bySeverity('info'), ...result.diagnostics.map((d) => ({
-    id: 'diag',
-    rule: 'SYS-001' as const,
-    severity: 'info' as const,
-    span: d.span,
-    message: d.message.slice(0, 80),
-    tokens: 0,
-  }))]);
+  section('Notes', [
+    ...bySeverity('info'),
+    ...result.diagnostics.map((d) => ({
+      id: 'diag',
+      rule: 'SYS-001' as const,
+      severity: 'info' as const,
+      span: d.span,
+      message: d.message.slice(0, 80),
+      tokens: 0,
+    })),
+  ]);
 
   if (s.truncated) {
     lines.push(`_… more issues omitted (maxIssues=${result.issues.length}) — pass maxIssues to raise the cap_\n`);

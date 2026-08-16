@@ -76,6 +76,72 @@ describe('mutability tracking (regression: let/var are never constant-provable)'
   });
 });
 
+describe('beforeEach/beforeAll setup scopes', () => {
+  it('carries setup mock configurations into each test function scope', () => {
+    const p = join(FIXTURES, 'tests', 'before-each.test.ts');
+    const mod = parser.parseModule(p, readFileSync(p, 'utf8'), {
+      config: undefined,
+      resolveImport: (spec) => parser.resolveImport(spec, p),
+    });
+    const echoes = mod.assertions.filter((a) => a.api === 'toBe');
+    expect(echoes).toHaveLength(4);
+    expect(echoes.map((a) => a.operands[0]!.provenance)).toEqual([
+      'mock-config',
+      'mock-config',
+      'mock-config',
+      'mock-config',
+    ]);
+    expect(echoes.map((a) => a.operands[0]!.configuredValue)).toEqual(['42', '7', '11', '22']);
+  });
+
+  it('keeps the healthy production-flow twin out of mock provenance', () => {
+    const p = join(FIXTURES, 'tests', 'before-each.test.ts');
+    const mod = parser.parseModule(p, readFileSync(p, 'utf8'), {
+      config: undefined,
+      resolveImport: (spec) => parser.resolveImport(spec, p),
+    });
+    const healthy = mod.assertions.find((a) => a.api === 'toBeDefined');
+    expect(healthy?.operands[0]!.provenance).toBe('production');
+    expect(healthy?.fnId).not.toBe('');
+  });
+});
+
+describe('assigned mock implementations', () => {
+  it('lets a test-body configuration override setup configuration', () => {
+    const src = [
+      "import { beforeEach, expect, it, vi } from 'vitest';",
+      'const fn = vi.fn();',
+      'beforeEach(() => { fn.mockReturnValue(42); });',
+      'it("override", () => {',
+      '  fn.mockReturnValue(99);',
+      '  expect(fn()).toBe(99);',
+      '});',
+      '',
+    ].join('\\n');
+    const p = join(FIXTURES, 'tests', 'setup-override.test.ts');
+    const mod = parser.parseModule(p, src, { config: undefined, resolveImport: () => null });
+    const assertion = mod.assertions.find((a) => a.api === 'toBe')!;
+    expect(assertion.operands[0]!.configuredValue).toBe('99');
+  });
+
+  it('tracks a constant returned by mockImplementation as mock configuration', () => {
+    const src = [
+      "import { expect, it, vi } from 'vitest';",
+      'it("implementation", () => {',
+      '  const fn = vi.fn();',
+      '  fn.mockImplementation(() => 42);',
+      '  expect(fn()).toBe(42);',
+      '});',
+      '',
+    ].join('\\n');
+    const p = join(FIXTURES, 'tests', 'mock-implementation.test.ts');
+    const mod = parser.parseModule(p, src, { config: undefined, resolveImport: () => null });
+    const assertion = mod.assertions.find((a) => a.api === 'toBe')!;
+    expect(assertion.operands[0]!.provenance).toBe('mock-config');
+    expect(assertion.operands[0]!.configuredValue).toBe('42');
+  });
+});
+
 describe('test function statistics', () => {
   const test = parseTestFile();
 

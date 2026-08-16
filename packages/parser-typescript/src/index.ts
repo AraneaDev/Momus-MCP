@@ -1,10 +1,10 @@
 /** TypeScript/JavaScript parser plugin for Momus. */
 import * as ts from 'typescript';
-import type {
-  ImportIR, LanguageParser, MockFramework, ModuleIR, ParseContext, ParseDiagnostic,
-} from '@momus/core';
+import type { ImportIR, LanguageParser, MockFramework, ModuleIR, ParseContext, ParseDiagnostic } from '@momus/core';
 import { span } from '@momus/core';
 import { getProgram, resolveImport as resolveImportTs } from './program.ts';
+
+export { invalidateProgramCache } from './program.ts';
 import { extractSymbols } from './symbols.ts';
 import { detectMocks } from './mocks.ts';
 import { analyzeAssertions } from './dataflow.ts';
@@ -25,11 +25,12 @@ export class TypeScriptParser implements LanguageParser {
     const handle = getProgram(path);
     // Use the program's own source file instance for type-aware analysis (F5/F6).
     let sf = handle.program.getSourceFile(path);
-    const typeAware = sf !== undefined;
+    const typeAware = sf !== undefined && handle.hasConfig;
     if (!sf) sf = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
 
     const diagnostics: ParseDiagnostic[] = [];
-    const parseDiagnostics = (sf as ts.SourceFile & { parseDiagnostics?: readonly ts.DiagnosticWithLocation[] }).parseDiagnostics ?? [];
+    const parseDiagnostics =
+      (sf as ts.SourceFile & { parseDiagnostics?: readonly ts.DiagnosticWithLocation[] }).parseDiagnostics ?? [];
     for (const d of parseDiagnostics) {
       const p = sf.getLineAndCharacterOfPosition(d.start);
       diagnostics.push({

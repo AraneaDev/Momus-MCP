@@ -4,22 +4,34 @@
  * production / literal / unknown, with configured-value echo detection.
  */
 import * as ts from 'typescript';
-import type {
-  AssertionIR, ExprIR, ModuleIR, RawComment, SourceKind, SourceSpan, TestFnIR,
-} from '@momus/core';
+import type { AssertionIR, ExprIR, ModuleIR, RawComment, SourceKind, SourceSpan, TestFnIR } from '@momus/core';
 import { span } from '@momus/core';
 import { extractComments } from './comments.ts';
 
 const HELPER_ROOTS = new Set([
-  'expect', 'vi', 'jest', 'it', 'test', 'describe', 'beforeEach', 'afterEach',
-  'beforeAll', 'afterAll', 'xit', 'xtest', 'fit', 'fdescribe', 'it.skip', 'it.only',
+  'expect',
+  'vi',
+  'jest',
+  'it',
+  'test',
+  'describe',
+  'beforeEach',
+  'afterEach',
+  'beforeAll',
+  'afterAll',
+  'xit',
+  'xtest',
+  'fit',
+  'fdescribe',
+  'it.skip',
+  'it.only',
 ]);
 
 interface Scope {
   /** name -> initializer; mutable (let) bindings are not constant-provable. */
   bindings: Map<string, { expr: ts.Expression; mutable: boolean }>;
-  mockInstanceIds: Map<string, string>;   // identifier -> mock id
-  configs: Map<string, { valueText: string; mockId: string }>;  // 'mocked.getTotal' -> value
+  mockInstanceIds: Map<string, string>; // identifier -> mock id
+  configs: Map<string, { valueText: string; mockId: string }>; // 'mocked.getTotal' -> value
 }
 
 export interface DataflowResult {
@@ -31,11 +43,10 @@ export function analyzeAssertions(
   sf: ts.SourceFile,
   imports: ModuleIR['imports'],
   instanceIds: Map<string, string>,
-  framework: string | undefined,
+  _framework: string | undefined,
 ): DataflowResult {
   const file = sf.fileName;
   const assertions: AssertionIR[] = [];
-  const functions: TestFnIR[] = [];
   const pos = (n: ts.Node) => sf.getLineAndCharacterOfPosition(n.getStart());
   const endPos = (n: ts.Node) => sf.getLineAndCharacterOfPosition(n.getEnd());
   const mkSpan = (n: ts.Node): SourceSpan =>
@@ -43,13 +54,18 @@ export function analyzeAssertions(
 
   // names imported from test frameworks are helpers, never production roots
   const FRAMEWORK_SPECIFIERS = /^(vitest|@vitest\/.*|jest|@jest\/.*)$/;
-  const importedNames = new Set(
-    imports.filter((i) => !FRAMEWORK_SPECIFIERS.test(i.specifier)).flatMap((i) => i.names),
-  );
+  const importedNames = new Set(imports.filter((i) => !FRAMEWORK_SPECIFIERS.test(i.specifier)).flatMap((i) => i.names));
 
   const isProductionRoot = (name: string): boolean => importedNames.has(name);
 
-  function buildScope(body: ts.Block): Scope {
+  interface SetupBlock {
+    body: ts.Node;
+    kind: 'beforeEach' | 'beforeAll';
+    container?: ts.CallExpression;
+  }
+
+  /** Setup callbacks contribute mock configurations to each applicable test scope. */
+  function buildScope(body: ts.Block, setupBlocks: SetupBlock[] = []): Scope {
     const scope: Scope = { bindings: new Map(), mockInstanceIds: new Map(instanceIds), configs: new Map() };
     for (const st of body.statements) {
       if (!ts.isVariableStatement(st)) continue;
@@ -63,12 +79,14 @@ export function analyzeAssertions(
     const visit = (n: ts.Node) => {
       if (ts.isCallExpression(n)) {
         const name = callName(n.expression);
-        const m = name?.match(/^(.*)\.mock(ReturnValue|ResolvedValue|ReturnValueOnce|ResolvedValueOnce|RejectedValue|RejectedValueOnce)$/);
+        const m = name?.match(
+          /^(.*)\.mock(ReturnValue|ResolvedValue|ReturnValueOnce|ResolvedValueOnce|RejectedValue|RejectedValueOnce|Implementation|ImplementationOnce)$/,
+        );
         if (m) {
           const keyExpr = (n.expression as ts.PropertyAccessExpression).expression;
           const key = keyExpr.getText(sf);
           const val = n.arguments[0];
-          const valText = val ? val.getText(sf) : '';
+          const valText = val ? configuredValueText(val, sf, m[2] ?? '') : '';
           const owner = ownerOf(keyExpr, sf);
           const mockId = owner ? scope.mockInstanceIds.get(owner) : undefined;
           scope.configs.set(key, { valueText: valText, mockId: mockId ?? '' });
@@ -76,12 +94,91 @@ export function analyzeAssertions(
       }
       ts.forEachChild(n, visit);
     };
+    // Setup runs before the test body, so a test-local configuration wins.
+    for (const setup of setupBlocks) visit(setup.body);
     visit(body);
     return scope;
   }
 
-  function provenance(expr: ts.Expression, scope: Scope): { kind: SourceKind; mockRefs: string[]; configuredValue?: string; constant: boolean } {
-    if (ts.isNumericLiteral(expr) || ts.isStringLiteral(expr) || expr.kind === ts.SyntaxKind.TrueKeyword || expr.kind === ts.SyntaxKind.FalseKeyword || expr.kind === ts.SyntaxKind.NullKeyword) {
+  // beforeEach/beforeAll callbacks contribute only to tests in their enclosing
+  // describe scope. A module-level hook applies to every test in the module.
+  const setupBlocks: SetupBlock[] = [];
+  const enclosingDescribe = (n: ts.Node): ts.CallExpression | undefined => {
+    let p: ts.Node | undefined = n.parent;
+    while (p) {
+      if (ts.isCallExpression(p) && callName(p.expression) === 'describe') return p;
+      p = p.parent;
+    }
+    return undefined;
+  };
+  const describeAncestors = (n: ts.Node): Set<ts.CallExpression> => {
+    const out = new Set<ts.CallExpression>();
+    let p: ts.Node | undefined = n.parent;
+    while (p) {
+      if (ts.isCallExpression(p) && callName(p.expression) === 'describe') out.add(p);
+      p = p.parent;
+    }
+    return out;
+  };
+  const describeDepth = (n: ts.Node): number => {
+    let depth = 0;
+    let p: ts.Node | undefined = n.parent;
+    while (p) {
+      if (ts.isCallExpression(p) && callName(p.expression) === 'describe') depth++;
+      p = p.parent;
+    }
+    return depth;
+  };
+  const collectSetupBlocks = (n: ts.Node) => {
+    if (ts.isCallExpression(n)) {
+      const name = callName(n.expression);
+      const callback = n.arguments[0];
+      if (
+        (name === 'beforeEach' || name === 'beforeAll') &&
+        callback &&
+        (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback))
+      ) {
+        setupBlocks.push({
+          body: callback.body,
+          kind: name,
+          container: enclosingDescribe(n),
+        });
+      }
+    }
+    ts.forEachChild(n, collectSetupBlocks);
+  };
+  collectSetupBlocks(sf);
+
+  const setupsForTest = (testCall: ts.CallExpression): SetupBlock[] => {
+    const ancestors = describeAncestors(testCall);
+    return (
+      setupBlocks
+        .filter((setup) => !setup.container || ancestors.has(setup.container))
+        .slice()
+        // Jest/Vitest run all beforeAll hooks before beforeEach hooks; within a
+        // hook kind, outer describe scopes run before inner scopes.
+        .sort((a, b) => {
+          const phase = (x: SetupBlock) => (x.kind === 'beforeAll' ? 0 : 1);
+          return (
+            phase(a) - phase(b) ||
+            describeDepth(a.container ?? sf) - describeDepth(b.container ?? sf) ||
+            pos(a.body).line - pos(b.body).line
+          );
+        })
+    );
+  };
+
+  function provenance(
+    expr: ts.Expression,
+    scope: Scope,
+  ): { kind: SourceKind; mockRefs: string[]; configuredValue?: string; constant: boolean } {
+    if (
+      ts.isNumericLiteral(expr) ||
+      ts.isStringLiteral(expr) ||
+      expr.kind === ts.SyntaxKind.TrueKeyword ||
+      expr.kind === ts.SyntaxKind.FalseKeyword ||
+      expr.kind === ts.SyntaxKind.NullKeyword
+    ) {
       return { kind: 'literal', mockRefs: [], constant: true };
     }
     if (ts.isIdentifier(expr)) {
@@ -100,7 +197,12 @@ export function analyzeAssertions(
       const callee = expr.expression.getText(sf);
       const cfg = scope.configs.get(callee);
       if (cfg) {
-        return { kind: 'mock-config', mockRefs: cfg.mockId ? [cfg.mockId] : [], configuredValue: cfg.valueText, constant: false };
+        return {
+          kind: 'mock-config',
+          mockRefs: cfg.mockId ? [cfg.mockId] : [],
+          configuredValue: cfg.valueText,
+          constant: false,
+        };
       }
       if (ts.isPropertyAccessExpression(expr.expression)) {
         const owner = ownerOf(expr.expression.expression, sf);
@@ -140,11 +242,20 @@ export function analyzeAssertions(
     const visit = (n: ts.Node) => {
       if (ts.isCallExpression(n)) {
         const root = rootOf(n.expression);
-        if (!root || HELPER_ROOTS.has(root)) { ts.forEachChild(n, visit); return; }
-        if (scope.mockInstanceIds.has(root)) { ts.forEachChild(n, visit); return; }
+        if (!root || HELPER_ROOTS.has(root)) {
+          ts.forEachChild(n, visit);
+          return;
+        }
+        if (scope.mockInstanceIds.has(root)) {
+          ts.forEachChild(n, visit);
+          return;
+        }
         const bound = scope.bindings.get(root);
-        if (bound && ts.isNewExpression(stripCast(bound.expr))) { count++; }
-        else if (isProductionRoot(root)) { count++; }
+        if (bound && ts.isNewExpression(stripCast(bound.expr))) {
+          count++;
+        } else if (isProductionRoot(root)) {
+          count++;
+        }
       }
       ts.forEachChild(n, visit);
     };
@@ -154,15 +265,22 @@ export function analyzeAssertions(
 
   // ---- collect test functions (it/test callbacks + describe for stats)
   const testFns: TestFnIR[] = [];
+  const setupBlocksByFnId = new Map<string, SetupBlock[]>();
   const collectFns = (n: ts.Node) => {
     if (ts.isCallExpression(n)) {
       const name = callName(n.expression);
-      if ((name === 'it' || name === 'test') && n.arguments[1] && (ts.isArrowFunction(n.arguments[1]) || ts.isFunctionExpression(n.arguments[1]))) {
+      if (
+        (name === 'it' || name === 'test') &&
+        n.arguments[1] &&
+        (ts.isArrowFunction(n.arguments[1]) || ts.isFunctionExpression(n.arguments[1]))
+      ) {
         const fn = n.arguments[1];
         const body = (fn as ts.ArrowFunction).body;
         if (ts.isBlock(body)) {
           const id = `${file}#fn:${pos(n).line + 1}`;
-          const scope = buildScope(body);
+          const applicableSetups = setupsForTest(n);
+          const scope = buildScope(body, applicableSetups);
+          setupBlocksByFnId.set(id, applicableSetups);
           testFns.push({
             id,
             span: mkSpan(body),
@@ -187,18 +305,25 @@ export function analyzeAssertions(
         while (p && ts.isPropertyAccessExpression(p)) p = p.parent;
         if (p && ts.isCallExpression(p)) matcherCall = p;
         if (matcherCall) {
-          const matcher = ts.isPropertyAccessExpression(matcherCall.expression) ? matcherCall.expression.name.text : undefined;
+          const matcher = ts.isPropertyAccessExpression(matcherCall.expression)
+            ? matcherCall.expression.name.text
+            : undefined;
           if (matcher) {
             let expectCall: ts.Node = matcherCall.expression;
             while (ts.isPropertyAccessExpression(expectCall)) expectCall = expectCall.expression;
             const left = ts.isCallExpression(expectCall) ? expectCall.arguments[0] : undefined;
             const right = matcherCall.arguments[0];
             const fnBody = enclosingBlock(node);
-            const scope = fnBody ? buildScope(fnBody) : { bindings: new Map(), mockInstanceIds: new Map(instanceIds), configs: new Map() };
+            const fnId =
+              testFns.find((f) => f.span.startLine <= pos(node).line + 1 && pos(node).line + 1 <= f.span.endLine)?.id ??
+              '';
+            const setupForFn = setupBlocksByFnId.get(fnId) ?? [];
+            const scope = fnBody
+              ? buildScope(fnBody, setupForFn)
+              : { bindings: new Map(), mockInstanceIds: new Map(instanceIds), configs: new Map() };
             const operands: ExprIR[] = [];
             if (left) operands.push(toExpr(left, scope));
             if (right) operands.push(toExpr(right, scope));
-            const fnId = testFns.find((f) => f.span.startLine <= pos(node).line + 1 && pos(node).line + 1 <= f.span.endLine)?.id ?? '';
             assertions.push({
               id: `${file}#assert:${pos(node).line + 1}:${pos(node).character + 1}`,
               span: mkSpan(matcherCall),
@@ -221,7 +346,17 @@ export function analyzeAssertions(
   function toExpr(e: ts.Expression, scope: Scope): ExprIR {
     const p = provenance(e, scope);
     return {
-      kind: ts.isLiteralExpression(e) ? 'literal' : ts.isCallExpression(e) ? 'call' : ts.isPropertyAccessExpression(e) ? 'member' : ts.isIdentifier(e) ? 'identifier' : ts.isNewExpression(e) ? 'new' : 'unknown',
+      kind: ts.isLiteralExpression(e)
+        ? 'literal'
+        : ts.isCallExpression(e)
+          ? 'call'
+          : ts.isPropertyAccessExpression(e)
+            ? 'member'
+            : ts.isIdentifier(e)
+              ? 'identifier'
+              : ts.isNewExpression(e)
+                ? 'new'
+                : 'unknown',
       text: e.getText(sf),
       mockRefs: p.mockRefs,
       provenance: p.kind,
@@ -261,6 +396,33 @@ function rootOf(e: ts.Expression): string | undefined {
   if (ts.isPropertyAccessExpression(e)) return rootOf(e.expression);
   if (ts.isCallExpression(e)) return rootOf(e.expression);
   return undefined;
+}
+
+function configuredValueText(value: ts.Expression, sf: ts.SourceFile, api: string): string {
+  if (api !== 'Implementation' && api !== 'ImplementationOnce') return value.getText(sf);
+  const callback = ts.isParenthesizedExpression(value) ? value.expression : value;
+  if (ts.isArrowFunction(callback) && !ts.isBlock(callback.body)) return callback.body.getText(sf);
+  if (ts.isFunctionExpression(callback) || ts.isArrowFunction(callback)) {
+    let result: string | undefined;
+    const visit = (n: ts.Node) => {
+      if (result) return;
+      if (
+        ts.isReturnStatement(n) &&
+        n.expression &&
+        (ts.isLiteralExpression(n.expression) ||
+          n.expression.kind === ts.SyntaxKind.TrueKeyword ||
+          n.expression.kind === ts.SyntaxKind.FalseKeyword ||
+          n.expression.kind === ts.SyntaxKind.NullKeyword)
+      ) {
+        result = n.expression.getText(sf);
+        return;
+      }
+      ts.forEachChild(n, visit);
+    };
+    ts.forEachChild(callback.body, visit);
+    if (result) return result;
+  }
+  return value.getText(sf);
 }
 
 function ownerOf(e: ts.Expression, sf: ts.SourceFile): string | undefined {

@@ -36,13 +36,24 @@ function insideBlockComment(source: string, idx: number): boolean {
   let depth = 0;
   let i = 0;
   while (i < idx && i < source.length) {
-    if (source[i] === '/' && source[i + 1] === '*') { depth++; i += 2; continue; }
-    if (source[i] === '*' && source[i + 1] === '/') { depth = Math.max(0, depth - 1); i += 2; continue; }
+    if (source[i] === '/' && source[i + 1] === '*') {
+      depth++;
+      i += 2;
+      continue;
+    }
+    if (source[i] === '*' && source[i + 1] === '/') {
+      depth = Math.max(0, depth - 1);
+      i += 2;
+      continue;
+    }
     if (source[i] === '"' || source[i] === "'" || source[i] === '`') {
       const q = source[i]!;
       i++;
       while (i < idx && i < source.length) {
-        if (source[i] === '\\') { i += 2; continue; }
+        if (source[i] === '\\') {
+          i += 2;
+          continue;
+        }
         if (source[i] === q) break;
         i++;
       }

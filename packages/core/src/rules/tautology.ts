@@ -3,9 +3,18 @@ import type { Issue, ModuleIR, RuleId, Severity, AssertionIR, MockIR } from '../
 import type { Rule, RuleContext } from './engine.ts';
 
 const CONSTANT_API_ALLOWLIST = new Set([
-  'toBeNull', 'toBeUndefined', 'toBeTruthy', 'toBeFalsy', 'toBeInstanceOf',
-  'toHaveLength', 'assertNull', 'assertNotNull', 'assertInstanceOf', 'assertCount',
-  'assertEmpty', 'assertNotEmpty',
+  'toBeNull',
+  'toBeUndefined',
+  'toBeTruthy',
+  'toBeFalsy',
+  'toBeInstanceOf',
+  'toHaveLength',
+  'assertNull',
+  'assertNotNull',
+  'assertInstanceOf',
+  'assertCount',
+  'assertEmpty',
+  'assertNotEmpty',
 ]);
 
 abstract class BaseRule implements Rule {
@@ -13,7 +22,9 @@ abstract class BaseRule implements Rule {
   abstract readonly name: string;
   abstract readonly defaultSeverity: Severity;
   abstract readonly description: string;
-  appliesTo(m: ModuleIR): boolean { return m.kind === 'test'; }
+  appliesTo(m: ModuleIR): boolean {
+    return m.kind === 'test';
+  }
   abstract check(ctx: RuleContext): Issue[];
 }
 
@@ -26,7 +37,8 @@ const issue = (
   fix?: { code: string; description: string },
 ): Issue => ({
   id: `${rule}:${a.span.file}:${a.span.startLine}:${a.span.startCol}:${message.slice(0, 24)}`,
-  rule, severity,
+  rule,
+  severity,
   span: a.span,
   message: message.slice(0, 80),
   fix: fix ? { kind: 'replace', code: fix.code, description: fix.description.slice(0, 60) } : undefined,
@@ -43,9 +55,16 @@ export class Taut001SelfComparison extends BaseRule {
     for (const a of module.assertions) {
       const [l, r] = a.operands;
       if (l && r && l.text === r.text) {
-        out.push(issue({ module, config } as RuleContext, this.id, this.defaultSeverity, a,
-          `self-comparison: ${l.text} compared with itself`,
-          { code: '', description: 'assert against a real business outcome' }));
+        out.push(
+          issue(
+            { module, config } as RuleContext,
+            this.id,
+            this.defaultSeverity,
+            a,
+            `self-comparison: ${l.text} compared with itself`,
+            { code: '', description: 'assert against a real business outcome' },
+          ),
+        );
       }
     }
     return out;
@@ -56,20 +75,33 @@ export class Taut002MockEcho extends BaseRule {
   readonly id = 'TAUT-002' as const;
   readonly name = 'mock-echo';
   readonly defaultSeverity = 'error' as const;
-  readonly description = 'assertion re-asserts a stub\'s own configured return';
+  readonly description = "assertion re-asserts a stub's own configured return";
   check({ module, config }: RuleContext): Issue[] {
     const out: Issue[] = [];
     for (const a of module.assertions) {
       const [l, r] = a.operands;
       if (!l || !r) continue;
       const echo =
-        (l.provenance === 'mock-config' && l.configuredValue !== undefined && r.provenance === 'literal' && r.text === l.configuredValue) ||
-        (r.provenance === 'mock-config' && r.configuredValue !== undefined && l.provenance === 'literal' && l.text === r.configuredValue);
+        (l.provenance === 'mock-config' &&
+          l.configuredValue !== undefined &&
+          r.provenance === 'literal' &&
+          r.text === l.configuredValue) ||
+        (r.provenance === 'mock-config' &&
+          r.configuredValue !== undefined &&
+          l.provenance === 'literal' &&
+          l.text === r.configuredValue);
       if (echo) {
         const val = l.provenance === 'mock-config' ? l.configuredValue : r.configuredValue;
-        out.push(issue({ module, config } as RuleContext, this.id, this.defaultSeverity, a,
-          `mock-echo: asserts stubbed value (${val}) against itself`,
-          { code: '', description: 'assert against a production-derived value' }));
+        out.push(
+          issue(
+            { module, config } as RuleContext,
+            this.id,
+            this.defaultSeverity,
+            a,
+            `mock-echo: asserts stubbed value (${val}) against itself`,
+            { code: '', description: 'assert against a production-derived value' },
+          ),
+        );
       }
     }
     return out;
@@ -88,9 +120,16 @@ export class Taut003ConstantTautology extends BaseRule {
       const [l, r] = a.operands;
       if (!l || !r) continue;
       if (l.constant && r.constant && l.provenance === 'literal' && r.provenance === 'literal') {
-        out.push(issue({ module } as RuleContext, this.id, this.defaultSeverity, a,
-          `constant-tautology: ${l.text} compared with ${r.text}; cannot fail`,
-          { code: '', description: 'assert a value that flows from the code under test' }));
+        out.push(
+          issue(
+            { module } as RuleContext,
+            this.id,
+            this.defaultSeverity,
+            a,
+            `constant-tautology: ${l.text} compared with ${r.text}; cannot fail`,
+            { code: '', description: 'assert a value that flows from the code under test' },
+          ),
+        );
       }
     }
     return out;
@@ -108,12 +147,20 @@ export class Taut004MockOnlyAssertion extends BaseRule {
     for (const a of module.assertions) {
       const fn = fns.get(a.fnId);
       if (fn?.hasProductionCalls) continue;
-      const allMock = a.operands.length > 0 &&
+      const allMock =
+        a.operands.length > 0 &&
         a.operands.every((o) => o.provenance === 'mock-config' || o.provenance === 'mock-call');
       if (allMock) {
-        out.push(issue({ module } as RuleContext, this.id, this.defaultSeverity, a,
-          `mock-only-assertion: test exercises no production code`,
-          { code: '', description: 'exercise the real SUT with a stubbed dependency' }));
+        out.push(
+          issue(
+            { module } as RuleContext,
+            this.id,
+            this.defaultSeverity,
+            a,
+            `mock-only-assertion: test exercises no production code`,
+            { code: '', description: 'exercise the real SUT with a stubbed dependency' },
+          ),
+        );
       }
     }
     return out;
@@ -133,8 +180,15 @@ export class Taut005ZeroReachStub extends BaseRule {
       if (mock.configuredValues.length === 0 && mock.stubbedMembers.every((s) => s.returnValues.length === 0)) continue;
       if (mock.invocationSites.length > 0) continue;
       if (asserted.has(mock.id)) continue;
-      out.push(issue({ module } as RuleContext, this.id, this.defaultSeverity, mock,
-        `zero-reach-stub: mock configured but never invoked or asserted`));
+      out.push(
+        issue(
+          { module } as RuleContext,
+          this.id,
+          this.defaultSeverity,
+          mock,
+          `zero-reach-stub: mock configured but never invoked or asserted`,
+        ),
+      );
     }
     return out;
   }
@@ -157,9 +211,16 @@ export class Taut006UnconfiguredSpyAssert extends BaseRule {
       const isSpy = mock.pattern === 'vi.spyOn' || mock.pattern === 'jest.spyOn';
       const configured = mock.configuredValues.length > 0 || mock.stubbedMembers.some((s) => s.returnValues.length > 0);
       if (isSpy && !configured && mock.invocationSites.length === 0) {
-        out.push(issue({ module } as RuleContext, this.id, this.defaultSeverity, a,
-          `unconfigured-spy-assert: spy has no stub and no production call path`,
-          { code: '', description: 'stub the spy or assert a production-derived value' }));
+        out.push(
+          issue(
+            { module } as RuleContext,
+            this.id,
+            this.defaultSeverity,
+            a,
+            `unconfigured-spy-assert: spy has no stub and no production call path`,
+            { code: '', description: 'stub the spy or assert a production-derived value' },
+          ),
+        );
       }
     }
     return out;

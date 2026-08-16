@@ -8,7 +8,14 @@
  */
 import * as ts from 'typescript';
 import type {
-  ConfiguredValueIR, MockFramework, MockIR, MockTarget, SourceSpan, StubbedMemberIR, TypeIR,
+  ConfiguredValueIR,
+  MockFramework,
+  MockIR,
+  MockTarget,
+  SignatureIR,
+  SourceSpan,
+  StubbedMemberIR,
+  TypeIR,
 } from '@momus/core';
 import { span } from '@momus/core';
 import { getProgram, symbolIdOfType, classMethodSignature, unwrapPromise } from './program.ts';
@@ -22,7 +29,8 @@ export interface MockDetectionContext {
 
 const callName = (n: ts.Expression): string | null => {
   if (ts.isIdentifier(n)) return n.text;
-  if (ts.isPropertyAccessExpression(n)) return callName(n.expression) ? callName(n.expression) + '.' + n.name.text : null;
+  if (ts.isPropertyAccessExpression(n))
+    return callName(n.expression) ? callName(n.expression) + '.' + n.name.text : null;
   return null;
 };
 
@@ -49,7 +57,8 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
   const instanceIds = new Map<string, string>();
   const pos = (n: ts.Node) => sf.getLineAndCharacterOfPosition(n.getStart());
   const endPos = (n: ts.Node) => sf.getLineAndCharacterOfPosition(n.getEnd());
-  const mkSpan = (n: ts.Node): SourceSpan => span(file, pos(n).line + 1, pos(n).character + 1, endPos(n).line + 1, endPos(n).character + 1);
+  const mkSpan = (n: ts.Node): SourceSpan =>
+    span(file, pos(n).line + 1, pos(n).character + 1, endPos(n).line + 1, endPos(n).character + 1);
   const mockId = (n: ts.Node) => `${file}#mock:${pos(n).line + 1}:${pos(n).character + 1}`;
 
   const configApi = (name: string): ConfiguredValueIR['api'] | null => {
@@ -62,9 +71,11 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
   };
 
   const visit = (node: ts.Node) => {
-    if (!ts.isCallExpression(node)) { ts.forEachChild(node, visit); return; }
+    if (!ts.isCallExpression(node)) {
+      ts.forEachChild(node, visit);
+      return;
+    }
     const name = callName(node.expression);
-    const line = pos(node).line + 1;
 
     // ---- vi.mock('mod', factory)
     if (name === 'vi.mock' || name === 'jest.mock') {
@@ -72,15 +83,16 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
       const resolvedPath = specifier ? ctx.resolveImport(specifier) : undefined;
       const factory = node.arguments[1] ? unwrap(node.arguments[1]) : undefined;
       const members: StubbedMemberIR[] = [];
-      const factoryBody = factory && ts.isArrowFunction(factory) && factory.body && !ts.isBlock(factory.body)
-        ? (unwrap(factory.body) as ts.ObjectLiteralExpression)
-        : undefined;
+      const factoryBody =
+        factory && ts.isArrowFunction(factory) && factory.body && !ts.isBlock(factory.body)
+          ? (unwrap(factory.body) as ts.ObjectLiteralExpression)
+          : undefined;
       if (factoryBody) {
         for (const p of factoryBody.properties) {
           if (ts.isPropertyAssignment(p) && ts.isIdentifier(p.name)) {
             members.push({
               name: p.name.text,
-              span: mkSpan(p),
+              span: mkSpan(p.name),
               api: 'mockFactoryKey',
               returnValues: [],
             });
@@ -100,6 +112,54 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
         configuredValues: [],
         invocationSites: [],
         isAutomock: !factory,
+      });
+    }
+
+    // ---- module automocks loaded through helper APIs
+    if (name === 'vi.importMock' || name === 'jest.requireMock' || name === 'jest.createMockFromModule') {
+      const specifier = node.arguments[0] && ts.isStringLiteral(node.arguments[0]) ? node.arguments[0].text : undefined;
+      const resolvedPath = specifier ? ctx.resolveImport(specifier) : undefined;
+      const id = mockId(node);
+      mocks.push({
+        id,
+        span: mkSpan(node),
+        framework: ctx.framework,
+        pattern: name,
+        target: resolvedPath
+          ? { kind: 'module', modulePath: resolvedPath, specifier, span: mkSpan(node.arguments[0] ?? node) }
+          : { kind: 'unknown', specifier, span: mkSpan(node.arguments[0] ?? node) },
+        stubbedMembers: [],
+        configuredValues: [],
+        invocationSites: [],
+        isAutomock: true,
+      });
+      const binding = findBinding(node, sf);
+      if (binding) instanceIds.set(binding, id);
+    }
+
+    // ---- vi.stubGlobal('name', value)
+    if (name === 'vi.stubGlobal' && node.arguments[0] && ts.isStringLiteral(node.arguments[0])) {
+      const value = node.arguments[1];
+      mocks.push({
+        id: mockId(node),
+        span: mkSpan(node),
+        framework: ctx.framework,
+        pattern: 'vi.stubGlobal',
+        target: { kind: 'global', exportName: node.arguments[0].text, span: mkSpan(node.arguments[0]) },
+        stubbedMembers: [],
+        configuredValues: value
+          ? [
+              {
+                span: mkSpan(node),
+                api: 'literal',
+                value: literalShape(value, sf),
+                once: false,
+                assignable: 'unknown',
+              },
+            ]
+          : [],
+        invocationSites: [],
+        isAutomock: false,
       });
     }
 
@@ -143,22 +203,28 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
       if (objExpr && memberExpr && ts.isStringLiteral(memberExpr)) {
         const type = ctx.typeAware ? checker.getTypeAtLocation(objExpr) : undefined;
         const symbolId = type ? symbolIdOfType(checker, type) : undefined;
+        const syntacticName = targetTypeName(objExpr, sf);
         const target: MockTarget = symbolId
           ? { kind: 'instance-member', symbolId, memberName: memberExpr.text, span: mkSpan(node) }
-          : { kind: 'instance-member', memberName: memberExpr.text, span: mkSpan(node) };
+          : { kind: 'instance-member', exportName: syntacticName, memberName: memberExpr.text, span: mkSpan(node) };
         const id = mockId(node);
+        const returnValues = collectMemberConfigs(node, sf, mkSpan);
+        const signature = collectImplementationSignature(node);
         mocks.push({
           id,
           span: mkSpan(node),
           framework: ctx.framework,
           pattern: name,
           target,
-          stubbedMembers: [{
-            name: memberExpr.text,
-            span: mkSpan(memberExpr),
-            api: 'spyOn',
-            returnValues: collectMemberConfigs(node, sf, mkSpan),
-          }],
+          stubbedMembers: [
+            {
+              name: memberExpr.text,
+              span: mkSpan(memberExpr),
+              api: 'spyOn',
+              signature,
+              returnValues,
+            },
+          ],
           configuredValues: [],
           invocationSites: [],
           isAutomock: false,
@@ -175,14 +241,15 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
       if (ts.isNewExpression(inner) || ts.isIdentifier(inner)) {
         const type = ctx.typeAware ? checker.getTypeAtLocation(inner) : undefined;
         const symbolId = type ? symbolIdOfType(checker, type) : undefined;
+        const syntacticName = targetTypeName(inner, sf);
         const id = mockId(node);
-        if (symbolId) {
+        if (symbolId || syntacticName) {
           mocks.push({
             id,
             span: mkSpan(node),
             framework: ctx.framework,
             pattern: 'vi.mocked-instance',
-            target: { kind: 'class', symbolId, span: mkSpan(node) },
+            target: { kind: 'class', symbolId, exportName: syntacticName, span: mkSpan(node) },
             stubbedMembers: [],
             configuredValues: [],
             invocationSites: [],
@@ -204,11 +271,49 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
   const visitStmt = (node: ts.Node) => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
       const init = stripCast(node.initializer);
-      if (ts.isObjectLiteralExpression(init)) {
+      if (
+        ts.isNewExpression(init) &&
+        ts.isIdentifier(init.expression) &&
+        init.expression.text === 'Proxy' &&
+        isProxyDouble(init)
+      ) {
+        const castType = castTypeName(node.initializer);
+        let symbolId: string | undefined;
+        if (castType && ctx.typeAware) {
+          symbolId = symbolIdOfType(checker, checker.getTypeAtLocation(node.initializer));
+        }
+        const id = mockId(node);
+        mocks.push({
+          id,
+          span: mkSpan(node),
+          framework: ctx.framework,
+          pattern: 'proxy',
+          target: symbolId
+            ? { kind: 'class', symbolId, exportName: castType, span: mkSpan(node) }
+            : { kind: 'class', exportName: castType, span: mkSpan(node) },
+          stubbedMembers: [],
+          configuredValues: [],
+          invocationSites: [],
+          isAutomock: false,
+        });
+
+        instanceIds.set(node.name.text, id);
+      } else if (ts.isObjectLiteralExpression(init)) {
         const members: StubbedMemberIR[] = [];
         for (const p of init.properties) {
-          if (ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && ts.isCallExpression(p.initializer) && callName(p.initializer.expression) === 'vi.fn') {
-            members.push({ name: p.name.text, span: mkSpan(p), api: 'objectLiteralKey', returnValues: [] });
+          if (
+            ts.isPropertyAssignment(p) &&
+            ts.isIdentifier(p.name) &&
+            ts.isCallExpression(p.initializer) &&
+            (callName(p.initializer.expression) === 'vi.fn' || callName(p.initializer.expression) === 'jest.fn')
+          ) {
+            members.push({
+              name: p.name.text,
+              span: mkSpan(p.name),
+              api: 'objectLiteralKey',
+              signature: functionSignature(p.initializer.arguments[0]),
+              returnValues: [],
+            });
           }
         }
         if (members.length > 0) {
@@ -224,7 +329,9 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
             span: mkSpan(node),
             framework: ctx.framework,
             pattern: 'object-literal',
-            target: symbolId ? { kind: 'class', symbolId, span: mkSpan(node) } : undefined,
+            target: symbolId
+              ? { kind: 'class', symbolId, exportName: castType, span: mkSpan(node) }
+              : { kind: 'class', exportName: castType, span: mkSpan(node) },
             stubbedMembers: members,
             configuredValues: [],
             invocationSites: [],
@@ -232,19 +339,24 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
           });
           instanceIds.set(node.name.text, id);
         }
-      } else if (ts.isCallExpression(init) && callName(init.expression) === 'vi.fn') {
-        // direct const f = vi.fn() — a mock instance without members
-        const id = mockId(node);
-        mocks.push({
-          id,
-          span: mkSpan(node),
-          framework: ctx.framework,
-          pattern: 'vi.fn',
-          stubbedMembers: [],
-          configuredValues: [],
-          invocationSites: [],
-          isAutomock: false,
-        });
+      } else if (
+        ts.isCallExpression(init) &&
+        (callName(init.expression) === 'vi.fn' || callName(init.expression) === 'jest.fn')
+      ) {
+        // direct const f = vi.fn()/jest.fn() — bind the visitor's mock to the name
+        const id = mockId(init);
+        if (!mocks.some((m) => m.id === id)) {
+          mocks.push({
+            id,
+            span: mkSpan(init),
+            framework: ctx.framework,
+            pattern: callName(init.expression) as 'vi.fn' | 'jest.fn',
+            stubbedMembers: [],
+            configuredValues: [],
+            invocationSites: [],
+            isAutomock: false,
+          });
+        }
         instanceIds.set(node.name.text, id);
       } else if (ts.isNewExpression(init) && ctx.typeAware && isProductionClass(init, checker, sf)) {
         // const svc = new LedgerService(...) — production instance; mock members via later configs
@@ -273,6 +385,46 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
   visit(sf);
   visitStmt(sf);
 
+  // ---- configs applied after assignment: fn.mockImplementation(...),
+  // mocked.member.mockReturnValue(...), and their Jest equivalents.
+  const collectAssignedConfigs = (n: ts.Node) => {
+    if (ts.isCallExpression(n)) {
+      const api = configApi(callName(n.expression) ?? '');
+      if (api && ts.isPropertyAccessExpression(n.expression)) {
+        const base = n.expression.expression;
+        const owner = rootOfCall(base);
+        const id = owner ? instanceIds.get(owner) : undefined;
+        const mock = id ? mocks.find((m) => m.id === id) : undefined;
+        if (mock && mock.pattern !== 'vi.mocked-instance' && owner) {
+          const value = n.arguments[0];
+          const configured: ConfiguredValueIR = {
+            span: mkSpan(n),
+            api,
+            value: value ? literalShape(value, sf) : undefined,
+            once: /Once$/.test(api),
+            assignable: 'unknown',
+          };
+          if (ts.isIdentifier(base)) {
+            mock.configuredValues.push(configured);
+          } else if (ts.isPropertyAccessExpression(base)) {
+            const member = mock.stubbedMembers.find((s) => s.name === base.name.text);
+            if (
+              member &&
+              !member.returnValues.some(
+                (v) => v.span.startLine === configured.span.startLine && v.span.startCol === configured.span.startCol,
+              )
+            ) {
+              member.returnValues.push(configured);
+              mock.configuredValues.push(configured);
+            }
+          }
+        }
+      }
+    }
+    ts.forEachChild(n, collectAssignedConfigs);
+  };
+  collectAssignedConfigs(sf);
+
   // ---- member configs on instance mocks: dbMock.query.mockResolvedValue([...])
   // Only configs whose owner identifier binds to THIS mock are collected.
   for (const mock of mocks) {
@@ -294,7 +446,10 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
           const owner = findInstanceOwner(base.getText(sf), sf);
           if (owner === binding && instanceIds.has(owner) && memberName) {
             const stub = members.get(memberName) ?? {
-              name: memberName, span: mkSpan(base), api: 'instance-member' as const, returnValues: [],
+              name: memberName,
+              span: mkSpan(base),
+              api: 'instance-member' as const,
+              returnValues: [],
             };
             const valueNode = n.arguments[0];
             stub.returnValues.push({
@@ -316,12 +471,21 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
       const sig = ctx.typeAware ? classMethodSignature(handle, mock.target.symbolId, stub.name) : undefined;
       for (const v of stub.returnValues) {
         if (v.value === undefined) continue;
-        if (!sig) { v.assignable = 'unknown'; continue; }
+        if (!sig) {
+          v.assignable = 'unknown';
+          continue;
+        }
         const retType = unwrapPromise(sig.checker, sig.returnType);
         // generic type parameters (e.g. query<T>(): Promise<T[]>) are not statically checkable
-        if (containsTypeParameter(sig.checker, retType)) { v.assignable = 'unknown'; continue; }
+        if (containsTypeParameter(sig.checker, retType)) {
+          v.assignable = 'unknown';
+          continue;
+        }
         const valNode = findNodeForSpan(sf, v.span);
-        if (!valNode) { v.assignable = 'unknown'; continue; }
+        if (!valNode) {
+          v.assignable = 'unknown';
+          continue;
+        }
         const valType = sig.checker.getTypeAtLocation(valNode);
         try {
           v.assignable = sig.checker.isTypeAssignableTo(valType, retType);
@@ -347,11 +511,15 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
   // production code (new LedgerService(dbMock) — reachable even if never called in-file)
   // Exclusions: test-framework wrappers (expect(spy), vi.mocked(x)) and config calls
   // (mocked.getTotal.mockReturnValue(42)) are NOT invocations.
-  const CALLER_HELPER = /^(expect|vi|jest|it|test|describe|beforeEach|afterEach|beforeAll|afterAll|xit|xtest|fit|fdescribe|it\.|test\.|describe\.)/;
+  const CALLER_HELPER =
+    /^(expect|vi|jest|it|test|describe|beforeEach|afterEach|beforeAll|afterAll|xit|xtest|fit|fdescribe|it\.|test\.|describe\.)/;
   const reachable = (n: ts.Node) => {
     if (ts.isCallExpression(n)) {
       const calleeText = n.expression.getText(sf);
-      const isConfigCall = /^[\w$.]+\.mock(ReturnValue|ResolvedValue|ReturnValueOnce|ResolvedValueOnce|RejectedValue|RejectedValueOnce|Implementation|ImplementationOnce)$/.test(calleeText);
+      const isConfigCall =
+        /^[\w$.]+\.mock(ReturnValue|ResolvedValue|ReturnValueOnce|ResolvedValueOnce|RejectedValue|RejectedValueOnce|Implementation|ImplementationOnce)$/.test(
+          calleeText,
+        );
       const calleeRoot = rootOfCall(n.expression);
       const isHelperCall = calleeRoot !== undefined && CALLER_HELPER.test(calleeRoot);
       if (!isConfigCall && !isHelperCall) {
@@ -395,6 +563,19 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
   return { mocks, instanceIds };
 }
 
+/** Find an implementation callback chained on a spyOn result. */
+function collectImplementationSignature(spyCall: ts.CallExpression): SignatureIR | undefined {
+  let parent: ts.Node | undefined = spyCall.parent;
+  while (parent && ts.isPropertyAccessExpression(parent)) {
+    const call = parent.parent;
+    if (call && ts.isCallExpression(call) && /^mockImplementation(Once)?$/.test(parent.name.text)) {
+      return functionSignature(call.arguments[0]);
+    }
+    parent = parent.parent;
+  }
+  return undefined;
+}
+
 /** Configs chained on a spyOn result: vi.spyOn(x, 'm').mockReturnValue(42) */
 function collectMemberConfigs(
   spyCall: ts.CallExpression,
@@ -431,7 +612,7 @@ function castTypeName(e: ts.Expression): string | undefined {
 }
 
 /** Find the variable binding of a call expression (its nearest VariableDeclaration parent). */
-function findBinding(node: ts.Node, sf: ts.SourceFile): string | undefined {
+function findBinding(node: ts.Node, _sf: ts.SourceFile): string | undefined {
   let p = node.parent;
   while (p && !ts.isSourceFile(p)) {
     if (ts.isVariableDeclaration(p) && ts.isIdentifier(p.name)) return p.name.text;
@@ -440,7 +621,7 @@ function findBinding(node: ts.Node, sf: ts.SourceFile): string | undefined {
   return undefined;
 }
 
-function isProductionClass(init: ts.NewExpression, checker: ts.TypeChecker, sf: ts.SourceFile): boolean {
+function isProductionClass(init: ts.NewExpression, checker: ts.TypeChecker, _sf: ts.SourceFile): boolean {
   const type = checker.getTypeAtLocation(init);
   const id = symbolIdOfType(checker, type);
   return id !== undefined;
@@ -458,7 +639,75 @@ function containsTypeParameter(checker: ts.TypeChecker, type: ts.Type): boolean 
   return false;
 }
 
-function findInstanceOwner(baseText: string, sf: ts.SourceFile): string | undefined {
+function targetTypeName(expr: ts.Expression, sf: ts.SourceFile): string | undefined {
+  if (ts.isParenthesizedExpression(expr)) return targetTypeName(expr.expression, sf);
+  if (ts.isAsExpression(expr)) {
+    if (ts.isTypeReferenceNode(expr.type)) return expr.type.typeName.getText(sf);
+    return targetTypeName(expr.expression, sf);
+  }
+  if (ts.isNewExpression(expr) && ts.isIdentifier(expr.expression)) return expr.expression.text;
+  if (ts.isIdentifier(expr)) {
+    let result: string | undefined;
+    const visit = (n: ts.Node) => {
+      if (
+        result ||
+        !ts.isVariableDeclaration(n) ||
+        !ts.isIdentifier(n.name) ||
+        n.name.text !== expr.text ||
+        !n.initializer
+      )
+        return;
+      result = targetTypeName(n.initializer, sf);
+    };
+    const walk = (n: ts.Node) => {
+      if (result) return;
+      visit(n);
+      ts.forEachChild(n, walk);
+    };
+    walk(sf);
+    return result;
+  }
+  return undefined;
+}
+
+function isProxyDouble(init: ts.NewExpression): boolean {
+  const handler = init.arguments?.[1];
+  if (!handler || !ts.isObjectLiteralExpression(handler)) return false;
+  const get = handler.properties.find(
+    (p) =>
+      (ts.isMethodDeclaration(p) || ts.isPropertyAssignment(p)) && ts.isIdentifier(p.name) && p.name.text === 'get',
+  );
+  if (!get) return false;
+  let hasMockFactory = false;
+  const visit = (n: ts.Node) => {
+    if (ts.isCallExpression(n) && (callName(n.expression) === 'vi.fn' || callName(n.expression) === 'jest.fn')) {
+      hasMockFactory = true;
+      return;
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(get);
+  return hasMockFactory;
+}
+
+function functionSignature(expr: ts.Expression | undefined): SignatureIR | undefined {
+  if (!expr) return undefined;
+  const fn = unwrap(expr);
+  if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return undefined;
+  return {
+    parameters: fn.parameters.map((p) => ({
+      name: p.name.getText(),
+      type: typeNodeToIR(p.type),
+      optional: !!p.questionToken,
+      variadic: !!p.dotDotDotToken,
+      hasDefault: p.initializer !== undefined,
+    })),
+    returnType: typeNodeToIR(fn.type),
+    typeParams: (fn.typeParameters ?? []).map((p) => p.name.text),
+  };
+}
+
+function findInstanceOwner(baseText: string, _sf: ts.SourceFile): string | undefined {
   const m = baseText.match(/^([A-Za-z_$][\w$]*)/);
   return m?.[1];
 }
@@ -469,9 +718,11 @@ function literalShape(n: ts.Expression, sf: ts.SourceFile): TypeIR | undefined {
   if (ts.isNumericLiteral(n)) return { kind: 'literal', value: Number(n.text) };
   if (n.kind === ts.SyntaxKind.TrueKeyword) return { kind: 'literal', value: true };
   if (n.kind === ts.SyntaxKind.FalseKeyword) return { kind: 'literal', value: false };
-  if (ts.isArrayLiteralExpression(n)) return { kind: 'array', element: n.elements[0] ? literalShape(n.elements[0]!, sf) : undefined };
+  if (ts.isArrayLiteralExpression(n))
+    return { kind: 'array', element: n.elements[0] ? literalShape(n.elements[0]!, sf) : undefined };
   if (ts.isObjectLiteralExpression(n)) return { kind: 'unknown' };
-  if (ts.isNewExpression(n) && ts.isIdentifier(n.expression)) return { kind: 'named', name: n.expression.text, typeArgs: [] };
+  if (ts.isNewExpression(n) && ts.isIdentifier(n.expression))
+    return { kind: 'named', name: n.expression.text, typeArgs: [] };
   return undefined;
 }
 

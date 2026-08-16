@@ -1,0 +1,24 @@
+name: 'Momus Mock & Test Integrity Audit'
+description: 'Run the Momus static audit on the diff and post PR check annotations. Read-only: never executes tests, never writes to the repo.'
+inputs:
+  base:
+    description: 'Base ref for the diff-scoped audit. Defaults to the PR base SHA, then main.'
+    required: false
+  fail-on:
+    description: 'error | warning | none — minimum severity that fails the check.'
+    default: 'error'
+    required: false
+runs:
+  using: 'composite'
+  steps:
+    - name: Momus diff-scoped audit (log only)
+      shell: bash
+      run: |
+        npx -y @momus/cli@latest audit . --git-diff --base "${{ inputs.base || github.event.pull_request.base.sha || 'main' }}" --json --max-issues 50 || true
+    - name: Post PR check annotations
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        MOMUS_FAIL_ON: ${{ inputs.fail-on || 'error' }}
+      run: |
+        npx -y @momus/cli@latest annotate-pr --base "${{ inputs.base || github.event.pull_request.base.sha || 'main' }}"

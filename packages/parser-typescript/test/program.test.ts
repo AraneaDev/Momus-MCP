@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { join } from 'node:path';
 import * as ts from 'typescript';
-import { getProgram, resolveImport } from '../src/program.ts';
+import { getProgram, resolveImport, invalidateProgramCache } from '../src/program.ts';
 
 const FIXTURES = join(import.meta.dirname, 'fixtures');
 const TEST_FILE = join(FIXTURES, 'tests', 'ledger.test.ts');
@@ -19,8 +19,8 @@ describe('getProgram', () => {
     let parentsSeen = 0;
     let orphans = 0;
     const walk = (n: { parent?: unknown }) => {
-      if (n.parent) parentsSeen++; else orphans++;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (n.parent) parentsSeen++;
+      else orphans++;
       for (const c of (n as any).getChildren?.() ?? []) walk(c);
     };
     // walk statement roots to avoid double counting via getChildren recursion
@@ -36,6 +36,13 @@ describe('getProgram', () => {
     const cls = sf.statements.find((s) => ts.isClassDeclaration(s) && s.name?.text === 'LedgerService')!;
     const type = checker.getTypeAtLocation(cls);
     expect(checker.typeToString(type)).toBe('LedgerService');
+  });
+
+  it('invalidateProgramCache clears the memoized program so edits are re-read', () => {
+    const first = getProgram(TEST_FILE);
+    invalidateProgramCache();
+    const second = getProgram(TEST_FILE);
+    expect(second).not.toBe(first);
   });
 });
 

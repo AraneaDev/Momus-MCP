@@ -6,9 +6,12 @@ const MAX = 100;
 
 function makeIssue(message: string): Issue {
   return {
-    id: 'i', rule: 'TAUT-002', severity: 'warning',
+    id: 'i',
+    rule: 'TAUT-002',
+    severity: 'warning',
     span: { file: '/ws/tests/ledger.test.ts', startLine: 23, startCol: 5, endLine: 23, endCol: 30 },
-    message, tokens: 0,
+    message,
+    tokens: 0,
     fix: { kind: 'replace', code: '', description: 'assert against a production-derived value' },
   };
 }

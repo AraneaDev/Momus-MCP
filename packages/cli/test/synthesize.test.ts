@@ -1,0 +1,138 @@
+import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { synthesizeForCli } from '../src/synthesize.ts';
+import { RULES_CATALOG } from '../src/catalog.ts';
+
+function fixture(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'momus-synth-'));
+  writeFileSync(
+    join(dir, 'svc.ts'),
+    [
+      'export class Svc {',
+      '  totalFor(id: string, opts?: number): number { return 0; }',
+      '  get label(): string { return "x"; }',
+      '  private hidden(): void {}',
+      '}',
+      'export class Other {',
+      '  ping(): void {}',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  return dir;
+}
+
+describe('synthesizeForCli', () => {
+  it('returns NOT_FOUND for a missing target', () => {
+    const dir = fixture();
+    try {
+      const out = synthesizeForCli(dir, 'nope.ts', undefined, 'vitest');
+      expect(out).toEqual({ error: expect.stringContaining('NOT_FOUND') });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns no-class for a target with no class declaration', () => {
+    const dir = fixture();
+    try {
+      writeFileSync(join(dir, 'empty.ts'), 'export const x = 1;\n');
+      const out = synthesizeForCli(dir, 'empty.ts', undefined, 'vitest');
+      expect(out).toEqual({ error: expect.stringContaining('no class found') });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('renders vitest mocks for the first class by default', () => {
+    const dir = fixture();
+    try {
+      const out = synthesizeForCli(dir, 'svc.ts', undefined, 'vitest');
+      expect(out).toHaveProperty('template');
+      const template = (out as { template: string }).template;
+      expect(template).toContain('const svcMock = {');
+      expect(template).toContain('totalFor: vi.fn().mockReturnValue(undefined),');
+      expect(template).toContain('get label() { return undefined; },');
+      expect(template).toContain('} satisfies Partial<Svc>;');
+      // private members are not surfaced as stubbable surface
+      expect(template).not.toContain('hidden');
+      expect(template).not.toContain('Other');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('renders jest mocks and selects a named symbol', () => {
+    const dir = fixture();
+    try {
+      const out = synthesizeForCli(dir, 'svc.ts', 'Other', 'jest');
+      expect(out).toHaveProperty('template');
+      const template = (out as { template: string }).template;
+      expect(template).toContain('const otherMock = {');
+      expect(template).toContain('ping: jest.fn().mockReturnValue(undefined),');
+      expect(template).toContain('} satisfies Partial<Other>;');
+      expect(template).not.toContain('totalFor');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to plain arrow stubs for unknown frameworks', () => {
+    const dir = fixture();
+    try {
+      const out = synthesizeForCli(dir, 'svc.ts', 'Other', 'mocha');
+      expect(out).toHaveProperty('template');
+      const template = (out as { template: string }).template;
+      expect(template).toContain('ping: () => undefined,');
+      expect(template).not.toContain('vi.fn');
+      expect(template).not.toContain('jest.fn');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves typed parameters and optional markers in the comment', () => {
+    const dir = fixture();
+    try {
+      const out = synthesizeForCli(dir, 'svc.ts', 'Svc', 'vitest');
+      const template = (out as { template: string }).template;
+      expect(template).toContain('// totalFor(id: string, opts?: number): number');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('RULES_CATALOG', () => {
+  it('declares unique rule ids with valid severities', () => {
+    const ids = RULES_CATALOG.map((r) => r.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const r of RULES_CATALOG) {
+      expect(['error', 'warning', 'info']).toContain(r.severity);
+      expect(r.name).toBeTruthy();
+      expect(r.description).toBeTruthy();
+    }
+  });
+
+  it('includes the documented rule set', () => {
+    const ids = new Set(RULES_CATALOG.map((r) => r.id));
+    for (const id of [
+      'TAUT-001',
+      'TAUT-002',
+      'TAUT-003',
+      'TAUT-004',
+      'TAUT-005',
+      'TAUT-006',
+      'DRIFT-001',
+      'DRIFT-002',
+      'DRIFT-003',
+      'DRIFT-005',
+      'MOCK-001',
+      'MOCK-002',
+    ]) {
+      expect(ids.has(id), `missing ${id}`).toBe(true);
+    }
+  });
+});

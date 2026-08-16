@@ -1,13 +1,16 @@
 {
   // Momus self-audit config: the repo's own test suite must stay clean (CI gate).
   // Fixture galleries hold intentionally planted anti-patterns — excluded by design.
-  "languages": { "typescript": { "enabled": true }, "php": { "enabled": false } },
+  "languages": { "typescript": true, "php": false },
   "testFilePatterns": ["**/*.{test,spec}.{ts,tsx,js,jsx,mjs}", "**/__tests__/**"],
   "ignorePatterns": [
     "**/node_modules/**",
     "**/dist/**",
     "**/.git/**",
     "**/test/fixtures/**",
+    "**/test/syntax-only-fixtures/**",
+    "syntax-only-fixtures/**",
+    "**/.momus/cache/**",
     "experiments/**"
   ],
   "rules": {},

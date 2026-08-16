@@ -27,8 +27,8 @@
 
 ## Phase 1 — Minimal Viable Daemon + TS/Vitest Engine (L, ~4–6 weeks) · ✅ CORE DONE (see `10-build-plan.md`)
 
-> Engine, parser, MCP server, CLI, and test suites are **implemented and green** (96 tests).
-> Remaining Phase-1 items: v0.1 packaging (Step 1 of `10-build-plan.md`), `better-sqlite3`
+> Engine, parser, MCP server, CLI, and test suites are **implemented and green** (130 tests).
+> All Phase-1 items complete: v0.1 packaging (Step 1 of `10-build-plan.md`), `better-sqlite3`
 > IR cache, `chokidar` watcher, eslint/prettier, coverage gate.
 
 **Goal:** `momus serve` + CLI running the full Phase-1 rule set on TypeScript/Vitest/Jest with
@@ -71,18 +71,19 @@ on huge repos (mitigate: incremental program + file caps).
 
 ---
 
-## Phase 2 — PHP Support & Multi-language Normalizer (L, ~4 weeks)
+## Phase 2 — PHP Support & Multi-language Normalizer (L, ~4 weeks) · ✅ COMPLETE (see `10-build-plan.md` Step 3)
 
 **Goal:** parity for PHP (PHPUnit/Pest) with the same rules, one shared engine.
 
 **Deliverables:**
 - `parser-php` implementing `LanguageParser` via `php-parser` (§2.2.3): namespaces/`use`
-  resolution to FQCN, constructor promotion, docblock `@return`/`@param` typing, anonymous
-  classes, Mockery/Pest patterns (§2.5.2).
+  resolution to FQCN, constructor promotion, ✅ docblock `@return`/`@param` typing, ✅ anonymous
+  classes, ✅ `getMockForAbstractClass` as a distinct pattern, ✅ setUp/property mock bindings
+  (`$this->prop = createMock(...)`), Mockery/Pest patterns (§2.5.2).
 - PHP galleries + clean corpus + goldens for all rules; DRIFT-004 constructor-awareness;
   PHPUnit constructor-bypass exemption (§3.5.3).
-- `synthesize_mock_contract` gains `phpunit`/`pest` templates.
-- `momus doctor` reports PHP-language readiness; `languages.php.enabled` in `.momusrc`.
+- ✅ `synthesize_mock_contract` gains `phpunit`/`pest` templates.
+- ✅ `momus doctor` reports PHP-language readiness; `languages.php.enabled` in `.momusrc`.
 
 **Acceptance criteria:**
 - Rule parity matrix (rule × framework) fully green in CI: `TAUT-*`, `DRIFT-*`, `MOCK-*`
@@ -97,29 +98,43 @@ handle via closure-body member extraction.
 
 ---
 
-## Phase 3 — Git-Diff Awareness, Hooks & Interactive CLI (M–L, ~3 weeks)
+## Phase 3 — Git-Diff Awareness, Hooks & Interactive CLI (M–L, ~3 weeks) · ✅ COMPLETE
 
 **Goal:** Momus in the developer/agent loop *before* commit, not just on demand.
 
-**Deliverables:**
-- **Diff scoping:** `verify_mock_drift --scope git-diff` with `baseRef`; `DiffScope`
-  (§3.1) feeding DRIFT-006 + diff-filtered rule runs (`changedPaths` restriction) for
-  sub-second pre-commit runs.
-- **Pre-commit hook:** `momus hook` — reads staged files, runs diff-scoped audit, exits 1 on
-  `error` findings touching staged lines; emits `momus hook --install`/`--uninstall`
-  (writes `.git/hooks/pre-commit` after confirmation — the one sanctioned write, gated by
-  `--yes` per §1.5).
-- **CLI companion:** `momus audit --fix` (dry-run by default, prints diff, requires
-  `--yes`; refused when `CI=true` without `--yes`), `momus annotate` (machine-readable
-  JSONL for editor plugins), `--json` flag parity with structuredContent envelope.
-- **Editor/agent ergonomics:** `momus serve --transport http` (Streamable HTTP) for remote
-  clients; server reports `protocolVersion` + deterministic tool order per §4.1.
+**Deliverables (implemented):**
+- ✅ **Diff scoping:** `gitChangedPaths` (`--name-status` + `--find-renames`, untracked files
+  and rename pairs) → `DiffScope` feeding DRIFT-006 (stale-mock) and diff-filtered drift
+  rules. Wired through `momus audit|drift --git-diff --base REF`, `momus precommit`
+  (default base HEAD), and MCP `verify_mock_drift` with `scope: git-diff` + `baseRef`
+  (git errors surface as tool errors).
+- ✅ **Pre-commit companion:** `momus precommit` — drift-only run vs the diff; exits 1 on
+  error findings. `momus hook` git-hook installer is also implemented: `hook --install`/
+  `--uninstall` (marker-guarded, `--yes`-gated) and `hook` runs the staged-files drift gate.
+  (Staged-line granularity remains a later sub-slice.)
+- ✅ **annotate-pr:** `momus annotate-pr` posts GitHub Checks API annotations from the
+  diff-scoped audit (dependency-free; reads `GITHUB_TOKEN`/`GITHUB_REPOSITORY`/`GITHUB_SHA`,
+  `MOMUS_FAIL_ON` policy).
+- ✅ **Streamable HTTP transport:** `momus serve --transport http [--port N]` serves the same
+  five tools over Streamable HTTP (stateful per-session transports, stateless tools); covered by
+  an end-to-end `StreamableHTTPClientTransport` round-trip.
+- ✅ **JSONL annotate mode:** `momus annotate [paths...] [--git-diff --base REF]` emits one JSON
+  object per finding (workspace-relative file/line/column, rule/severity/message, deterministic
+  key order) for editor plugins; exits 1 on error findings.
+- ✅ **`--fix` mechanism:** `momus audit --fix` (dry-run unified diff by default) with `--yes` to
+  apply and a CI-refusal gate (§1.5); `collectFixable`/`applyFixes`/`unifiedDiff` unit-tested.
+  DRIFT-001 emits a real rename fix (unique near-match, quoted per stub api); a planted stale spy
+  is diffed, applied, and re-audits clean. TAUT-001/002/003 are semantic tautologies — no safe
+  mechanical fix exists — so they stay descriptive-only (a documented decision, §3.6).
+- ✅ **File watching:** `momus serve --watch` (chokidar) invalidates the `ts.Program` cache on
+  source add/change/unlink, so watch-mode audits reflect on-disk edits without a restart.
 
 **Acceptance criteria:**
 - Hook on a fixture repo with a planted drift violation: commit blocked; `git diff`-scoped
   run completes < 500 ms on 10k-LOC workspace.
-- `--fix` on TAUT-001/002/003 fixtures produces correct, minimal diffs; dry-run output is
-  byte-identical to `--fix --dry-run` preview.
+- `--fix` on the planted stale-spy fixture produces a correct, minimal rename diff; dry-run output
+  is byte-identical to `--fix --dry-run` preview. (TAUT-* findings are semantic and intentionally
+  not auto-fixed — see §3.6.)
 - `DRIFT-006` fires only when target changed and mock file untouched (no false positives on
   untouched-but-stale mocks outside the diff).
 
@@ -129,17 +144,24 @@ before merge. **Top risks:** git plumbing edge cases (renames, merge commits) �
 
 ---
 
-## Phase 4 — CI/CD Action & Public Distribution (M, ~2–3 weeks)
+## Phase 4 — CI/CD Action & Public Distribution (M, ~2–3 weeks) · IN PROGRESS
 
 **Goal:** Momus as a standard part of the pipeline and discoverable by any agent.
 
 **Deliverables:**
-- **GitHub Action** (`packages/action/action.yml`, spec §6.5.3): diff-scoped audit, PR
-  annotations at exact file:line, `fail-on` severity policy.
-- **Registry publishing:** npm packages (`@momus/*`), MCP registry listings (official MCP
+- ✅ **GitHub Action** (`packages/action/action.yml`, spec §6.5.3): composite action with
+  diff-scoped audit + `annotate-pr` check annotations, `fail-on` input, base defaulting to
+  the PR base SHA. (Not yet end-to-end CI-tested via `act`; publish + registry listing
+  blocked on credentials.)
+- ✅ **Release scaffolding:** `@changesets/cli` + `.changeset/config.json`, root
+  `changeset`/`release` scripts, `publishConfig.access: public` on all five packages, and
+  `.github/workflows/release.yml` (version-PR via `changesets/action`, `changeset publish`,
+  `v*` tag + GitHub Release). Actual publish still blocked on `NPM_TOKEN`.
+- Registry publishing: npm packages (`@momus/*`), MCP registry listings (official MCP
   servers list + community registries) with `npx -y @momus/mcp-server` install snippet;
-  README quickstart for Claude Desktop / other clients.
-- **Docs site** (docs/ rendered) + changelog-driven releases (§6.7).
+  README quickstart for Claude Desktop / other clients. — pending credentials
+- **Docs site** (docs/ rendered) + changelog-driven releases (§6.7). — changelog scaffolding
+  shipped via changesets; docs-site rendering pending
 - **Soak corpus CI** (optional but enabled): OSS corpus precision/perf triage (§6.6.5).
 
 **Acceptance criteria:**

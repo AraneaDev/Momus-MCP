@@ -1,8 +1,198 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-15 · **State:** Phase 1 built & green; v0.1 packaging complete — 96 tests passing,
-typecheck clean, self-audit clean, fixture smoke passing, README added, package dry-runs clean.
-**Next session starts at Step 2 of `docs/10-build-plan.md`.**
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 207 tests passing, ~85% statements / ~82% branches,
+typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
+**Next session: MCP registry listing draft; publishing blocked on credentials.**
+
+## Current checkpoint — 2026-08-16
+
+- **Last verified:** setup scopes, assigned `vi.fn`/`jest.fn` implementations, DRIFT-002 arity and
+  parameter-type checks, Proxy doubles, syntax-only target-name enrichment, spy implementation
+  signatures, and module automock helpers are complete. Full tests (112), typecheck, self-audit,
+  and diff validation are green.
+- **Last decision:** no concrete TypeScript `partialMock` convention exists in the repository or
+  normative catalog; the named partial-mock form is PHP `createPartialMock`, so the ambiguous TS
+  helper is deferred rather than invented.
+- **Last verified:** the E6 PHP parsing spike now passes all checks: typed production methods,
+  PHPUnit `createMock`/`method`/`willReturn`/`expects` chains, class targets, and suppression
+  docblocks. Its existing reference correctly points to `InvoiceTest.php`.
+- **Last verified:** the initial `@momus/parser-php` integration passes: typed production symbols,
+  PHPUnit `createMock` chains, configured `willReturn` values, planted missing-member drift, and
+  healthy PHP assertions. E6 also passes; full tests (112), typecheck, self-audit, and diff checks are
+  green. The core AuditEngine can run the PHP parser in direct integration tests.
+- **Last verified:** PHP configured-mock provenance is complete: bound PHPUnit
+  `method(...)->willReturn(...)` calls produce `mock-config` assertion provenance, TAUT-002 fires
+  for the planted echo, and the healthy twin remains quiet. Full tests (112), typecheck, self-audit,
+  and diff validation are green.
+- **Last verified:** PHP `use ... as ...` alias resolution is focused-test and typecheck green;
+  the aliased `Repo::class` target resolves to `InvoiceRepository`, and planted/healthy mock behavior
+  remains covered.
+- **Last verified:** PHP `use` aliases, configured-mock TAUT-002 flow, the composite parser, PHP
+  language gating, and explicit original-constructor DRIFT-004 are complete. CLI/server construct
+  the TypeScript+PHP multiplexer; full tests (115), typecheck, self-audit, and diff validation are green.
+- **Last verified:** PHP Mockery/Pest support is complete for this slice: `Mockery::mock`/`spy`,
+  Pest `mock(...)`, chained `shouldReceive(...)->andReturn(...)`, planted missing members, and
+  healthy controls pass. Full tests (115), typecheck, self-audit, and diff validation are green.
+- **Last verified:** Composer PSR-4/use resolution is focused-test and typecheck green; the fixture
+  `composer.json` resolves `App\\InvoiceRepository` to its source file while alias target resolution
+  remains intact.
+- **Last verified:** Composer PSR-4/use resolution is complete for the initial slice; full tests
+  (115), typecheck, self-audit, and diff validation remain green, with the Composer fixture resolving
+  `App\\InvoiceRepository` correctly.
+- **Last verified:** PHP constructor drift focused coverage passes: `__construct` signatures are
+  emitted, `getMockBuilder(...)->enableOriginalConstructor()->getMock()` records supplied args,
+  DRIFT-004 flags the missing-argument double, and the supplied-argument twin stays quiet.
+- **Last verified:** MCP PHP language selection and direct CLI parser dispatch are covered; the
+  in-memory `verify_mock_drift` reaches PHP DRIFT-001/DRIFT-004, and CLI imports no longer execute
+  the command entrypoint. Full tests (117), typecheck, self-audit, and diff validation are green.
+- **Last verified:** CLI workspace parser selection is focused-test and typecheck green; importing
+  the CLI no longer executes its entrypoint, and direct tests dispatch both TypeScript and PHP source.
+- **Last verified:** Composer classmap fallback is complete: the fixture `composer.json` classmap
+  root resolves the namespaced `Legacy\\LegacyRepository` to its source file while PSR-4 keeps
+  resolving `App\\*`. Direct `resolveImport` unit coverage was added.
+- **Last verified:** DRIFT-004 optional-constructor coverage is complete: a new all-optional
+  `OptionsRepository` fixture proves defaulted parameters do not count as required (a 0-arg
+  original-constructor double stays quiet; the missing-args twin remains the only DRIFT-004).
+- **Last verified:** Mockery/Pest closure-form is complete: `Mockery::mock(Class::class, fn ($m) => …)`
+  and `function ($m) { … }` forms bind configs span-scoped (same-named `$m` params in two
+  closures no longer collide); string class targets (`'App\Foo'`) resolve via the `use` specifier.
+  PHP DRIFT-003 return-type assignability is wired in the rule: declared PHP types (`array`/`void`/
+  nullable/union mapping in `phpType`), cross-file class resolution via `SymbolIndex`, planted
+  void/class/array mismatches fire (echo fixture's `willReturn(42)` on `findById(): Invoice`
+  included), healthy twins stay quiet. New `Invoice.php` fixture enables class-type resolution.
+- **Last verified:** Phase 3 (git-diff) is implemented end-to-end: `gitChangedPaths` (name-status
+  + find-renames + untracked + rename pairs, repo-toplevel-aware), engine `DiffScope`
+  (`changedSymbolIds` derived from changed production files), drift rules diff-filtered,
+  DRIFT-006 stale-mock (fires when target changed + mock file untouched; message lists target
+  class + members). CLI: `audit|drift --git-diff --base REF` + `momus precommit` (default base
+  HEAD). MCP: `verify_mock_drift` `scope: git-diff` wired (git errors → tool errors). Tests:
+  rule-level, `gitChangedPaths` unit (real temp repos), CLI precommit end-to-end through the
+  bin (planted rename → DRIFT-006+DRIFT-001, exit 1; healthy twin → exit 0), MCP git-diff
+  round-trip + non-git error path.
+- **Last verified:** Phase 4 prep: `packages/action/action.yml` composite action (diff-scoped
+  audit + annotate step, base defaults to PR base SHA, `fail-on` input) and `momus annotate-pr`
+  (GitHub Checks API annotations via built-in fetch; GITHUB_TOKEN/REPOSITORY/SHA envs;
+  dependency-free; pure `buildCheckAnnotations` unit-tested). `momus init` template fixed
+  (languages booleans — was nested `{enabled}` objects) and `schemas/momusrc.schema.json`
+  created (referenced by the template, previously missing). npm pack dry-runs clean.
+  DRIFT-006 messages are budget-fitted (member names survive the 80-char limit; regression
+  pinned in `diff.test.ts`).
+- **Last verified:** PHPDoc `@return`/`@param` typing and PHP `synthesize_mock_contract`
+  (phpunit/pest templates) are complete: the parser reads docblock annotations into signatures
+  when native types are absent (scalars, `?T`, `T[]`/`array<K,V>`, generics, unions, FQCN
+  short-names); planted docblock-typed DRIFT-003 mismatches fire and the healthy twin stays
+  quiet; `synthesize_mock_contract` emits `phpunit`/`pest` templates (`createMock`/`mock` +
+  `method`/`shouldReceive` + `willReturn`/`andReturn`) with type-derived placeholder values and a
+  `php` code fence. Full tests (133), typecheck, and parser/MCP integration are green.
+- **Last verified:** PHP anonymous-class doubles are complete: `new class extends Foo { … }`
+  emits `MockIR{pattern:'anonymous-class'}` targeting the parent (via `use` aliases + FQCN
+  short-names) with override methods as `StubbedMemberIR` members; a planted stale override
+  fires DRIFT-001 and the healthy override stays quiet. Full tests (134), typecheck, and parser
+  integration are green.
+- **Last verified:** `momus doctor` PHP-readiness is complete: it reports the `languages.php`
+  gate, `php-parser` availability, `composer.json` presence, and a bounded `.php` file count,
+  summarizing as `off` / `ready` / `enabled (loose)`. Unit tests cover each branch. Full tests
+  (137), typecheck, and CLI tests are green.
+- **Last verified:** `momus hook` pre-commit installer is complete: `hook --install`/`--uninstall`
+  writes/removes `.git/hooks/pre-commit` (marker-guarded so a foreign hook is never removed,
+  `--yes`-gated per §1.5, executable), and `hook` (no flags) runs the staged-files drift gate via
+  `gitStagedPaths` (index-only vs HEAD). A staged production rename blocks the gate
+  (DRIFT-006 + DRIFT-001, exit 1) and the staged test update clears it. Full tests (141),
+  typecheck, and CLI/diff tests are green.
+- **Last verified:** `momus serve --transport http` (Streamable HTTP) is complete: `serveHttp` in
+  `@momus/mcp-server` uses the SDK's stateful per-session transports (stateless tools), one
+  transport per `mcp-session-id`, and the CLI wires `--transport http [--port N]`. An end-to-end
+  `StreamableHTTPClientTransport` round-trip (initialize → tools/list → verify_mock_drift) is
+  green. Full tests (142), typecheck, and integration tests are green.
+- **Last verified:** `momus annotate` JSONL mode is complete: one JSON object per finding
+  (workspace-relative file/line/column, rule/severity/message, deterministic key order) for
+  editor plugins, with `--git-diff`/paths support and exit 1 on errors.  `buildAnnotateLines`
+  is unit-tested. Full tests (143), typecheck, and CLI tests are green.
+- **Last verified:** `momus audit --fix` mechanism is complete: dry-run unified diff by default,
+  `--yes` applies span-based replace/delete/insert fixes, refused in CI without `--yes` (§1.5).
+  `collectFixable`/`applyFixes`/`unifiedDiff`/`buildFixDiff`/`applyFixToFiles` are unit-tested.
+  DRIFT-001 now emits a real rename fix (unique near-match within edit distance 2, quoted per
+  stub api) and stub spans are narrowed to the name token; a planted stale spy is  dry-run diffed, applied with `--yes`, and re-audits clean. Full tests (153), typecheck, and CLI tests
+  are green.
+- **Last verified:** TAUT-001/002/003 fix code is resolved as a **decision, not code**: these are
+  semantic tautologies and any auto-fix would invent the asserted value, so they stay
+  descriptive-only (the `— fix:` hint renders in the issue line; `collectFixable` excludes them
+  from `--fix`). Rule tests now pin the empty-`code`/non-empty-`description` contract. DRIFT-001
+  rename remains the demonstrated mechanical auto-fix.
+- **Last verified:** Phase 4 release scaffolding is complete in-repo: `@changesets/cli` +
+  `.changeset/config.json` (`baseBranch: main`, `access: public`, `patch`-level internal bumps),
+  root `changeset`/`release` scripts, `publishConfig.access: public` on all five packages, and
+  `.github/workflows/release.yml` (version-PR via `changesets/action`, `changeset publish`,
+  `v*` tag + GitHub Release). Actual npm/MCP publish remains blocked on credentials.
+- **Last verified:** PHP `getMockForAbstractClass` doubles are complete: `$this->getMockForAbstractClass(AbstractFoo::class)`
+  now emits `MockIR{pattern:'getMockForAbstractClass'}` targeting the abstract class, with chained
+  `method()`/`willReturn()` configs collected as stubbed members. A planted stale abstract member
+  fires DRIFT-001 and the healthy abstract member stays quiet. Full tests (154), typecheck, and
+  parser integration are green.
+- **Last verified:** PHP mock bindings are function-scoped: `byBinding` keys are `scope:name`
+  (`scope` = enclosing class-method start line, 0 for top-level), so two test fns that reuse
+  `$mock` no longer collide. `AbstractMockTest` reuses `$mock` in both fns to pin this. Full
+  tests (154), typecheck, and parser integration are green.
+- **Last verified:** PHP setUp/property mocks are complete: `$this->prop = $this->createMock(...)`
+  in `setUp` is now captured (LHS → `this:prop` binding, class-scoped), and `$this->prop->method(...)`
+  configs / assertion operands resolve back to it. `SetUpMockTest` plants a stale `deleteById`
+  (DRIFT-001), a `findById` echo (TAUT-002 + DRIFT-003), and a healthy `save` control. Full tests
+  (155), typecheck, and parser integration are green.
+- **Last verified:** PHP same-variable reassignment is handled: `recordBinding` stores assignments
+  per `scope:name` key in line order and `nearestBinding` resolves configs/assertion operands to
+  the latest assignment at or before their line. `ReassignTest` reassigns `$mock` within one
+  method and pins `[['save'], ['findById']]`. Full tests (156), typecheck, and parser integration
+  are green.
+- **Last verified:** README/docs consistency pass: README now reflects PHP support, the `hook` /
+  `annotate` commands, and the Streamable HTTP transport; docs/README Phase 2/3 status lines,
+  docs/07 Phase 2/3 headers + pre-commit sub-slice note, and docs/10 Step 2 item 2 / Step 3-4
+  headers were corrected for the shipped work; docs/10 Step 1 items are now marked ✅ (the
+  `experiments/` E1–E8 spikes stay as reference, gitignored + self-audit-excluded). No code
+  change — 156 tests, typecheck, and self-audit remain green.
+- **Last verified:** the local git branch was renamed `master` → `main` (no remote; reversible),
+  aligning it with `ci.yml`/`release.yml`/`action.yml`. This unblocked the changesets flow:
+  `changeset status` now reports "packages changed, no changesets" (expected pre-release) instead
+  of the `HEAD diverged from "main"` error.
+- **Last verified (final green gate):** typecheck 0 errors; 158 tests; `audit-self` CLEAN (34
+  files); `npm pack --dry-run` clean for all five packages (incl. the new `publishConfig.access`);
+  `changeset status` wired. The build plan is now fully marked done except Step 5 (Phase 4
+  distribution, credential-blocked).
+- **Last verified:** the chokidar watcher is shipped: `invalidateProgramCache()` (parser-typescript)
+  clears the memoized `ts.Program`, and `watchWorkspace(root)` (`@momus/mcp-server`, chokidar)
+  calls it on TS/JS/PHP add/change/unlink; `momus serve --watch` wires it. `invalidateProgramCache`
+  and `watchWorkspace` are unit/integration tested. Phase 3 is now fully complete.
+- **Last verified:** test-coverage tooling shipped (`npm run test:coverage`, v8) with floors 80%
+  statements/lines, 75% branches, 90% functions; currently **84.96% statements / 81.85% branches /
+  92.49% functions** (up from 81.27%/78.97%). New unit tests cover the previously-untested pure
+  modules: CLI `catalog.ts` + `synthesizeForCli`, `extractSymbols`/`typeNodeToIR`/`signatureToIR`,
+  `discoverFiles`, `CompositeParser`, and the markdown/JSON formatters. Three latent bugs fixed
+  while covering them: (1) `momus contract` + `synthesize_mock_contract` now skip
+  private/protected/static TS members (matching the PHP path and the "public members" header) and
+  render optional params as `name?: T` (was the invalid `name: T?`); (2) `escapeRegex` now escapes
+  `[`/`]` so an unbalanced `[` in a glob is a literal, not an invalid regex. Full tests (201),
+  typecheck, self-audit, and pack dry-runs remain green.
+- **Last verified:** the deferred Phase-1 niceties are shipped: **persistent IR cache**
+  (`better-sqlite3` in `@momus/mcp-server` `src/cache.ts`, `SqliteParseCache`/`openParseCache`),
+  **ESLint 10 + Prettier** (`eslint.config.js`, `.prettierrc.json`, `.prettierignore`; `lint`/
+  `lint:fix`/`format`/`format:check` scripts), and the **initial-commit attribution cleanup** (commit
+  amended `664887b5` → `d0a9343`, footer removed). The cache is content-hash + workspace-digest keyed
+  (advisory, deterministic): the engine computes a digest over every source file + tsconfig/composer
+  before serving any parse, so any change forces a reparse. The server shares one cache across
+  `serveHttp` sessions (ownership-tagged so per-session servers don't close it) and the CLI `audit`
+  command opens one too. Also fixed: the repo `.momusrc` still used the old nested `{enabled}`
+  languages object (now booleans, matching the schema), and `.gitignore`/`.momusrc` now exclude
+  `**/.momus/cache/**`. Full tests (207), typecheck, lint, format, and self-audit are green.
+- **Active task:** the functional build is complete: Phases 1–3, the persistent IR cache,
+  ESLint+Prettier, and coverage tooling are all shipped and green. Phase 4 publishing (npm/MCP
+  registry) remains the only item, blocked on credentials (no `NPM_TOKEN`). Next: MCP registry
+  listing draft + install snippets.
+- **Safe resume point:** if interrupted, resume wherever you stopped; do not revisit PHP
+  closure-form/DRIFT-003, docblock typing, synth templates, anonymous-class doubles, git-diff
+  plumbing, DRIFT-006, precommit, annotate-pr, the action, the `--fix` mechanism,
+  TAUT-001/002/003 fix code (resolved: semantic → descriptive-only), PHP `getMockForAbstractClass`,
+  PHP function-scoped mock bindings, PHP setUp/property mock bindings, PHP same-variable
+  reassignment, the test-coverage tooling, the contract-synthesis public-member/`?`-ordering
+  fixes, the persistent IR cache, or the ESLint/Prettier setup.
 
 ---
 
@@ -13,10 +203,12 @@ typecheck clean, self-audit clean, fixture smoke passing, README added, package 
   fail) and **mock-contract drift** (test doubles that no longer match production). "False-green"
   test suite detector for coding agents.
 - **Spec:** `docs/` (9 spec docs + validation report + build plan — the authoritative source).
-- **Implementation:** 4 npm-workspace packages (`@momus/core`, `@momus/parser-typescript`,
-  `@momus/mcp-server`, `@momus/cli`), 96 vitest tests, GitHub Actions CI, self-audit gate.
-- **NOT a git repository yet.** Nothing is committed. `git init` + initial commit is the first
-  thing the next session should do (or per user preference).
+- **Implementation:** 5 npm-workspace packages (`@momus/core`, `@momus/parser-typescript`,
+  `@momus/mcp-server`, `@momus/cli`), `@momus/parser-php`, plus `packages/action` composite
+  GitHub Action — 207 vitest tests, GitHub Actions CI, self-audit gate.
+- **Git initialized.** Single commit `d0a9343` ("feat: establish Momus-MCP test integrity auditor")
+  on `main`, no remote. The Codebuff attribution footer was removed by amending the initial commit
+  (user-approved); the commit identity was applied explicitly and Git defaults were not changed.
 - Everything was validated by experiments first (`docs/09-validation-report.md`), then built,
   then tested. The "test ideas before committing to them" policy is documented in `docs/10-build-plan.md` §10.1.
 
@@ -26,8 +218,11 @@ typecheck clean, self-audit clean, fixture smoke passing, README added, package 
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 10 files, 96 tests, all pass
-npm run audit-self       # Momus audits its own repo: 30 files, CLEAN:true
+npm test                 # 22 files, 207 tests, all pass
+npm run test:coverage    # v8: ~85% statements / ~82% branches (floors 80/75/90/80)
+npm run lint             # eslint .  — clean
+npm run format:check     # prettier --check .  — clean
+npm run audit-self       # Momus audits its own repo: 36 files, CLEAN:true
 # fixture smoke (planted violations must FAIL with exit 1):
 rm -rf /tmp/momus-fixture && cp -r packages/parser-typescript/test/fixtures /tmp/momus-fixture \
   && cd /tmp/momus-fixture && npx --prefix /root/Momus-MCP momus audit . ; echo "EXIT:$?"   # expect 1
@@ -35,6 +230,7 @@ rm -rf /tmp/momus-fixture && cp -r packages/parser-typescript/test/fixtures /tmp
 
 **CI workflow** (`.github/workflows/ci.yml`) runs: npm ci → typecheck → test → self-audit →
 fixture-smoke (copies fixtures to tmp so the repo `.momusrc` ignorePatterns don't hide them).
+`lint` + `format:check` are available as authoring gates (not yet wired into `ci.yml`).
 
 ---
 
@@ -43,6 +239,7 @@ fixture-smoke (copies fixtures to tmp so the repo `.momusrc` ignorePatterns don'
 ```
 docs/                      # authoritative spec: 01-07 + 09-validation + 10-build-plan
 packages/core/             # engine — ZERO runtime deps (deliberate, see §5.6)
+  src/compositeParser.ts   #   extension-dispatch multiplexer (TS + PHP)
   src/ir.ts                #   language-neutral IR (ModuleIR, MockIR, AssertionIR, Issue…)
   src/parser.ts            #   LanguageParser plugin contract
   src/config.ts            #   .momusrc JSONC loader + validation
@@ -51,22 +248,33 @@ packages/core/             # engine — ZERO runtime deps (deliberate, see §5.6
   src/suppress.ts          #   @momus-ignore grammar (§3.5): line/trailing/docblock/file banner
   src/tokens.ts            #   <100 token/issue contract, renderIssueLine
   src/audit.ts             #   AuditEngine — orchestrates discovery→parse→index→rules→format
+  src/git.ts               #   gitChangedPaths — name-status + find-renames + untracked, rename pairs
   src/symbolIndex.ts       #   production symbol graph (membersOf, exportsOf, resolveByName)
   src/rules/               #   engine.ts + tautology.ts (TAUT-001..006) + drift.ts (DRIFT-000..005) + hygiene.ts (MOCK-001/002)
   src/format/              #   markdown.ts + json.ts (the structuredContent envelope)
+packages/parser-php/         #   php-parser plugin: symbols, PHPUnit/Mockery/Pest chains, Composer resolution
 packages/parser-typescript/
   src/program.ts           #   custom-host ts.Program (parent pointers!) + resolveImport + type helpers
   src/symbols.ts           #   class/interface/method/signature extraction
-  src/mocks.ts             #   vi.mock/vi.fn/vi.spyOn/vi.mocked/object-literal detection + invocation sites
+  src/mocks.ts             #   vi.mock/vi.fn/vi.spyOn/vi.mocked/object-literal/proxy detection + invocation sites
   src/dataflow.ts          #   assertion extraction + provenance (mock-config/mock-call/production/literal/unknown)
   src/comments.ts          #   comment extraction with trailing detection
-packages/server/           # MCP server: 5 tools, annotations + structuredContent, stdio only
-packages/cli/              # momus audit|drift|contract|rules|serve|init|doctor
+packages/server/           # MCP server: 5 tools, annotations + structuredContent, stdio + Streamable HTTP
+  src/cache.ts            #   SqliteParseCache — persistent IR cache (better-sqlite3, .momus/cache/)
+packages/cli/              # momus audit|drift|precommit|hook|annotate|annotate-pr|contract|rules|serve|init|doctor
+  src/fix.ts              #   audit --fix: collect/diff/apply span-based rule fixes
+packages/action/           # composite GitHub Action: diff-scoped audit + annotate-pr (Phase 4)
+.github/workflows/         # ci.yml (PR gates) + release.yml (changesets version→publish)
+.changeset/                # changesets config + pending changeset markdown files
+schemas/momusrc.schema.json # .momusrc JSON Schema (referenced by `momus init`)
 test/golden/audit.test.ts  # exact issue set from planted fixtures + suppression e2e
 test/integration/mcp.test.ts # in-memory MCP client round-trip, all 5 tools
-packages/*/test/           # unit tests (58 core + 23 parser) + fixture galleries (self-contained)
+packages/*/test/           # unit tests (core: glob/discovery/compositeParser/format/config/diff/rules/suppress/tokens; parser-ts: symbols/types/program/dataflow/mocks/syntax-only; parser-php; cli: index/fix/synthesize) + fixture galleries (self-contained)
 experiments/               # throwaway spike workspace (kept for reference; not part of the build)
-.momusrc                   # self-audit config — excludes fixture galleries + experiments
+.momusrc                   # self-audit config — excludes fixture galleries + experiments + .momus/cache
+eslint.config.js           # ESLint 10 flat config (typescript-eslint) — skipComments for U+200B
+.prettierrc.json           # Prettier: single quotes, semis, 120 cols (fixtures + *.md excluded)
+.prettierignore
 ```
 
 **The five MCP tools:** `audit_test_fidelity`, `detect_tautological_assertions`,
@@ -105,7 +313,9 @@ npx momus rules / init / doctor / serve --root DIR
 6. **MCP stdio servers must never write to stdout** — one stray `console.log` corrupts the
    transport and desyncs the client. The engine takes an injectable logger; the server silences it.
 7. **Node ≥ 20 native TS strip-only mode** (used by the `momus` bin) does **not** support
-   parameter properties (`constructor(public x)`). Repo convention: **never use them**.
+   parameter properties (`constructor(public x)`). Repo convention: **never use them**. A
+   `CompositeParser` regression proved this the hard way: the bin crashed with
+   `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` at import time.
 8. **`T[]` where `T` is a type parameter is a TypeReference, not an ArrayType** —
    `checker.isArrayType` returns false; `checker.getTypeArguments` handles both. Used by
    `containsTypeParameter` (generic returns are marked `assignable: 'unknown'`, never checked).
@@ -123,6 +333,45 @@ npx momus rules / init / doctor / serve --root DIR
     paths excluded in `vitest.config.ts` (`**/test/fixtures/**`) or they fail as real tests.
 14. **picomatch has no types and ambient shims are ignored** when the module resolves to real
     JS → core now ships a built-in glob matcher (zero-dep core, per spec intent).
+15. **npm bin symlinks break naive entrypoint guards** — when node runs `node_modules/.bin/momus`,
+    `process.argv[1]` is the symlink path while `import.meta.url` is the realpath, so a guard
+    comparing `resolve(argv[1])` silently skips `main()` (exit 0, no report). Compare
+    `realpathSync` on both sides; regression test spawns the bin through the symlink.
+16. **changesets `baseBranch` must exist in git history** — `changeset status`/`version` fail
+    with `Failed to find where HEAD diverged from "main"` when the local branch isn't named
+    `main`. `ci.yml`/`release.yml`/`action.yml` all assume `main`; the local branch was renamed
+    `master` → `main` (verified: `changeset status` now reports changed packages, no divergence
+    error).
+17. **PHP mock bindings are function-scoped and line-resolved** — `extractMocks` keys `byBinding`
+    by `scope:name` and stores assignments in line order (`recordBinding`); `nearestBinding` picks
+    the latest assignment at/before a config or assertion line, so two test fns reusing `$mock`
+    don't collide AND reassigning `$mock` within one method shadows correctly (`ReassignTest`
+    pins `[['save'], ['findById']]`).
+18. **PHP property mocks (`$this->x`) are class-scoped** — `$this->prop = createMock(...)` is
+    captured via `assignmentBindingName` (LHS `propertylookup` rooted at `$this`/`self` → `this:prop`)
+    and resolved back through `$this->prop->method(...)` via `bindingName`; the scope is the
+    enclosing class (not method), so a `setUp`-assigned mock is visible to every test method.
+19. **Never `write_file` over a path without checking it exists** — `program.test.ts` already
+    existed (tracked, 6 tests incl. the F5 parent-pointer and type-aware checks). A blind write
+    replaced it with a 1-test file, silently dropping 5 tests (156 → 152, caught by the full-suite
+    count). Restore-first, then append; always `git status`/`find` before creating a file.
+20. **`escapeRegex` must escape `[` and `]`** — an unbalanced `[` in a glob pattern falls through
+    to `escapeRegex`, which previously didn't escape brackets, yielding an invalid regex
+    (`Unterminated character class`) instead of a literal match. Escape the full metacharacter set
+    `[.*+?^${}()|[\]\\]`; `glob.test.ts` pins the unbalanced-`[`/`{` literal cases.
+21. **Contract synthesis must only surface public instance members** — the PHP
+    `synthesize_mock_contract` path filters `__construct`/private/protected/static, but the TS
+    path (server + `momus contract`) used to surface `private` members and render optional params
+    as `name: T?` (invalid TS). Both are now aligned: skip private/protected/static members and
+    render `name?: T`. Pinned in `packages/cli/test/synthesize.test.ts`.
+22. **Doc comments embed U+200B zero-width spaces** between `*` and `/` to write the literal
+    `*/` inside a comment without closing it. ESLint's `no-irregular-whitespace` flags these, so
+    the config uses `{ skipComments: true }` — do not "clean" the zero-width spaces.
+23. **The persistent IR cache must be workspace-digest keyed, not file-hash keyed alone** — a
+    type-aware TS parse's `ModuleIR` can depend on other files (checker-resolved `symbolId`s), so
+    a per-file content hash would serve stale IR after a dependency edit. The engine computes a
+    digest over every source file + tsconfig/composer before any parse is served, making cold and
+    warm runs identical (determinism contract §2.4.3). `cache.test.ts` pins hit/miss/invalidation.
 
 ---
 
@@ -132,7 +381,8 @@ npx momus rules / init / doctor / serve --root DIR
   constant-tautology (error) · **TAUT-004** mock-only-assertion (warning) · **TAUT-005**
   zero-reach-stub (warning) · **TAUT-006** unconfigured-spy-assert (warning)
 - **DRIFT-000** unresolvable-target (info, off by default) · **DRIFT-001** missing-member
-  (error) · **DRIFT-002** signature-mismatch (warning, stub arity extraction not yet wired) ·
+  (error; rename fix when a unique near-match exists) · **DRIFT-002** signature-mismatch (warning;
+  callback arity and conservative parameter types are wired for object-literal and spy doubles) ·
   **DRIFT-003** return-type-mismatch (warning) · **DRIFT-004** constructor-drift (PHP-only,
   stub) · **DRIFT-005** missing-export (error)
 - **MOCK-001** mock-saturation (warning) · **MOCK-002** mock-of-self (info)
@@ -148,20 +398,39 @@ in `audit.ts` — only inline comments are. (Verify before relying on it.)
 
 ## 7. Known gaps / honest limitations (also `docs/10` §10.5, `docs/09` §9.5)
 
-1. **`beforeEach`-configured mocks** attach to file scope, not the test fn — planned fix,
-   Step 2.1 of the build plan. Fixtures must pin semantics first.
-2. **DRIFT-002** fires only when stubs carry a `signature` — extraction of stub arity from
-   `vi.fn((a, b) => …)` implementations isn't wired.
-3. **Syntax-only mode** (no tsconfig) — `SymbolIndex.resolveByName` loose resolution is
-   untested end-to-end; type-aware mode is the tested path.
-4. **Jest coverage** — `vi.*` patterns are tested; `jest.*` shares the code paths but has no
-   dedicated fixtures.
+1. **Setup scopes are now implemented** for module-level and nested `describe` `beforeEach`/
+   `beforeAll` callbacks, with ordering and scope-isolation fixtures. Dynamic/ambiguous setup
+   control flow remains conservative.
+2. **DRIFT-002 stub arity is partially hardened** — object-literal doubles now extract required
+   parameters from `vi.fn`/`jest.fn` implementations; assigned `mockImplementation` configs,
+   spy implementation signatures, and conservative parameter-type compatibility are collected.
+3. **Syntax-only mode** — syntactic target-name enrichment through `SymbolIndex.resolveByName`
+   is now covered by a root-level no-`tsconfig.json` fixture; dynamic names remain conservative.
+4. **Jest coverage** — `jest.fn`, `jest.mock` factory/helper, and `jest.requireMock` paths are
+   covered; broader Jest-specific semantics remain open.
 5. **`synthesize_mock_contract`** returns `undefined` placeholders for return values
    (it does not yet derive literal examples from types).
 6. **Perf budgets** (§2.7) are asserted nowhere yet; whole-workspace `ts.createProgram` per
-   audit. Incremental program + IR cache are Phase 2.
-7. **`git-diff` scope** (`verify_mock_drift`) is validated for input only — the plumbing is Phase 3.
-8. **PHP** — parsing spike-proven (E6) but no engine integration (Phase 2).
+   audit. The chokidar watcher invalidates the `ts.Program` cache on change (`serve --watch`), and
+   the persistent IR cache (`better-sqlite3`, `.momus/cache/`) serves warm parses for an unchanged
+   workspace. Remaining: the incremental program (`ts.createWatchProgram`) and perf-budget asserts.
+7. **`git-diff` scope is implemented** (Phase 3): `gitChangedPaths` → `DiffScope` → DRIFT-006 +
+   diff-filtered drift rules; CLI `precommit`/`--git-diff`/`hook` (staged-files gate via
+   `gitStagedPaths`, `--install`/`--uninstall` marker-guarded); MCP `verify_mock_drift` git-diff
+   scope. Remaining: staged-line granularity (hook is file-level today). The `--fix` mechanism +
+   DRIFT-001 rename fix ship; TAUT-001/002/003 are semantic and intentionally descriptive-only
+   (no auto-fix — a documented decision, §3.6).
+8. **PHP** — parser/engine integration covers symbols, `use` aliases, Composer PSR-4 **and
+   classmap** fallback, `createMock`/Mockery/Pest chains **incl. closure-form**, `willReturn` IR,
+   TAUT-002, DRIFT-001, DRIFT-003 (declared-type assignability), and DRIFT-004 incl.
+   optional-parameter defaults, plus docblock `@return`/`@param` typing (native-type fallback),
+   `synthesize_mock_contract` phpunit/pest templates, anonymous-class doubles
+   (`new class extends Foo` → `pattern:'anonymous-class'` + override members), and `momus doctor`
+   PHP-readiness, and `getMockForAbstractClass` doubles (`pattern:'getMockForAbstractClass'`,
+   targeting the abstract class with `method()`/`willReturn()` stubbed members). Mock bindings are
+   function-scoped (`scope:name` keys), property mocks (`$this->x`, e.g. assigned in `setUp`) are
+   class-scoped (`this:x`), and same-variable reassignment within one method resolves to the
+   nearest prior assignment (line-ordered `recordBinding`/`nearestBinding`).
 
 ---
 
@@ -172,7 +441,7 @@ in `audit.ts` — only inline comments are. (Verify before relying on it.)
 | Package manager | pnpm | **npm workspaces** (`docs/06` §6.1, `docs/README`) |
 | CLI framework | commander/citty | hand-rolled arg parsing, no dep |
 | Picomatch | dependency | **built-in glob matcher**, core = zero runtime deps |
-| better-sqlite3 / chokidar / eslint / coverage | Phase-1 deps | **deferred** (Phase 2/3), isolated behind interfaces |
+| better-sqlite3 / chokidar / eslint / coverage | Phase-1 deps | **all shipped** — better-sqlite3 IR cache, chokidar watch, eslint+prettier, v8 coverage |
 | Build output | dist/ + exports maps | **run from `src/` via tsx** (exports → `./src/index.ts`) |
 | Suppression | spec grammar | implemented incl. trailing detection + docblock-fn scoping |
 | Summary | truncated counts | **pre-truncation `totalErrors` etc.** for exit codes / CLEAN |
@@ -182,11 +451,15 @@ in `audit.ts` — only inline comments are. (Verify before relying on it.)
 
 ## 9. Next session — recommended sequence
 
-1. **Initialize git and create the initial commit** when the user explicitly approves it
-   (the workspace is not currently a git repository; do not commit `node_modules/`).
-2. **Step 2 (hardening)** — beforeEach scopes → DRIFT-002 stub arity → more mock patterns →
-   syntax-only mode e2e. Each with planted + healthy fixtures.
-3. Then Phase 2 (PHP), 3 (git-diff), 4 (CI action + registry) per `docs/10` Steps 3–5.
+1. **MCP registry listing draft** — write the `momus-mcp` registry entry (name, description,
+   install command `npx -y @momus/mcp-server@latest`, tool manifest) + install snippets; no
+   credentials needed, ready for the publish step.
+2. **Phase 4 publishing** — run `npx changeset version` + `changeset publish` and register
+   `momus-mcp` once `NPM_TOKEN` is available; e2e-test the composite action via `act`.
+3. **Optional hardening** — wire `lint` + `format:check` into `ci.yml`; extract the CLI `main()`
+   dispatch into pure functions (raises the CLI entrypoint's subprocess-blind v8 coverage); cover
+   the remaining `format/markdown`/`drift`/`dataflow` branch edges; add perf-budget asserts (§2.7)
+   and the incremental `ts.createWatchProgram` program.
 
 **Guardrails:** read-only tools only; deterministic output (golden-tested); <100 tokens/issue
 (asserted); new patterns ship only with anti-pattern + healthy fixtures in CI; test ideas in

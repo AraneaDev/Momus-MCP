@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+.momus/
+experiments/
+**/test/fixtures/
+**/test/fixtures-syntax-only/
+**/test/syntax-only-fixtures/
+syntax-only-fixtures/
+**/test/golden/fixtures/
+package-lock.json
+*.sqlite
+*.md

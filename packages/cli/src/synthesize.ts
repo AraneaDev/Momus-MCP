@@ -20,9 +20,16 @@ export function synthesizeForCli(
   const lines: string[] = [];
   for (const m of cls.members) {
     if (ts.isMethodDeclaration(m)) {
+      const flags = ts.getCombinedModifierFlags(m);
+      const isPublicInstance = !(
+        flags &
+        (ts.ModifierFlags.Private | ts.ModifierFlags.Protected | ts.ModifierFlags.Static)
+      );
+      if (!isPublicInstance) continue;
       const name = m.name.getText(sf);
-      const params = m.parameters.map((p) =>
-        `${p.name.getText(sf)}${p.type ? ': ' + p.type.getText(sf) : ''}${p.questionToken ? '?' : ''}`).join(', ');
+      const params = m.parameters
+        .map((p) => `${p.name.getText(sf)}${p.questionToken ? '?' : ''}${p.type ? ': ' + p.type.getText(sf) : ''}`)
+        .join(', ');
       const ret = m.type ? m.type.getText(sf) : 'unknown';
       lines.push(`  // ${name}(${params}): ${ret}`);
       if (framework === 'vitest' || framework === 'jest') {

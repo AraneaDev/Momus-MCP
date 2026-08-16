@@ -2,13 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { parseSuppression, buildSuppressionState, isSuppressed } from '../src/suppress.ts';
 import type { Issue, RawComment, TestFnIR } from '../src/ir.ts';
 
-const raw = (text: string, line: number, kind: 'line' | 'docblock' = 'line', trailing = false): RawComment =>
-  ({ text, line, kind, trailing });
+const raw = (text: string, line: number, kind: 'line' | 'docblock' = 'line', trailing = false): RawComment => ({
+  text,
+  line,
+  kind,
+  trailing,
+});
 
 const issue = (rule: string, line: number): Issue => ({
-  id: 'i', rule: rule as Issue['rule'], severity: 'error',
+  id: 'i',
+  rule: rule as Issue['rule'],
+  severity: 'error',
   span: { file: '/ws/t.ts', startLine: line, startCol: 1, endLine: line, endCol: 2 },
-  message: 'm', tokens: 5,
+  message: 'm',
+  tokens: 5,
 });
 
 describe('parseSuppression', () => {
@@ -19,7 +26,9 @@ describe('parseSuppression', () => {
     expect(parseSuppression(raw('// @momus-ignore:TAUT-002', 5))).toEqual({ rules: ['TAUT-002'] });
   });
   it('parses multi-rule ignore', () => {
-    expect(parseSuppression(raw('// @momus-ignore:TAUT-002,DRIFT-001', 5))).toEqual({ rules: ['TAUT-002', 'DRIFT-001'] });
+    expect(parseSuppression(raw('// @momus-ignore:TAUT-002,DRIFT-001', 5))).toEqual({
+      rules: ['TAUT-002', 'DRIFT-001'],
+    });
   });
   it('parses the file banner', () => {
     expect(parseSuppression(raw('// @momus-ignore-file', 1))).toEqual({ file: true });
@@ -59,10 +68,7 @@ describe('buildSuppressionState / isSuppressed', () => {
   });
 
   it('suppresses all rules at a line when scoped to a different rule later', () => {
-    const state = buildSuppressionState([
-      raw('// @momus-ignore:TAUT-002', 5),
-      raw('// @momus-ignore', 5),
-    ], '/ws/t.ts');
+    const state = buildSuppressionState([raw('// @momus-ignore:TAUT-002', 5), raw('// @momus-ignore', 5)], '/ws/t.ts');
     expect(isSuppressed(issue('DRIFT-001', 6), state)).toBe(true);
   });
 
@@ -74,10 +80,15 @@ describe('buildSuppressionState / isSuppressed', () => {
   });
 
   it('docblock above a test fn suppresses the whole function span', () => {
-    const fns: TestFnIR[] = [{
-      id: 'f1', span: { file: '/ws/t.ts', startLine: 9, startCol: 1, endLine: 15, endCol: 2 },
-      hasProductionCalls: false, productionCallCount: 0, assertionCount: 1,
-    }];
+    const fns: TestFnIR[] = [
+      {
+        id: 'f1',
+        span: { file: '/ws/t.ts', startLine: 9, startCol: 1, endLine: 15, endCol: 2 },
+        hasProductionCalls: false,
+        productionCallCount: 0,
+        assertionCount: 1,
+      },
+    ];
     const state = buildSuppressionState([raw('/** @momus-ignore */', 8, 'docblock')], '/ws/t.ts', fns);
     expect(isSuppressed(issue('TAUT-004', 9), state)).toBe(true);
     expect(isSuppressed(issue('TAUT-004', 14), state)).toBe(true);

@@ -71,6 +71,70 @@ describe('mock detection (fixture test file)', () => {
     expect(m?.target?.symbolId).toContain('Db');
   });
 
+  it('extracts vi.fn implementation arity for object-literal stubs', () => {
+    const p = join(FIXTURES, 'tests', 'signature.fixture.ts');
+    const signature = parser.parseModule(p, readFileSync(p, 'utf8'), {
+      config: undefined,
+      resolveImport: (spec) => parser.resolveImport(spec, p),
+    });
+    const wrong = signature.mocks.find(
+      (m) => m.pattern === 'object-literal' && m.stubbedMembers.some((s) => s.name === 'query'),
+    )!;
+    const healthy = signature.mocks
+      .filter((m) => m.pattern === 'object-literal')
+      .find((m) => m.stubbedMembers[0]?.signature?.parameters.length === 2)!;
+    expect(wrong.stubbedMembers[0]?.signature?.parameters).toHaveLength(3);
+    expect(healthy).toBeDefined();
+    const spy = signature.mocks.find((m) => m.pattern === 'vi.spyOn');
+    expect(spy?.stubbedMembers[0]?.signature?.parameters).toHaveLength(2);
+    const spyTypes = signature.mocks
+      .filter((m) => m.pattern === 'vi.spyOn')
+      .map((m) => m.stubbedMembers[0]?.signature?.parameters[0]?.type);
+    expect(spyTypes.some((type) => type?.kind === 'named' && type.name === 'number')).toBe(true);
+    expect(spyTypes.some((type) => type?.kind === 'named' && type.name === 'string')).toBe(true);
+  });
+
+  it('detects module automock helper APIs and stubGlobal', () => {
+    const p = join(FIXTURES, 'tests', 'automock.fixture.ts');
+    const automock = parser.parseModule(p, readFileSync(p, 'utf8'), {
+      config: undefined,
+      resolveImport: (spec) => parser.resolveImport(spec, p),
+    });
+    expect(automock.mocks.filter((m) => m.isAutomock).map((m) => m.pattern)).toEqual([
+      'vi.importMock',
+      'jest.requireMock',
+      'jest.createMockFromModule',
+    ]);
+    const global = automock.mocks.find((m) => m.pattern === 'vi.stubGlobal');
+    expect(global?.target?.kind).toBe('global');
+    expect(global?.target?.exportName).toBe('fetch');
+    expect(automock.mocks.filter((m) => m.pattern === 'vi.fn')).toHaveLength(1);
+    expect(automock.mocks).toHaveLength(5);
+  });
+
+  it('detects Proxy doubles whose get handler returns a mock function', () => {
+    const p = join(FIXTURES, 'tests', 'proxy.fixture.ts');
+    const proxy = parser.parseModule(p, readFileSync(p, 'utf8'), {
+      config: undefined,
+      resolveImport: (spec) => parser.resolveImport(spec, p),
+    });
+    const detected = proxy.mocks.filter((m) => m.pattern === 'proxy');
+    expect(detected).toHaveLength(1);
+    expect(detected[0]?.target?.symbolId).toContain('LedgerService');
+    expect(proxy.mocks.some((m) => m.pattern === 'proxy' && m.span.startLine === 9)).toBe(false);
+  });
+
+  it('collects assigned mockImplementation configs for Vitest and Jest', () => {
+    const p = join(FIXTURES, 'tests', 'mock-implementation.fixture.ts');
+    const implementation = parser.parseModule(p, readFileSync(p, 'utf8'), {
+      config: undefined,
+      resolveImport: (spec) => parser.resolveImport(spec, p),
+    });
+    const mocks = implementation.mocks.filter((m) => m.pattern === 'vi.fn' || m.pattern === 'jest.fn');
+    expect(mocks).toHaveLength(2);
+    expect(mocks.map((m) => m.configuredValues[0]?.api)).toEqual(['mockImplementation', 'mockImplementation']);
+  });
+
   it('collects configured values; generic return types are marked unknown', () => {
     const m = test.mocks.find((x) => x.pattern === 'vi.mocked-instance')!;
     expect(m.configuredValues).toHaveLength(1);

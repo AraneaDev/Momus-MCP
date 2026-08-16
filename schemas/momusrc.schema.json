@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://momus.dev/schemas/momusrc.schema.json",
+  "title": "Momus configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "languages": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "typescript": { "type": "boolean", "default": true },
+        "php": { "type": "boolean", "default": false }
+      }
+    },
+    "testFilePatterns": { "type": "array", "items": { "type": "string" } },
+    "ignorePatterns": { "type": "array", "items": { "type": "string" } },
+    "mockSaturationThreshold": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.7 },
+    "rules": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          { "enum": ["error", "warning", "info", "off"] },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "severity": { "enum": ["error", "warning", "info", "off"] },
+              "options": { "type": "object" }
+            }
+          }
+        ]
+      }
+    },
+    "suppressions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "rule": { "type": "string", "pattern": "^(TAUT|DRIFT|MOCK|SYS)-\\d{3}$" },
+          "files": { "type": "array", "items": { "type": "string" } },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "tokenBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxIssuesPerReport": { "type": "integer", "minimum": 0, "default": 50 },
+        "maxIssueLineTokens": { "type": "integer", "minimum": 1, "default": 100 },
+        "verbosity": { "enum": ["summary", "issues"], "default": "issues" }
+      }
+    },
+    "maxFileSizeBytes": { "type": "integer", "minimum": 1 },
+    "maxIndexedLines": { "type": "integer", "minimum": 1 },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dir": { "type": "string", "default": ".momus/cache" },
+        "enabled": { "type": "boolean", "default": true }
+      }
+    }
+  }
+}

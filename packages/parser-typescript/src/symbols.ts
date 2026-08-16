@@ -32,10 +32,13 @@ export function extractSymbols(sf: ts.SourceFile): { symbols: SymbolIR[]; export
             extendsIds: [],
             implementsIds: [],
             signature: signatureToIR(m),
-            visibility: m.modifiers?.some((x) => x.kind === ts.SyntaxKind.PublicKeyword) ? 'public'
-              : m.modifiers?.some((x) => x.kind === ts.SyntaxKind.PrivateKeyword) ? 'private'
-              : m.modifiers?.some((x) => x.kind === ts.SyntaxKind.ProtectedKeyword) ? 'protected'
-              : undefined,
+            visibility: m.modifiers?.some((x) => x.kind === ts.SyntaxKind.PublicKeyword)
+              ? 'public'
+              : m.modifiers?.some((x) => x.kind === ts.SyntaxKind.PrivateKeyword)
+                ? 'private'
+                : m.modifiers?.some((x) => x.kind === ts.SyntaxKind.ProtectedKeyword)
+                  ? 'protected'
+                  : undefined,
             isStatic: m.modifiers?.some((x) => x.kind === ts.SyntaxKind.StaticKeyword),
             isAbstract: m.modifiers?.some((x) => x.kind === ts.SyntaxKind.AbstractKeyword),
           });

@@ -53,7 +53,9 @@ function paramToIR(p: ts.ParameterDeclaration): ParamIR {
   };
 }
 
-export function signatureToIR(m: ts.MethodDeclaration | ts.MethodSignature | ts.FunctionDeclaration | ts.ConstructorDeclaration): {
+export function signatureToIR(
+  m: ts.MethodDeclaration | ts.MethodSignature | ts.FunctionDeclaration | ts.ConstructorDeclaration,
+): {
   parameters: ParamIR[];
   returnType?: TypeIR;
   typeParams: string[];

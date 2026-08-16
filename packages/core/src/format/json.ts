@@ -23,7 +23,14 @@ export function buildJsonEnvelope(result: AuditResult, opts: JsonEnvelopeOptions
     message: i.message,
     ...(i.evidence ? { evidence: i.evidence } : {}),
     ...(i.fix
-      ? { fix: { kind: i.fix.kind, ...(i.fix.span ? { span: i.fix.span } : {}), ...(i.fix.code ? { code: i.fix.code } : {}), description: i.fix.description } }
+      ? {
+          fix: {
+            kind: i.fix.kind,
+            ...(i.fix.span ? { span: i.fix.span } : {}),
+            ...(i.fix.code ? { code: i.fix.code } : {}),
+            description: i.fix.description,
+          },
+        }
       : {}),
     tokens: i.tokens,
   });
@@ -40,7 +47,16 @@ export function buildJsonEnvelope(result: AuditResult, opts: JsonEnvelopeOptions
       indexStats: result.indexStats,
       issues: result.issues.map(issue),
       ...(result.suppressed.length ? { suppressed: result.suppressed.map(issue) } : {}),
-      ...(result.diagnostics.length ? { diagnostics: result.diagnostics.map((d) => ({ code: 'SYS', severity: d.severity, file: toRel(d.span.file, root), message: d.message.slice(0, 120) })) } : {}),
+      ...(result.diagnostics.length
+        ? {
+            diagnostics: result.diagnostics.map((d) => ({
+              code: 'SYS',
+              severity: d.severity,
+              file: toRel(d.span.file, root),
+              message: d.message.slice(0, 120),
+            })),
+          }
+        : {}),
     },
   };
 }

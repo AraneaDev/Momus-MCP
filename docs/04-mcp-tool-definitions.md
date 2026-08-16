@@ -17,7 +17,7 @@
 }
 ```
 
-- **Transport:** `stdio` by default; `--transport http` enables Streamable HTTP (Phase 4).
+- **Transport:** `stdio` by default; `--transport http` enables Streamable HTTP (implemented).
 - **Tools are returned in deterministic order** (catalog order below) for client caching and
   prompt-cache stability.
 - **All tools are read-only:** `readOnlyHint: true`, `destructiveHint: false`,

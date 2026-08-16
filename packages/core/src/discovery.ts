@@ -4,7 +4,7 @@ import { join, relative, isAbsolute, resolve } from 'node:path';
 import { anyMatch } from './glob.ts';
 
 export interface DiscoveredFile {
-  path: string;                 // absolute
+  path: string; // absolute
   sizeBytes: number;
 }
 
@@ -24,7 +24,8 @@ export interface DiscoveryResult {
 function gitignoreRules(root: string): string[] {
   const gi = join(root, '.gitignore');
   if (!existsSync(gi)) return [];
-  return readFileSync(gi, 'utf8').split('\n')
+  return readFileSync(gi, 'utf8')
+    .split('\n')
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith('#') && !l.startsWith('!'));
 }
@@ -82,7 +83,8 @@ export function discoverFiles(opts: DiscoveryOptions): DiscoveryResult {
         skipped.push({ path: abs, reason: `SYS-002: file exceeds ${maxFileSizeBytes} bytes` });
         continue;
       }
-      if (lines + st.size / 32 > maxIndexedLines) { // ~32 bytes/line heuristic
+      if (lines + st.size / 32 > maxIndexedLines) {
+        // ~32 bytes/line heuristic
         capped = true;
         skipped.push({ path: abs, reason: 'SYS-002: workspace exceeds maxIndexedLines' });
         return;

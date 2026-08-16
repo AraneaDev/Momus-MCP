@@ -1,0 +1,22 @@
+{
+  "name": "@momus/parser-php",
+  "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "description": "PHP parser plugin for Momus using php-parser",
+  "files": [
+    "src"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@momus/core": "0.1.0",
+    "php-parser": "^3.7.0"
+  }
+}

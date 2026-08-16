@@ -111,7 +111,7 @@ unreachable stubs fire.
 | DRIFT-003 | `return-type-mismatch` | warning | A configured value's static shape is **not assignable** to the production return type. Assignability is structural, per §3.4. `any`/`unknown`/`mixed` on either side ⇒ no finding. `mockImplementation`/`willReturnCallback` bodies are type-checked via their declared signature when present; otherwise skipped with `info`. |
 | DRIFT-004 | `constructor-drift` | error | For `createMock(Foo::class)`-family and `new Foo(...)` double constructions: a **required** production constructor parameter has no corresponding argument **and** no default, when the constructor is statically known. (PHPUnit mocks bypass constructors — see exemption §3.5.3.) |
 | DRIFT-005 | `missing-export` | error | `vi.mock('mod', factory)` / `jest.mock` factory keys (top-level) reference exports that don't exist on the resolved module; or the real module exports a name the factory omits while the test imports that name from the mocked module. |
-| DRIFT-006 | `stale-mock` | warning | **git-diff mode only.** The mocked target's defining file is in `changedSymbolIds` but the mock's file is **not** in `changedPaths` — the mock is a candidate for drift review. Message includes which production members changed. |
+| DRIFT-006 | `stale-mock` | warning | **git-diff mode only.** The mocked target's defining file is in `changedSymbolIds` but the mock's file is **not** in `changedPaths` — the mock is a candidate for drift review. Message includes which production members changed. Implemented (Step 4): fires when the target changed and the mock file was untouched; the message lists the target class and its members. |
 
 **DRIFT-001 object-literal nuance:** for `object-literal` mocks (`{ save: vi.fn() } as unknown as T`),
 only keys whose values are mocks or functions are checked; plain data keys are treated as
@@ -130,7 +130,7 @@ fixture data and exempt (configurable: `options.checkObjectLiteralDataKeys`, def
 |---|---|
 | 1 | TAUT-001…006, DRIFT-000…005, MOCK-001, MOCK-002 (TS/Vitest+Jest) |
 | 2 | Same rules for PHP (PHPUnit/Pest), DRIFT-004 constructor-awareness, anonymous-class handling |
-| 3 | DRIFT-006 (needs git integration), `--fix` suggestions for TAUT-002/003/001 |
+| 3 | ✅ DRIFT-006 (git integration shipped: `gitChangedPaths` + `DiffScope`), `momus precommit`, `hook`, `annotate-pr`, `annotate` (JSONL), `serve --transport http`, `audit --fix` mechanism + DRIFT-001 rename fix. TAUT-001/002/003 are semantic tautologies — **no auto-fix** (any rewrite would invent the asserted value); they carry descriptive suggestions only (§3.6) |
 | 4 | (no new rules; distribution) |
 
 ## 3.4 Structural assignability (DRIFT-003)
@@ -223,12 +223,17 @@ report under `result.suppressed` when requested. The CLI prints a one-line summa
    heuristics.
 5. **Golden regression:** the anti-pattern gallery (`test/fixtures/gallery/**`) pins exact
    expected output (file, line, rule, message) so behavior changes are reviewable diffs.
+6. **Auto-fix conservatism:** a rule emits a mechanically-applicable `fix.code` only when the
+   rewrite is unambiguous (e.g. DRIFT-001's unique near-match rename). Semantic tautologies
+   (TAUT-001/002/003) have no safe rewrite — any fix would invent the asserted value — so they
+   emit descriptive suggestions (`description` set, `code` empty) and are excluded from
+   `momus audit --fix`.
 
 ## 3.7 Known limitations (honest bounds)
 
-- **No cross-test data flow:** mocks configured in `beforeEach` are linked to the enclosing
-  describe/test block only when statically obvious; otherwise they're treated as
-  `mock-config` provenance for their scope. Ambiguity ⇒ no finding.
+- **No cross-test data flow:** mocks configured in `beforeEach`/`beforeAll` are linked to
+  module-level or enclosing `describe` scopes when statically obvious, with lifecycle ordering
+  preserved; dynamic setup control flow remains conservative. Ambiguity ⇒ no finding.
 - **No runtime values:** `mockReturnValue(factory())` where `factory` is a function call is
   `unknown`-provenance; TAUT-002 won't fire even if `factory()` returns a constant.
 - **No PHP runtime types:** PHP is checked structurally against declared types only;
