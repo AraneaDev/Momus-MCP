@@ -536,7 +536,14 @@ describe('audit --fix', () => {
   it('reports zero auto-fixable issues when rules emit no real fix code', () => {
     const fixture = planted();
     try {
-      const res = spawnSync(process.execPath, [BIN, 'audit', '--fix'], { cwd: fixture, encoding: 'utf8' });
+      // Unset CI: GitHub runners set CI=true, which would trip the `--fix`
+      // CI-without---yes guard and turn this into the refusal test.
+      const { CI: _CI, ...noCiEnv } = process.env;
+      const res = spawnSync(process.execPath, [BIN, 'audit', '--fix'], {
+        cwd: fixture,
+        encoding: 'utf8',
+        env: noCiEnv,
+      });
       expect(res.status, res.stderr).toBe(0);
       expect(res.stdout).toContain('0 auto-fixable issues');
     } finally {
@@ -583,7 +590,12 @@ describe('audit --fix', () => {
           '',
         ].join('\n'),
       );
-      const dry = spawnSync(process.execPath, [BIN, 'audit', '--fix'], { cwd: fixture, encoding: 'utf8' });
+      const { CI: _CI2, ...noCiEnv2 } = process.env;
+      const dry = spawnSync(process.execPath, [BIN, 'audit', '--fix'], {
+        cwd: fixture,
+        encoding: 'utf8',
+        env: noCiEnv2,
+      });
       expect(dry.status, dry.stderr).toBe(1);
       expect(dry.stdout).toContain("'totalForX'");
       expect(dry.stdout).toContain("'totalFor'");

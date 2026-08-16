@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,8 +45,10 @@ describe('Momus MCP server (in-memory transport)', () => {
     const init = await client.getServerVersion();
     expect(init.name).toBe('momus-mcp');
     // Tracks @momus/mcp-server's package.json (read at runtime), which release-please
-    // bumps in lockstep; must equal the manifest-pinned 0.0.1 baseline.
-    expect(init.version).toBe('0.0.1');
+    // bumps in lockstep. Read the expected version from the package itself rather than
+    // hardcoding, so the test passes on release branches (where it is legitimately bumped).
+    const pkg = JSON.parse(readFileSync(join(FIXTURES, '..', '..', '..', 'server', 'package.json'), 'utf8'));
+    expect(init.version).toBe(pkg.version);
   });
 
   it('advertises exactly the five tools with annotations', async () => {
