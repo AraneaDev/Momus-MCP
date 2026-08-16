@@ -194,8 +194,14 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   (`scripts/verify-no-codebuff-footer.mjs`, greps `git log --all`), and (3) a
   `commit-hygiene` job in `ci.yml` (full-history checkout). All three are verified: the hook
   rejects a footer message (exit 1) and passes a clean one (exit 0); `check:commits` reports
-  clean. History is `d0a9343` (initial) → `532d233` (build) → `8743231` (docs) → `2add841`
-  (enforcement) → `d378c59` (Node globals for the verify script).
+  clean.
+- **Last verified:** commit **identity is standardized** — every commit (all six) is now authored
+  **and** committed by `AraneaDev <info@aranea-development.nl>` (history rewritten via
+  `git filter-branch --env-filter` for both `GIT_AUTHOR_*` and `GIT_COMMITTER_*`), the leftover
+  `refs/original` backup and reflog were pruned and `gc`'d so the old `Tim Schipper
+  <tim.schipper@yieldergroup.com>` identity and the footer are unreachable, and the **local**
+  `user.name`/`user.email` are set to AraneaDev so future commits default correctly. `git log
+  --all` shows no footer and no non-AraneaDev author/committer.
 - **Active task:** the functional build is complete: Phases 1–3, the persistent IR cache,
   ESLint+Prettier, coverage tooling, the README/etymology refresh, and the footer-free-history
   enforcement are all shipped, committed, and green. Phase 4 publishing (npm/MCP registry) remains
@@ -221,12 +227,14 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 - **Implementation:** 5 npm-workspace packages (`@momus/core`, `@momus/parser-typescript`,
   `@momus/mcp-server`, `@momus/cli`), `@momus/parser-php`, plus `packages/action` composite
   GitHub Action — 207 vitest tests, GitHub Actions CI, self-audit gate.
-- **Git.** Five commits on `main`, no remote: `d0a9343` (initial scaffold) → `532d233` (full build
-  through Phase 3 + Phase 4 scaffolding) → `8743231` (docs: etymology/handover) → `2add841`
-  (enforce a footer-free commit history) → `d378c59` (Node globals for the verify script). **No
-  commit carries a Codebuff attribution footer** — it is stripped from history and structurally
-  blocked by a `commit-msg` hook + `check:commits` + a CI `commit-hygiene` gate. Working tree is
-  clean; the commit identity was applied explicitly and Git defaults were not changed.
+- **Git.** Six commits on `main`, no remote: `066ac32` (initial scaffold) → `0f09dfa` (full build
+  through Phase 3 + Phase 4 scaffolding) → `8552277` (docs: etymology/handover) → `8d3ef61`
+  (enforce a footer-free commit history) → `77df24a` (Node globals for the verify script) →
+  `072a76a` (handover). Every commit is authored **and** committed by
+  `AraneaDev <info@aranea-development.nl>` (history rewritten via `--env-filter`); local
+  `user.name`/`user.email` are set to match. **No commit carries an attribution footer** — it is
+  stripped from history and structurally blocked by a `commit-msg` hook + `check:commits` + a CI
+  `commit-hygiene` gate. Working tree is clean.
 - Everything was validated by experiments first (`docs/09-validation-report.md`), then built,
   then tested. The "test ideas before committing to them" policy is documented in `docs/10-build-plan.md` §10.1.
 
