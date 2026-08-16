@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { relative, resolve, join } from 'node:path';
 import { anyMatch } from './glob.ts';
-import type { AuditResult, ModuleIR, Issue, ParseDiagnostic } from './ir.ts';
+import { IR_SCHEMA_VERSION, type AuditResult, type ModuleIR, type Issue, type ParseDiagnostic } from './ir.ts';
 import type { LanguageParser, ParseCache } from './parser.ts';
 import type { MomusConfig } from './config.ts';
 import { DEFAULT_CONFIG } from './config.ts';
@@ -83,6 +83,9 @@ export class AuditEngine {
       const cfgPath = join(root, cfgName);
       if (existsSync(cfgPath)) digestParts.push(`${cfgName}\u0000${hashOf(readFileSync(cfgPath, 'utf8'))}`);
     }
+    // Fold the IR schema version in so a tool upgrade invalidates the cache even when the
+    // workspace files are unchanged (parser/rule logic changes must not serve stale IR).
+    digestParts.push(`@momus/ir-schema\u0000${IR_SCHEMA_VERSION}`);
     const workspaceHash = hashOf(digestParts.sort().join('\n'));
     const cache = this.opts.cache;
 

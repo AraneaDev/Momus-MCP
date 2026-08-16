@@ -235,6 +235,31 @@ function argValue(args: string[], name: string): string | undefined {
   return i >= 0 ? args[i + 1] : undefined;
 }
 
+/** Flags that consume the following argument as their value (not a positional path). */
+const FLAGS_WITH_VALUE = new Set([
+  '--max-issues',
+  '--base',
+  '--framework',
+  '--symbol',
+  '--root',
+  '--transport',
+  '--port',
+]);
+
+/** Positional (non-flag) arguments, skipping values belonging to value-taking flags. */
+function positionalArgs(argv: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a.startsWith('-')) {
+      if (FLAGS_WITH_VALUE.has(a)) i++; // consume the flag's value
+      continue;
+    }
+    out.push(a);
+  }
+  return out;
+}
+
 async function main(argv: string[]): Promise<number> {
   const cmd = argv[0];
   const root = process.cwd();
@@ -243,8 +268,7 @@ async function main(argv: string[]): Promise<number> {
 
   switch (cmd) {
     case 'audit': {
-      const paths = argv
-        .filter((a) => !a.startsWith('-') && !a.startsWith('--'))
+      const paths = positionalArgs(argv)
         .slice(1)
         .filter((p) => p !== '.' && p !== './'); // '.' = audit everything
       const maxIssues = Number(argValue(argv, '--max-issues') ?? '50');
@@ -314,8 +338,7 @@ async function main(argv: string[]): Promise<number> {
     }
 
     case 'annotate': {
-      const paths = argv
-        .filter((a) => !a.startsWith('-') && !a.startsWith('--'))
+      const paths = positionalArgs(argv)
         .slice(1)
         .filter((p) => p !== '.' && p !== './');
       const maxIssues = Number(argValue(argv, '--max-issues') ?? '50');

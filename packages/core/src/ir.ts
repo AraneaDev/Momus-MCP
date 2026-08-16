@@ -2,6 +2,14 @@
  * Language-neutral intermediate representation (spec docs/02 §2.3).
  * All spans are 1-based lines / 1-based columns; endCol exclusive.
  */
+
+/**
+ * IR cache schema version. Folded into the workspace cache digest so that a parser/IR change
+ * invalidates cached modules even when the audited workspace is unchanged. Bump whenever the
+ * ModuleIR shape or any parser's extraction changes in a way that would make cached IR stale.
+ */
+export const IR_SCHEMA_VERSION = '2';
+
 export type Language = 'typescript' | 'php';
 export type Severity = 'error' | 'warning' | 'info';
 

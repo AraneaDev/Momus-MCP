@@ -136,6 +136,15 @@ export function extractSymbols(sf: ts.SourceFile): { symbols: SymbolIR[]; export
       exports.push(stmt.name.text);
     } else if (ts.isEnumDeclaration(stmt) && exported) {
       exports.push(stmt.name.text);
+    } else if (ts.isExportDeclaration(stmt)) {
+      // Barrel re-exports: `export { a, b as c } [from '...']` and `export * as ns from '...'`.
+      // `export * from '...'` is not enumerated (its names require resolving the target module).
+      const clause = stmt.exportClause;
+      if (clause && ts.isNamedExports(clause)) {
+        for (const el of clause.elements) exports.push(el.name.text);
+      } else if (clause && ts.isNamespaceExport(clause)) {
+        exports.push(clause.name.text);
+      }
     }
   }
   return { symbols, exports };

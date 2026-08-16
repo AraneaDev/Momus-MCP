@@ -393,9 +393,11 @@ export class Drift005MissingExport extends DriftRule {
     for (const m of module.mocks) {
       if (!diffRelevant(ctx, m)) continue;
       if (m.target?.kind !== 'module' || !m.target.modulePath) continue;
-      const exports = index.exportsOf(m.target.modulePath);
-      if (exports.length === 0) continue; // module not indexed (node_modules etc.)
-      const names = new Set(exports.map((s) => s.name));
+      const target = index.getModule(m.target.modulePath);
+      if (!target) continue; // module not indexed (node_modules etc.)
+      // Check the full named-export list — const/type/enum exports are not class/function
+      // symbols, so the symbol-only `exportsOf` would falsely flag their factory keys.
+      const names = new Set(target.exports);
       for (const stub of m.stubbedMembers) {
         if (stub.api === 'mockFactoryKey' && !names.has(stub.name)) {
           out.push(

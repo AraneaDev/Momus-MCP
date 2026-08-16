@@ -493,6 +493,21 @@ describe('DRIFT-005 missing export', () => {
     });
     expect(runRules(rulesOf('DRIFT-005'), ctx(m, index))).toHaveLength(0);
   });
+  it('accepts const/type/enum export keys that are not class/function symbols', () => {
+    const constOnly: ModuleIR = { ...prod, symbols: [], exports: ['TOOL_DEFINITION'] };
+    const idx = new SymbolIndex([constOnly]);
+    const m = testModule({
+      mocks: [
+        mock({
+          id: 'm1',
+          pattern: 'vi.mock',
+          target: { kind: 'module', modulePath: PROD, specifier: '../core/tool-schema', span: sp(FILE, 5) },
+          stubbedMembers: [{ name: 'TOOL_DEFINITION', span: sp(FILE, 5), api: 'mockFactoryKey', returnValues: [] }],
+        }),
+      ],
+    });
+    expect(runRules(rulesOf('DRIFT-005'), ctx(m, idx))).toHaveLength(0);
+  });
   it('skips modules that were never indexed (node_modules)', () => {
     const m = testModule({
       mocks: [

@@ -208,6 +208,37 @@ describe('CLI bin entrypoint', () => {
       rmSync(fixture, { recursive: true, force: true });
     }
   });
+
+  it('does not treat space-separated flag values as positional paths', () => {
+    const fixture = mkdtempSync(join(tmpdir(), 'momus-maxissues-'));
+    try {
+      writeFileSync(
+        join(fixture, 'planted.test.ts'),
+        [
+          "import { describe, expect, it, vi } from 'vitest';",
+          "describe('planted', () => {",
+          "  it('echoes the stubbed value against itself', () => {",
+          '    const mocked = { getTotal: vi.fn() };',
+          '    mocked.getTotal.mockReturnValue(42);',
+          '    expect(mocked.getTotal()).toBe(42);',
+          '  });',
+          '});',
+          '',
+        ].join('\n'),
+      );
+      // '1' is the --max-issues value, not a file to audit; the whole fixture must still be scanned.
+      const result = spawnSync(process.execPath, [BIN, 'audit', '--max-issues', '1'], {
+        cwd: fixture,
+        encoding: 'utf8',
+      });
+      expect(result.status, result.stderr).toBe(1);
+      expect(result.stdout).toMatch(/TAUT-002/);
+      expect(result.stdout).toMatch(/CLEAN:false/);
+      expect(result.stdout).not.toMatch(/^# Momus audit — 1$/m);
+    } finally {
+      rmSync(fixture, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('audit --fix', () => {

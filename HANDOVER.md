@@ -1,8 +1,8 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 207 tests passing, ~85% statements / ~82% branches,
+**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 210 tests passing, ~84% statements / ~82% branches,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
-**Next session: MCP registry listing draft; publishing blocked on credentials.**
+**Next session: MCP registry listing draft; publishing blocked on credentials. Real-codebase validation done against `/root/Chaos-MCP`.**
 
 ## Current checkpoint — 2026-08-16
 
@@ -202,18 +202,34 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   <tim.schipper@yieldergroup.com>` identity and the footer are unreachable, and the **local**
   `user.name`/`user.email` are set to AraneaDev so future commits default correctly. `git log
   --all` shows no footer and no non-AraneaDev author/committer.
-- **Active task:** the functional build is complete: Phases 1–3, the persistent IR cache,
-  ESLint+Prettier, coverage tooling, the README/etymology refresh, and the footer-free-history
-  enforcement are all shipped, committed, and green. Phase 4 publishing (npm/MCP registry) remains
-  the only item, blocked on credentials (no `NPM_TOKEN`). Next: MCP registry listing draft +
-  install snippets.
+- **Last verified (real codebase):** installed and drove Momus as an MCP server against the real
+  `/root/Chaos-MCP` TS repo (320 files, 97 test files) — CLI `momus audit` and a live stdio
+  `momus-mcp` round-trip via the SDK client (`listTools`, `list_rules`, `verify_mock_drift`,
+  `detect_tautological_assertions`, `audit_test_fidelity`, `synthesize_mock_contract`) all work.
+  The run surfaced and fixed three real bugs: (1) CLI space-separated flag values (`--max-issues 5`)
+  leaked into positional paths → new `positionalArgs()` skips value-taking flags; (2) DRIFT-005
+  flagged `vi.mock` factory keys for `const`/`type`/`enum` exports → now checks the full
+  `ModuleIR.exports` name list instead of symbol-only `exportsOf`; (3) `extractSymbols` did not
+  capture barrel re-exports (`export { X } from '...'`) → now records named/aliased/namespace
+  re-export names. Also hardened the IR cache: `IR_SCHEMA_VERSION` is folded into the workspace
+  digest so a tool upgrade invalidates cached IR (was serving stale IR across a parser change).
+  Post-fix Chaos-MCP audit: 1 error (TAUT-001 self-comparison, an intentional determinism test
+  `expect(f(x)).toBe(f(x))`) + 49 warnings — the 3 DRIFT-005 false positives are gone.
+- **Active task:** real-world validation against a large external TypeScript codebase is complete;
+  the functional build (Phases 1–3), persistent IR cache, ESLint+Prettier, coverage tooling, and the
+  footer-free/identity-standardized history are shipped and green. Phase 4 publishing (npm/MCP
+  registry) remains the only item, blocked on credentials (no `NPM_TOKEN`). Next: MCP registry
+  listing draft + install snippets, and triaging the TAUT-001 determinism-test pattern (a
+  legitimate-looking false-positive class worth a suppression/refinement decision).
 - **Safe resume point:** if interrupted, resume wherever you stopped; do not revisit PHP
   closure-form/DRIFT-003, docblock typing, synth templates, anonymous-class doubles, git-diff
   plumbing, DRIFT-006, precommit, annotate-pr, the action, the `--fix` mechanism,
   TAUT-001/002/003 fix code (resolved: semantic → descriptive-only), PHP `getMockForAbstractClass`,
   PHP function-scoped mock bindings, PHP setUp/property mock bindings, PHP same-variable
   reassignment, the test-coverage tooling, the contract-synthesis public-member/`?`-ordering
-  fixes, the persistent IR cache, or the ESLint/Prettier setup.
+  fixes, the persistent IR cache, the ESLint/Prettier setup, the real-codebase Chaos-MCP
+  validation, the CLI `positionalArgs` flag-value fix, the DRIFT-005 full-export-name fix, the
+  barrel re-export extraction, or the `IR_SCHEMA_VERSION` cache invalidation.
 
 ---
 
@@ -226,7 +242,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 - **Spec:** `docs/` (9 spec docs + validation report + build plan — the authoritative source).
 - **Implementation:** 5 npm-workspace packages (`@momus/core`, `@momus/parser-typescript`,
   `@momus/mcp-server`, `@momus/cli`), `@momus/parser-php`, plus `packages/action` composite
-  GitHub Action — 207 vitest tests, GitHub Actions CI, self-audit gate.
+  GitHub Action — 210 vitest tests, GitHub Actions CI, self-audit gate.
 - **Git.** Six commits on `main`, no remote: `066ac32` (initial scaffold) → `0f09dfa` (full build
   through Phase 3 + Phase 4 scaffolding) → `8552277` (docs: etymology/handover) → `8d3ef61`
   (enforce a footer-free commit history) → `77df24a` (Node globals for the verify script) →
@@ -244,7 +260,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 
 ```bash
 npm run typecheck        # 0 errors across all packages
-npm test                 # 22 files, 207 tests, all pass
+npm test                 # 22 files, 210 tests, all pass
 npm run test:coverage    # v8: ~85% statements / ~82% branches (floors 80/75/90/80)
 npm run lint             # eslint .  — clean
 npm run format:check     # prettier --check .  — clean

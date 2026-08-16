@@ -203,4 +203,19 @@ describe('extractSymbols', () => {
     // non-exported class still becomes a symbol; non-exported vars/types/enums do not
     expect(symbols.map((s) => s.name).sort()).toEqual(['EC', 'NC']);
   });
+
+  it('collects barrel re-exports (named, aliased, and namespace)', () => {
+    const { exports } = extractSymbols(
+      parse(
+        [
+          "export { loadConfig, validateConfig } from './config.js';",
+          "export { a as b } from './other.js';",
+          'export { localName };',
+          "export * as ns from './ns.js';",
+        ].join('\n'),
+      ),
+    );
+    // exported names (not local names) are recorded; `export * from` is not enumerated
+    expect(exports.sort()).toEqual(['b', 'loadConfig', 'localName', 'ns', 'validateConfig'].sort());
+  });
 });
