@@ -182,10 +182,16 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   command opens one too. Also fixed: the repo `.momusrc` still used the old nested `{enabled}`
   languages object (now booleans, matching the schema), and `.gitignore`/`.momusrc` now exclude
   `**/.momus/cache/**`. Full tests (207), typecheck, lint, format, and self-audit are green.
+- **Last verified:** README rewritten in the Argos-MCP style with the **Momus etymology** front
+  and center (ancient Greek spirit of satire, mockery, blame, and harsh criticism — "blame"/
+  "censure"; the ultimate critic among the deities; doubly apt for *mock* objects), an honest
+  pre-release/publish note, feature grid, MCP integration, use cases, and a docs hub. The name
+  origin is now also synced into `docs/01` §1.0 and `docs/README` canonical facts. All work is
+  committed (`383749e`) with the Codebuff footer.
 - **Active task:** the functional build is complete: Phases 1–3, the persistent IR cache,
-  ESLint+Prettier, and coverage tooling are all shipped and green. Phase 4 publishing (npm/MCP
-  registry) remains the only item, blocked on credentials (no `NPM_TOKEN`). Next: MCP registry
-  listing draft + install snippets.
+  ESLint+Prettier, coverage tooling, and the README/etymology refresh are all shipped, committed,
+  and green. Phase 4 publishing (npm/MCP registry) remains the only item, blocked on credentials
+  (no `NPM_TOKEN`). Next: MCP registry listing draft + install snippets.
 - **Safe resume point:** if interrupted, resume wherever you stopped; do not revisit PHP
   closure-form/DRIFT-003, docblock typing, synth templates, anonymous-class doubles, git-diff
   plumbing, DRIFT-006, precommit, annotate-pr, the action, the `--fix` mechanism,
@@ -206,9 +212,11 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
 - **Implementation:** 5 npm-workspace packages (`@momus/core`, `@momus/parser-typescript`,
   `@momus/mcp-server`, `@momus/cli`), `@momus/parser-php`, plus `packages/action` composite
   GitHub Action — 207 vitest tests, GitHub Actions CI, self-audit gate.
-- **Git initialized.** Single commit `d0a9343` ("feat: establish Momus-MCP test integrity auditor")
-  on `main`, no remote. The Codebuff attribution footer was removed by amending the initial commit
-  (user-approved); the commit identity was applied explicitly and Git defaults were not changed.
+- **Git.** Two commits on `main`, no remote: `d0a9343` ("feat: establish Momus-MCP test integrity
+  auditor" — attribution footer removed per user request) and `383749e` ("feat: ship PHP support,
+  git-diff scoping, and distribution scaffolding" — the full build through Phase 3 + Phase 4
+  scaffolding, carrying the standard Codebuff footer). Working tree is clean; the commit identity
+  was applied explicitly and Git defaults were not changed.
 - Everything was validated by experiments first (`docs/09-validation-report.md`), then built,
   then tested. The "test ideas before committing to them" policy is documented in `docs/10-build-plan.md` §10.1.
 
