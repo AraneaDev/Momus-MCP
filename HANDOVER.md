@@ -326,6 +326,14 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   the non-checker `tsReturnExample`, emitting `undefined` for named union members —
   `tsReturnExampleChecked` now handles type literals itself (checker-aware recursion). Post-fix,
   `momus contract packages/core/src/audit.ts` emits a fully-correct nested `AuditResult` literal.
+- **Last verified (round 12, dogfooding #2):** `synthesizeContract` now (a) concretizes method-
+  and class-level generics to `unknown` — `identity<T>(x: T): T` → `vi.fn<[x: unknown], unknown>()`
+  and `Box<T>` → `satisfies Partial<Box<unknown>>` (was emitting out-of-scope `T`/missing type arg
+  = invalid TS); (b) supports **interface** targets (the tool description always said
+  "class/interface" but only classes were handled) — data properties become plain values, methods
+  become `vi.fn` stubs, and the default target still prefers the first class, falling back to the
+  first interface only when no class exists. `momus contract packages/core/src/ir.ts --symbol
+  ModuleIR` now yields a correct 13-property mock. Self-audit (incl. DRIFT-000) remains 0 issues.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
   real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos plus itself (dogfooding) and fixing every
   false-positive/perf gap they expose, keeping `docs/11-real-world-findings.md` as the live
@@ -352,8 +360,10 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   TAUT-004 `productionCalls` guards (setup bindings, local-helper tracing, `it.each` collection), or the
   PHP constructor/call/return hand-off reachability (`return`/`new`/`call` walk in `extractMocks`), the
   named-type object-shape synthesis (`tsReturnExampleChecked` + `getProgram` in `synthesizeContract`), the
-  dynamic-`import()` production-call counting in `productionCalls`, or the string-literal-union
-  synthesis fix (`primitiveExample` + `resolveNamedType` + checker-aware type literals).
+  dynamic-`import()` production-call counting in `productionCalls`, the string-literal-union
+  synthesis fix (`primitiveExample` + `resolveNamedType` + checker-aware type literals), or the
+  generic/interface synthesis support (generics concretized to `unknown`, `Partial<Box<unknown>>`,
+  interface targets with data values + method stubs).
 
 ---
 

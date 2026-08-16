@@ -40,7 +40,7 @@ describe('synthesizeForCli', () => {
     try {
       writeFileSync(join(dir, 'empty.ts'), 'export const x = 1;\n');
       const out = synthesizeForCli(dir, 'empty.ts', undefined, 'vitest');
-      expect(out).toEqual({ error: expect.stringContaining('no class found') });
+      expect(out).toEqual({ error: expect.stringContaining('no class or interface found') });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -223,6 +223,53 @@ describe('synthesizeForCli', () => {
       expect(template).toContain(
         'both: vi.fn<[], { lang: Language; sev: Severity }>().mockReturnValue({ lang: "typescript", sev: "error" }),',
       );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('concretizes method- and class-level generics to unknown (no out-of-scope type params)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-synth-generic-'));
+    try {
+      writeFileSync(
+        join(dir, 'gen.ts'),
+        [
+          'export class Box<T> {',
+          '  identity<U>(x: U): U { return x; }',
+          '  get(): T { throw new Error(); }',
+          '  put(v: T): void {}',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      const out = synthesizeForCli(dir, 'gen.ts', undefined, 'vitest');
+      const template = (out as { template: string }).template;
+      expect(template).toContain('identity: vi.fn<[x: unknown], unknown>().mockReturnValue(undefined),');
+      expect(template).toContain('get: vi.fn<[], unknown>().mockReturnValue(undefined),');
+      expect(template).toContain('put: vi.fn<[v: unknown], void>().mockReturnValue(undefined),');
+      expect(template).toContain('} satisfies Partial<Box<unknown>>;');
+      // the raw generic name must not leak into the mock as an undefined type
+      expect(template).not.toMatch(/vi\.fn<[^>]*\bT\b/);
+      expect(template).not.toMatch(/vi\.fn<[^>]*\bU\b/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('synthesizes interfaces as data values + method stubs (no class required)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-synth-iface-'));
+    try {
+      writeFileSync(
+        join(dir, 'iface.ts'),
+        ['export interface Widget { id: number; label?: string; render(opts: string): void }', ''].join('\n'),
+      );
+      const out = synthesizeForCli(dir, 'iface.ts', undefined, 'vitest');
+      const template = (out as { template: string }).template;
+      expect(template).toContain('const widgetMock = {');
+      expect(template).toContain('  id: 0,');
+      expect(template).toContain("  label: '',");
+      expect(template).toContain('render: vi.fn<[opts: string], void>().mockReturnValue(undefined),');
+      expect(template).toContain('} satisfies Partial<Widget>;');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

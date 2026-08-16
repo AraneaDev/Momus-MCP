@@ -479,33 +479,55 @@ export function synthesizeContract(
     return synthesizePhpContract(abs, source, targetPath, symbolName, framework, includeReturnValues);
   }
   const sf = ts.createSourceFile(abs, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const classes = sf.statements.filter((s): s is ts.ClassDeclaration => ts.isClassDeclaration(s) && !!s.name);
-  const cls = symbolName ? classes.find((s) => s.name?.text === symbolName) : classes[0];
-  if (!cls?.name) return { error: `no class found in ${targetPath}` };
-  const className = cls.name.text;
+  const decls = sf.statements.filter(
+    (s): s is ts.ClassDeclaration | ts.InterfaceDeclaration =>
+      (ts.isClassDeclaration(s) || ts.isInterfaceDeclaration(s)) && !!s.name,
+  );
+  // Default to the first class when no symbol is named (backward-compatible), falling back to
+  // the first interface only when the file declares no class.
+  const target = symbolName
+    ? decls.find((s) => s.name?.text === symbolName)
+    : (decls.find((s) => ts.isClassDeclaration(s)) ?? decls[0]);
+  if (!target?.name) return { error: `no class or interface found in ${targetPath}` };
+  const className = target.name.text;
+  const isInterface = ts.isInterfaceDeclaration(target);
   // Type-aware return examples: resolve named interface/class returns through the checker so
   // `User` / `Promise<User>` emit a data-shape literal instead of `undefined`. Falls back to
   // syntax-only `tsReturnExample` when the file isn't in a resolvable program.
   const handle = getProgram(abs);
   const checker = handle.program.getTypeChecker();
   const programSf = handle.program.getSourceFile(abs);
-  const programClass = symbolName
-    ? programSf?.statements.find(
-        (s): s is ts.ClassDeclaration => ts.isClassDeclaration(s) && s.name?.text === symbolName,
-      )
-    : programSf?.statements.find((s): s is ts.ClassDeclaration => ts.isClassDeclaration(s) && !!s.name);
+  const programTarget = programSf?.statements.find(
+    (s): s is ts.ClassDeclaration | ts.InterfaceDeclaration =>
+      (ts.isClassDeclaration(s) || ts.isInterfaceDeclaration(s)) && s.name?.text === className,
+  );
   const programTypeNodes = new Map<string, ts.TypeNode | undefined>();
-  for (const pm of programClass?.members ?? []) {
-    if ((ts.isMethodDeclaration(pm) || ts.isGetAccessorDeclaration(pm)) && pm.name && pm.type) {
+  for (const pm of programTarget?.members ?? []) {
+    if (
+      (ts.isMethodDeclaration(pm) ||
+        ts.isMethodSignature(pm) ||
+        ts.isGetAccessorDeclaration(pm) ||
+        ts.isPropertySignature(pm)) &&
+      pm.name &&
+      pm.type
+    ) {
       programTypeNodes.set(pm.name.getText(programSf), pm.type);
     }
   }
+  // Class-level generics (`Box<T>`) are out of scope at the mock site → concrete to `unknown`
+  // (both in member types and in the `Partial<Box<unknown>>` target).
+  const classTypeParams = (target.typeParameters ?? []).map((tp) => tp.name.getText(sf));
+  const concretize = (text: string, extra: string[] = []): string => {
+    const names = [...classTypeParams, ...extra];
+    return names.length === 0 ? text : text.replace(new RegExp(`\\b(${names.join('|')})\\b`, 'g'), 'unknown');
+  };
   const exampleFor = (type: ts.TypeNode | undefined): string => tsReturnExampleChecked(checker, type);
   const contract: Array<{ member: string; signature: string; returnType: string }> = [];
   const lines: string[] = [];
-  for (const m of cls.members) {
-    if (ts.isMethodDeclaration(m)) {
-      const flags = ts.getCombinedModifierFlags(m);
+  for (const m of target.members) {
+    if (ts.isMethodDeclaration(m) || ts.isMethodSignature(m)) {
+      // interface members carry no modifiers → implicitly public
+      const flags = ts.isMethodDeclaration(m) ? ts.getCombinedModifierFlags(m) : 0;
       const isPublicInstance = !(
         flags &
         (ts.ModifierFlags.Private | ts.ModifierFlags.Protected | ts.ModifierFlags.Static)
@@ -521,6 +543,10 @@ export function synthesizeContract(
       const programType = programTypeNodes.get(name) ?? m.type;
       const retVal = includeReturnValues ? exampleFor(programType) : 'undefined';
       const promiseArg = promiseTypeArg(programType) ?? promiseTypeArg(m.type);
+      // Method-level generics (`identity<T>(x: T): T`) are out of scope at the mock site; the
+      // emitted `vi.fn<[x: T], T>()` would reference an undefined `T`. Concrete the type params
+      // to `unknown` in the mock template (the signature comment keeps the real generic).
+      const methodTypeParams = (m.typeParameters ?? []).map((tp) => tp.name.getText(sf));
       lines.push(`  // ${sig}`);
       if (framework === 'vitest' || framework === 'jest') {
         const fn = framework === 'vitest' ? 'vi' : 'jest';
@@ -529,11 +555,11 @@ export function synthesizeContract(
             const pname = p.name.getText(sf);
             const optional = p.questionToken ? '?' : '';
             const variadic = p.dotDotDotToken ? '...' : '';
-            const ptype = p.type ? p.type.getText(sf) : 'unknown';
+            const ptype = p.type ? concretize(p.type.getText(sf), methodTypeParams) : 'unknown';
             return `${variadic}${pname}${optional}: ${ptype}`;
           })
           .join(', ');
-        const fnType = `${fn}.fn<[${paramTypes}], ${ret}>()`;
+        const fnType = `${fn}.fn<[${paramTypes}], ${concretize(ret, methodTypeParams)}>()`;
         lines.push(
           promiseArg
             ? `  ${name}: ${fnType}.mockResolvedValue(${exampleFor(promiseArg)}),`
@@ -552,14 +578,25 @@ export function synthesizeContract(
       });
       lines.push(`  // get ${name}(): ${m.type?.getText(sf) ?? 'unknown'}`);
       lines.push(`  get ${name}() { return ${exampleFor(programType)}; },`);
+    } else if (isInterface && ts.isPropertySignature(m)) {
+      // interface data properties are plain values in the mock (not vi.fn stubs)
+      const name = m.name.getText(sf);
+      const programType = programTypeNodes.get(name) ?? m.type;
+      contract.push({
+        member: name,
+        signature: `${name}${m.questionToken ? '?' : ''}: ${m.type?.getText(sf) ?? 'unknown'}`,
+        returnType: m.type?.getText(sf) ?? 'unknown',
+      });
+      lines.push(`  ${name}: ${exampleFor(programType)},`);
     }
   }
+  const genericArg = classTypeParams.length > 0 ? `<${classTypeParams.map(() => 'unknown').join(', ')}>` : '';
   const template = [
     `// Generated by momus synthesize_mock_contract — ${className} (${framework})`,
     `// Contract verified against ${targetPath} (${contract.length} public members)`,
     `const ${lowerFirst(className)}Mock = {`,
     ...lines,
-    `} satisfies Partial<${className}>;`,
+    `} satisfies Partial<${className}${genericArg}>;`,
   ].join('\n');
   return {
     template,

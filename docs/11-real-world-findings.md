@@ -36,6 +36,9 @@
 | 15 | *(this round)* | `productionCalls` did not count dynamic `import()` as executing production code | 1 false TAUT-004 on Chaos-MCP `sandbox.test.ts` (signal-handler re-import pattern) |
 | 16 | *(dogfood)* | `synthesize_mock_contract` synthesized `{ length: 0 }` for string-literal union aliases (`Language`/`MockFramework`/`SymbolKind`) because `getPropertiesOfType` returns the primitive `String`'s intrinsic `length` | garbage mock contracts for Momus's own `ModuleIR`/`SymbolIR` |
 | 17 | *(dogfood)* | inline type literals (`{ lang: Language }`) recursed through the non-checker `tsReturnExample`, so named union members emitted `undefined` | `{ lang: undefined, sev: undefined }` for a union-field return |
+| 18 | *(dogfood)* | generic methods (`identity<T>(x: T): T`) emitted `vi.fn<[x: T], T>()` — an out-of-scope `T` (invalid TypeScript) | broken mock contract for generic methods |
+| 19 | *(dogfood)* | generic classes (`Box<T>`) emitted `vi.fn<[], T>()` + `Partial<Box>` (missing type arg) | invalid TypeScript for generic classes |
+| 20 | *(dogfood)* | `synthesize_mock_contract` returned `no class found` for interface targets, despite the documented "class/interface" contract | interface-only files were unmockable |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -97,6 +100,12 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
   through the checker. Post-fix, `momus contract packages/core/src/audit.ts` produces a fully
   correct nested literal for `AuditResult` (`summary: { … truncated: false }`, `issues: []`,
   `indexStats: { modules: 0, symbols: 0, mocks: 0 }`).
+- **Second dogfooding pass** surfaced three more synthesis bugs (fixed, rows 18–20): generic
+  methods and generic classes emitted out-of-scope type parameters (now concretized to `unknown`,
+  with `Partial<Box<unknown>>` for generic classes), and interface targets returned `no class
+  found` (now supported — data properties become plain values, methods become `vi.fn` stubs).
+  `momus contract packages/core/src/ir.ts --symbol ModuleIR` now yields a correct 13-property
+  `ModuleIR` mock.
 
 ## 5. Open / candidate improvements
 
