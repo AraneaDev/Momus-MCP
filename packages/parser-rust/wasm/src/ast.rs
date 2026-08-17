@@ -49,6 +49,7 @@ fn item(it: &syn::Item) -> Value {
         }),
         syn::Item::Impl(imp) => json!({
             "kind": "impl",
+            "attrs": imp.attrs.iter().map(attr).collect::<Vec<_>>(),
             "traitPath": imp.trait_.as_ref().map(|(_, path, _)| path_text(path)),
             "selfType": type_(&imp.self_ty),
             "items": imp.items.iter().filter_map(impl_item).collect::<Vec<_>>(),

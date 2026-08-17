@@ -101,6 +101,7 @@ export interface RustTrait {
 
 export interface RustImpl {
   kind: 'impl';
+  attrs: RustAttr[];
   traitPath: string | null;
   selfType: RustType;
   items: RustFn[];
