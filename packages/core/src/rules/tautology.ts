@@ -208,12 +208,19 @@ export class Taut006UnconfiguredSpyAssert extends BaseRule {
     const out: Issue[] = [];
     const mocks = new Map(module.mocks.map((m) => [m.id, m]));
     for (const a of module.assertions) {
-      if (!a.api.startsWith('toHaveBeenCalled')) continue;
+      const spyApi =
+        a.api.startsWith('toHaveBeenCalled') || a.api.startsWith('assert_called') || a.api === 'assert_not_called';
+      if (!spyApi) continue;
       const ref = a.operands[0]?.mockRefs[0];
       if (!ref) continue;
       const mock = mocks.get(ref);
       if (!mock) continue;
-      const isSpy = mock.pattern === 'vi.spyOn' || mock.pattern === 'jest.spyOn';
+      const isSpy =
+        mock.pattern === 'vi.spyOn' ||
+        mock.pattern === 'jest.spyOn' ||
+        mock.pattern === 'autospec' ||
+        mock.pattern === 'patch' ||
+        mock.pattern === 'patch-object';
       const configured = mock.configuredValues.length > 0 || mock.stubbedMembers.some((s) => s.returnValues.length > 0);
       if (isSpy && !configured && mock.invocationSites.length === 0) {
         out.push(

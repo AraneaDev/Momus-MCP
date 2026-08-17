@@ -326,6 +326,45 @@ describe('TAUT-006 unconfigured spy assert', () => {
     expect(runRules(rulesOf('TAUT-006'), ctx(configured))).toHaveLength(0);
     expect(runRules(rulesOf('TAUT-006'), ctx(reached))).toHaveLength(0);
   });
+
+  it('flags assert_called on an unconfigured, unreached Python mock', () => {
+    const m = testModule({
+      language: 'python',
+      framework: 'unittest',
+      mocks: [mock({ id: 'm1', pattern: 'autospec', framework: 'unittest' })],
+      assertions: [
+        assertion({
+          api: 'assert_called',
+          operands: [expr({ kind: 'call', text: 'm.assert_called()', mockRefs: ['m1'], provenance: 'mock-call' })],
+        }),
+      ],
+    });
+    expect(runRules(rulesOf('TAUT-006'), ctx(m))).toHaveLength(1);
+  });
+
+  it('stays quiet for a Python mock that is configured or invoked', () => {
+    const configured = testModule({
+      language: 'python',
+      framework: 'unittest',
+      mocks: [
+        mock({
+          id: 'm1',
+          pattern: 'autospec',
+          framework: 'unittest',
+          configuredValues: [{ span: sp(FILE, 5), api: 'mockReturnValue', once: false, assignable: 'unknown' }],
+        }),
+      ],
+      assertions: [assertion({ api: 'assert_called', operands: [expr({ mockRefs: ['m1'] })] })],
+    });
+    const reached = testModule({
+      language: 'python',
+      framework: 'unittest',
+      mocks: [mock({ id: 'm1', pattern: 'autospec', framework: 'unittest', invocationSites: [sp(FILE, 8)] })],
+      assertions: [assertion({ api: 'assert_called', operands: [expr({ mockRefs: ['m1'] })] })],
+    });
+    expect(runRules(rulesOf('TAUT-006'), ctx(configured))).toHaveLength(0);
+    expect(runRules(rulesOf('TAUT-006'), ctx(reached))).toHaveLength(0);
+  });
 });
 
 describe('DRIFT-001 missing member', () => {

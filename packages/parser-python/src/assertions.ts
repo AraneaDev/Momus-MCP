@@ -13,6 +13,15 @@ const CALL_ASSERTIONS = new Set([
   'assertIsNot',
 ]);
 
+/** Mock spy assertions (`m.assert_called*()`): the operand is the mock the call is made on. */
+const SPY_ASSERTIONS = new Set([
+  'assert_called',
+  'assert_called_once',
+  'assert_called_with',
+  'assert_called_once_with',
+  'assert_not_called',
+]);
+
 export function extractAssertions(root: SyntaxNode, file: string, state: PythonMockState): AssertionIR[] {
   const fnSpans = testFnSpans(root, file);
   const assertions: AssertionIR[] = [];
@@ -82,7 +91,29 @@ function assertionFromCall(
   const fn = childField(node, 'function');
   if (fn?.type !== 'attribute') return null;
   const name = textOf(childField(fn, 'attribute'));
-  if (!CALL_ASSERTIONS.has(name)) return null;
+  const isSpy = SPY_ASSERTIONS.has(name);
+  if (!isSpy && !CALL_ASSERTIONS.has(name)) return null;
+  if (isSpy) {
+    // `m.assert_called*()` / `m.assert_not_called()`: the operand is the mock the call is on.
+    const base = childField(fn, 'object');
+    const baseName = rootName(base);
+    const mock = baseName ? resolveMockName(state, baseName, node) : undefined;
+    return {
+      id: `${file}#assert:${nodeLine(node)}:${nodeColumn(node)}`,
+      span: nodeSpan(file, node),
+      api: name,
+      operands: [
+        {
+          kind: 'call',
+          text: textOf(node),
+          mockRefs: mock ? [mock.id] : [],
+          provenance: mock ? 'mock-call' : 'unknown',
+          constant: false,
+        },
+      ],
+      fnId: enclosingFn(fnSpans, nodeLine(node)),
+    };
+  }
   const args = childField(node, 'arguments')?.namedChildren.filter((c) => c.type !== 'keyword_argument') ?? [];
   if (args.length === 0) return null;
   const operands = args.slice(0, 2).map((a) => exprIR(a, file, state));
