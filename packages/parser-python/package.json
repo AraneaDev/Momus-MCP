@@ -1,0 +1,26 @@
+{
+  "name": "@momus/parser-python",
+  "version": "0.0.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "description": "Python parser plugin for Momus using tree-sitter-python",
+  "files": [
+    "src"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@momus/core": "~0.0.1",
+    "tree-sitter": "^0.25.1",
+    "tree-sitter-python": "^0.25.0"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1"
+  }
+}
