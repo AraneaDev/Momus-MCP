@@ -8,6 +8,7 @@ import type {
 } from '@momus/core';
 import { parsePython, childField, textOf, walk, type SyntaxNode } from './tree.ts';
 import { extractSymbols } from './symbols.ts';
+import { extractMocks } from './mocks.ts';
 import { resolvePythonImport } from './resolve.ts';
 
 export class PythonParser implements LanguageParser {
@@ -25,6 +26,7 @@ export class PythonParser implements LanguageParser {
     try {
       const { root, hasError } = parsePython(source);
       const symbols = extractSymbols(root, path);
+      const mockState = extractMocks(root, path, symbols);
       const isTest = isTestFile(path);
       return {
         path,
@@ -34,7 +36,7 @@ export class PythonParser implements LanguageParser {
         imports: extractImports(root, path),
         symbols,
         exports: symbols.map((s) => s.name),
-        mocks: [],
+        mocks: mockState.mocks,
         assertions: [],
         functions: [],
         comments: [],

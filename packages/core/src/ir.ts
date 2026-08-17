@@ -10,7 +10,7 @@ import type { Language } from './languages.ts';
  * invalidates cached modules even when the audited workspace is unchanged. Bump whenever the
  * ModuleIR shape or any parser's extraction changes in a way that would make cached IR stale.
  */
-export const IR_SCHEMA_VERSION = '3'; // 3: SignatureIR.throws (PHP @throws docblocks)
+export const IR_SCHEMA_VERSION = '4'; // 4: python language (MockFramework/MockPattern members)
 
 export type { Language };
 export type Severity = 'error' | 'warning' | 'info';
@@ -61,7 +61,7 @@ export interface ParseDiagnostic {
 
 // ---------------------------------------------------------------- module
 
-export type MockFramework = 'vitest' | 'jest' | 'phpunit' | 'pest' | 'manual';
+export type MockFramework = 'vitest' | 'jest' | 'phpunit' | 'pest' | 'unittest' | 'pytest' | 'manual';
 
 export interface ModuleIR {
   path: string;
@@ -173,6 +173,11 @@ export type MockPattern =
   | 'anonymous-class'
   | 'object-literal'
   | 'proxy'
+  | 'patch'
+  | 'patch-object'
+  | 'autospec'
+  | 'pytest-mock'
+  | 'monkeypatch'
   | 'unknown';
 
 export interface MockIR {
