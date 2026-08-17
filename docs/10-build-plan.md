@@ -185,8 +185,25 @@ covered by a bin-symlink regression test); TAUT-003/TAUT-006 and invocation-site
    annotated signatures (unannotated degrades with `SYS-003`); DRIFT-004 stays PHP-only.
 4. ✅ Wired through CLI/server, `momus doctor` Python-readiness, schema flag, release/publish
    config; golden + MCP round-trip tests pin the planted drift fixtures.
-   **Acceptance:** `momus audit` on a pytest repo reports drift; self-audit clean; Rust + pyright
-   inference remain follow-ups.
+   **Acceptance:** `momus audit` on a pytest repo reports drift; self-audit clean; pyright
+   inference remains a follow-up.
+
+### Step 7 — Rust support (fourth language family) · `complete`
+
+1. ✅ `rust` registry entry (`extensions: ['rs']`, structural test detection — no filename
+   patterns) + `mockall`/`mockito`/`wiremock` IR members (`IR_SCHEMA_VERSION = 5`) + schema /
+   release/publish config.
+2. ✅ `syn` → `wasm32-unknown-unknown` wrapper exposes a synchronous `parse_file → JSON AST` FFI
+   (committed `.wasm` artifact); `@momus/parser-rust` loads it in-process and does all extraction
+   in TypeScript (thin WASM, fat TS).
+3. ✅ Crate-wide semantic index resolves `use`/`mod` paths + trait method signatures through the
+   existing `SymbolIndex`; `mockall` (`#[automock]`/`mock!`/`expect_*().returning()`),
+   `mockito`, and `wiremock` mock detection; `assert!`/`assert_eq!`/`assert_ne!`/`assert_matches!`
+   assertions + provenance.
+4. ✅ `rustReturnAssignable` (numeric/str/bool primitives, `Option`/`Result`/`Vec`, tuples,
+   generics) wires DRIFT-002/003; wired through CLI/server, `momus doctor` Rust-readiness, and
+   golden + MCP round-trip tests pin the planted DRIFT-001/003 + TAUT-005 findings.
+   **Acceptance:** `momus audit` on a Rust crate reports drift; self-audit clean.
 
 ## 10.4 Rules of engagement (hard constraints from §1)
 

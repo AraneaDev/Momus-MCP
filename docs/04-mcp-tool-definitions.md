@@ -28,9 +28,10 @@ bumps it in lockstep with the other `@momus/*` packages).
   snapshot; identical inputs + identical workspace ⇒ identical output).
 - **No tool accepts or returns handles/state** (stateless per MCP guidance); state lives in the
   workspace, which is the only "handle" ever needed.
-- **Language gating:** the server honors `.momusrc` `languages.{typescript,php,python}` — files of
-  a disabled language are discovered but skipped (never indexed or reported on). Python audits
-  route through the `@momus/parser-python` plugin when `languages.python: true`.
+- **Language gating:** the server honors `.momusrc` `languages.{typescript,php,python,rust}` —
+  files of a disabled language are discovered but skipped (never indexed or reported on).
+  Python audits route through the `@momus/parser-python` plugin when `languages.python: true`;
+  Rust audits route through `@momus/parser-rust` (`syn` → WASM) when `languages.rust: true`.
 - **Transport hygiene (validated — `09-validation-report.md` F8):** over stdio, stdout IS the
   protocol channel. The server MUST NOT write to stdout (no `console.log`, no debug output);
   all logging goes to `stderr` or an injectable logger that defaults to no-op in server mode.

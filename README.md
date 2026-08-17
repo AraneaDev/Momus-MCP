@@ -57,7 +57,7 @@ production code, and checks every mock, spy, and assertion against it.
   healthy twin, and both are asserted in CI.
 - **Zero runtime dependencies in `@momus/core`** — the engine is pure TypeScript.
 
-### Three languages, one engine
+### Four languages, one engine
 
 - **TypeScript / JavaScript** — Vitest and Jest (`vi.mock`, `vi.fn`, `vi.spyOn`, `vi.mocked`,
   `jest.mock`, object-literal and Proxy doubles, automock helpers).
@@ -67,6 +67,10 @@ production code, and checks every mock, spy, and assertion against it.
 - **Python** — pytest and unittest (`patch`, `patch.object`, `Mock(spec=)`, `mocker`,
   `monkeypatch`, `assert`/`pytest.raises`), PEP 484/526/585/604 annotation typing (opt-in via
   `languages.python`).
+- **Rust** — `mockall` (`#[automock]`, `mock!`, `expect_*().returning()`), `mockito`,
+  `wiremock`, and built-in `assert!`/`assert_eq!`/`assert_ne!`/`assert_matches!`, via a `syn`-to-
+  WASM parser with a crate-wide index for semantic-from-day-one drift checking (opt-in via
+  `languages.rust`).
 
 ---
 

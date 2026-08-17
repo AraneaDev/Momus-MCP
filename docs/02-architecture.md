@@ -12,7 +12,8 @@
  ┌─────────────┐   ┌───────────────────┐   ┌─────────────────┐   ┌──────────────┐
  │ File        │──▶│ LanguageParser     │──▶│ ModuleIR        │──▶│ SymbolIndex  │
  │ discovery   │   │ (typescript/php/  │   │ (language-      │   │ (graph)      │
- │ (.gitignore)│   │  python) AST → IR │   │  neutral)       │   │              │
+ │ (.gitignore)│   │  python/rust)     │   │  neutral)       │   │              │
+ │             │   │  AST → IR         │   │                 │   │              │
  └─────────────┘   └───────────────────┘   └─────────────────┘   └──────┬───────┘
                                                                        │
                           ┌────────────────────────────────────────────┘
@@ -89,9 +90,10 @@ with `children`; docblocks attach via `node.leadingComments` with `parser.extrac
 New languages are added by implementing `LanguageParser` (§2.3.1) and adding one entry to the
 single language registry (`packages/core/src/languages.ts` — drives the `Language` type, config
 defaults, test-file patterns, and the discovery extension regex) plus a parser package; rule code
-never changes. Shipped: TypeScript/JS (compiler API), PHP (`php-parser`), and **Python
-(`tree-sitter-python` + textual PEP 484/526/585/604 annotations)**. Remaining candidate: Rust
-(`syn` via WASM). Language support is advertised in `serverInfo`/`tools/list` and gated
+never changes. Shipped: TypeScript/JS (compiler API), PHP (`php-parser`), **Python
+(`tree-sitter-python` + textual PEP 484/526/585/604 annotations)**, and **Rust
+(`syn` → WASM + crate-wide index, semantic-from-day-one)**. Language support is advertised in
+`serverInfo`/`tools/list` and gated
 per-language in `.momusrc` (`languages.<lang>`), never assumed.
 
 ## 2.3 Normalized intermediate representation (IR)
@@ -104,7 +106,7 @@ All spans are 1-based lines, 1-based columns (UTF-16 code units, matching the MC
 ```ts
 // packages/core/src/parser.ts
 export interface LanguageParser {
-  readonly language: 'typescript' | 'php' | 'python';
+  readonly language: 'typescript' | 'php' | 'python' | 'rust';
   /** True if this parser claims the file (by extension and content sniffing). */
   canParse(path: string, source: string): boolean;
   /** Parse a single file into a language-neutral ModuleIR. Never throws for bad code;
@@ -133,7 +135,7 @@ export interface ParseDiagnostic {
 
 ```ts
 // packages/core/src/ir.ts
-export type Language = keyof typeof LANGUAGES; // 'typescript' | 'php' | 'python' (registry-derived)
+export type Language = keyof typeof LANGUAGES; // 'typescript' | 'php' | 'python' | 'rust' (registry-derived)
 
 export interface SourceSpan {
   file: string;        // absolute path
@@ -494,7 +496,7 @@ Loaded from workspace root (or `--config`). JSON or JSONC. Schema published at
 ```jsonc
 {
   "$schema": "./schemas/momusrc.schema.json",
-  "languages": { "typescript": true, "php": false, "python": false },
+  "languages": { "typescript": true, "php": false, "python": false, "rust": false },
   "testFilePatterns": ["**/*.{test,spec}.{ts,tsx,js,jsx,mjs}", "**/__tests__/**"],
   "rules": {
     "TAUT-002": "error",        // severity override

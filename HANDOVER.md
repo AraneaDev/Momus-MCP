@@ -1,10 +1,23 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-17 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; **Python support shipped + released (v0.0.4)** — single language registry + `@momus/parser-python` (tree-sitter-python + PEP 484/526 annotations), 6 packages lockstep at 0.0.4 — release-please, persistent IR cache, ESLint+Prettier, coverage tooling — 426 tests passing, typecheck clean, lint clean, format clean, self-audit clean.
-**Next session: Rust (`syn` via WASM) spec (brainstorm in progress) + pyright inference; Phase 4 distribution stays pending credentials.**
+**Date:** 2026-08-17 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; **four language families shipped — TypeScript/PHP/Python/Rust** (single language registry + `@momus/parser-rust` via a `syn`→WASM parser + crate-wide index, mockall/mockito/wiremock), 7 packages lockstep at 0.0.4 — release-please, persistent IR cache, ESLint+Prettier, coverage tooling — full gate green, typecheck clean, lint clean, format clean, self-audit clean.
+**Next session: pyright type inference for Python + Rust receiver-wrapper/by-value TAUT-005 refinements; Phase 4 distribution stays pending credentials.**
 
 ## Current checkpoint — 2026-08-17
 
+- **Last verified (Rust support):** Rust shipped as a fourth language family (spec + plan under
+  `docs/superpowers/…`, 10 TDD tasks). `@momus/parser-rust` parses `mockall` (`#[automock]`,
+  `mock!`, `expect_*().returning()`), `mockito`/`wiremock` HTTP mocks, and built-in
+  `assert!`/`assert_eq!`/`assert_ne!`/`assert_matches!` into the same `ModuleIR` (rules untouched),
+  via a **thin `syn`→wasm32 WASM module** (`parseFile(source) → JSON AST`, synchronous, no-import
+  FFI, committed as `packages/parser-rust/wasm/pkg/momus-syn-wasm.wasm`) + a **fat TS** layer doing
+  symbol/import/crate-index resolution and mock/assertion extraction. Semantic-from-day-one drift
+  (`rustReturnAssignable` → DRIFT-003, DRIFT-001 missing-member, TAUT-001 self-comparison) with a
+  crate-wide index that resolves `use`/`mod` paths, aliases, and trait targets. Wired through
+  CLI/server (`createWorkspaceParser`/`createMomusServer`), `momus doctor` Rust-readiness, schema
+  `rust` flag, release/publish config, golden + MCP round-trip tests. **Dogfooded on mockall's own
+  test suite (188 `.rs` files): 0 errors** (3 real bugs fixed — rows 52–54 in docs/11; 16 remaining
+  TAUT-005 warnings are documented static-analysis boundaries, see docs/11 §4d). Full gate green.
 - **Last verified (version-sync automation):** added `scripts/sync-versions.mjs`
   (`npm run version:sync` + `version:check`) to align every `package.json` version to
   `.release-please-manifest.json`, plus a `.githooks/pre-commit` hook that runs it on every
