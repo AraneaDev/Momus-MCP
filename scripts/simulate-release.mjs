@@ -73,6 +73,7 @@ try {
     'parser-typescript': 'parser-typescript',
     'parser-php': 'parser-php',
     'parser-python': 'parser-python',
+    'parser-rust': 'parser-rust',
     'mcp-server': 'server',
     cli: 'cli',
   };

@@ -9,6 +9,7 @@ const ORDER = [
   '@momus/parser-typescript',
   '@momus/parser-php',
   '@momus/parser-python',
+  '@momus/parser-rust',
   '@momus/mcp-server',
   '@momus/cli',
 ];

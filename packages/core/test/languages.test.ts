@@ -26,5 +26,10 @@ describe('languages registry', () => {
     expect(enabled.typescript).toBe(true);
     expect(enabled.php).toBe(false);
     expect(enabled.python).toBe(false);
+    expect(enabled.rust).toBe(false);
+  });
+
+  it('registers rust with structural (non-filename) test detection', () => {
+    expect(LANGUAGES.rust).toEqual({ extensions: ['rs'], testFilePatterns: [], defaultEnabled: false });
   });
 });
