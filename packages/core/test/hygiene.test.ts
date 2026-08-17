@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hygieneRules } from '../src/rules/hygiene.ts';
+import { hygieneRules, testSubject } from '../src/rules/hygiene.ts';
 import { runRules } from '../src/rules/engine.ts';
 import { SymbolIndex } from '../src/symbolIndex.ts';
 import { DEFAULT_CONFIG } from '../src/config.ts';
@@ -326,5 +326,40 @@ describe('MOCK-002 mock-of-self', () => {
       ],
     });
     expect(runRules(mock002, ctx(m))).toHaveLength(0);
+  });
+
+  it('derives the subject per language', () => {
+    expect(testSubject({ language: 'python', path: '/ws/tests/test_ledger.py' } as ModuleIR)).toBe('ledger');
+    expect(testSubject({ language: 'python', path: '/ws/tests/ledger_test.py' } as ModuleIR)).toBe('ledger');
+    expect(testSubject({ language: 'php', path: '/ws/tests/LedgerTest.php' } as ModuleIR)).toBe('Ledger');
+  });
+
+  it('flags a Python test that patches its own subject class', () => {
+    const m = testModule({
+      path: '/ws/tests/test_ledger.py',
+      language: 'python',
+      mocks: [mock({ id: 'self', target: { kind: 'class', exportName: 'Ledger', span: sp(FILE, 5) } })],
+    });
+    expect(runRules(mock002, ctx(m))).toHaveLength(1);
+  });
+
+  it('flags a Rust test module that mocks a struct declared in the same file', () => {
+    const m = testModule({
+      path: '/ws/src/foo.rs',
+      language: 'rust',
+      symbols: [
+        {
+          id: '/ws/src/foo.rs#Foo',
+          name: 'Foo',
+          kind: 'class',
+          span: sp('/ws/src/foo.rs', 1),
+          members: [],
+          extendsIds: [],
+          implementsIds: [],
+        },
+      ],
+      mocks: [mock({ id: 'self', target: { kind: 'class', exportName: 'Foo', span: sp('/ws/src/foo.rs', 30) } })],
+    });
+    expect(runRules(mock002, ctx(m))).toHaveLength(1);
   });
 });
