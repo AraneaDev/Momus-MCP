@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.7](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.6...v0.0.7) (2026-08-17)
+
+
+### Features
+
+* close mockall TAUT-005 false positives + src-layout DRIFT-005 fix ([0532694](https://github.com/AraneaDev/Momus-MCP/commit/0532694e7bdd078bd33466fce9674c1a5a530a31))
+* close mockall TAUT-005 false positives, fix src-layout DRIFT-005 ([c0177db](https://github.com/AraneaDev/Momus-MCP/commit/c0177db05f83b2b28bc67f7e1fb8834811677599))
+
 ## [0.0.6](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.5...v0.0.6) (2026-08-17)
 
 
