@@ -1,12 +1,13 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-18 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; **four language families at parity — TypeScript/PHP/Python/Rust** (shared 14-rule catalog, pyright `--createstub` inference for unannotated Python DRIFT-002/003, cross-language MOCK-002/DRIFT-005/TAUT-006, 4-language `synthesize_mock_contract`), 7 packages lockstep at 0.0.6 — release-please, persistent IR cache, ESLint+Prettier, coverage tooling — full gate green (501 tests), typecheck/lint/format clean, self-audit clean. Rust reachability follow-up (mockall 11 → 5 genuine TAUT-005 warnings) + flask dogfood (0 issues, src-layout DRIFT-005 fix) landed; agent-tool-surface spec (`docs/superpowers/specs/2026-08-18-agent-tool-surface-design.md`) written, awaiting plan+implementation.
+**Date:** 2026-08-18 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; **four language families at parity — TypeScript/PHP/Python/Rust** (shared 14-rule catalog, pyright `--createstub` inference for unannotated Python DRIFT-002/003, cross-language MOCK-002/DRIFT-005/TAUT-006, 4-language `synthesize_mock_contract`; Rust TAUT-005 reachability closed to 5 genuine warnings; Python src-layout DRIFT-005 resolution fixed), 7 packages lockstep at 0.0.7 — release-please, persistent IR cache, ESLint+Prettier, coverage tooling — full gate green (501 tests), typecheck/lint/format clean, self-audit clean. Agent-tool-surface spec (`docs/superpowers/specs/2026-08-18-agent-tool-surface-design.md`) written, awaiting plan+implementation.
 **Next session: Phase 4 distribution stays pending credentials; optional hardening (CI lint/format wiring, perf-budget asserts, incremental `ts.createWatchProgram`).**
 
 ## Current checkpoint — 2026-08-18
 
-- **Last verified (follow-ups round — in flight, branch `feat/agent-tool-surface`):** from the
-  parity release, three follow-ups are underway. (1) **Agent tool surface spec written and
+- **Last verified (follow-ups round):** from the parity release, three follow-ups: the two
+  dogfood/parser work items shipped in **v0.0.7** (see the bullet below); the agent-tools spec is
+  committed on `feat/agent-tool-surface` awaiting review. Details: (1) **Agent tool surface spec written and
   committed** (`docs/superpowers/specs/2026-08-18-agent-tool-surface-design.md` on
   `feat/agent-tool-surface`): six new MCP tools (`explain_issue`, `preview_issue_fix`,
   `apply_issue_fix` — the only writer, two-phase one-issue-at-a-time with a stale-span guard —
@@ -29,6 +30,12 @@
   silently degraded DRIFT-005. Fixed with a per-ancestor `src/` fallback + fixtures;
   flask + httpx re-audit at 0. Full gate green: **501 tests**, typecheck/lint/format clean,
   self-audit CLEAN (107 files).
+- **Last verified (0.0.7 released):** PR #17 (`feat: close mockall TAUT-005 false positives +
+  src-layout DRIFT-005 fix`) merged to main (all 4 gates green), release-please opened PR #18
+  (`chore(main): release 0.0.7`) which merged and cut **v0.0.7** tag + GitHub Release
+  (2026-08-18) — 7 packages lockstep. The release-PR CI dispatch hit the known
+  `action_required`-with-0-jobs quirk again (GITHUB_TOKEN-opened PRs don't fire runs); recovered
+  via `gh run rerun` — no config change needed. Main CI + Release Please green after the merge.
 - **Last verified (0.0.6 released):** PR #14 (`feat: four-language parity`) merged to main (all 4
   gates green), release-please opened PR #15 (`chore(main): release 0.0.6`) which merged and cut
   **v0.0.6** tag + GitHub Release (2026-08-17) — 7 packages lockstep. The release-PR CI dispatch hit
