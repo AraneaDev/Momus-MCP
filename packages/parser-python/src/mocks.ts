@@ -11,6 +11,7 @@ import type {
 } from '@momus/core';
 import { span } from '@momus/core';
 import { childField, end, start, textOf, walk, type SyntaxNode } from './tree.ts';
+import { resolvePythonImport } from './resolve.ts';
 
 export interface PythonMockState {
   mocks: MockIR[];
@@ -108,11 +109,15 @@ function makeMock(file: string, call: SyntaxNode): { mock: MockIR } | null {
   }
   if (last === 'patch') {
     const spec = stringArg(args, 0);
+    // `patch('mod.attr')` patches an attribute of a module; resolve the module part so
+    // DRIFT-005 can check the attr against the module's exports.
+    const modulePart = spec ? spec.split('.').slice(0, -1).join('.') : '';
+    const modulePath = modulePart ? (resolvePythonImport(modulePart, file) ?? undefined) : undefined;
     const mock = baseMock(
       file,
       call,
       'patch',
-      spec ? { kind: 'module', specifier: spec, span: nodeSpan(file, args ?? call) } : undefined,
+      spec ? { kind: 'module', specifier: spec, modulePath, span: nodeSpan(file, args ?? call) } : undefined,
       framework,
     );
     return { mock };

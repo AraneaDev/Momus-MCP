@@ -563,6 +563,28 @@ export class Drift005MissingExport extends DriftRule {
   check(ctx: RuleContext): Issue[] {
     const { module, index } = ctx;
     const out: Issue[] = [];
+    // Python `patch('mod.attr')`: the patched attribute must exist on the resolved module.
+    if (module.language === 'python') {
+      for (const m of module.mocks) {
+        if (!diffRelevant(ctx, m)) continue;
+        if (m.target?.kind !== 'module' || !m.target.modulePath || !m.target.specifier) continue;
+        const target = index.getModule(m.target.modulePath);
+        if (!target) continue; // module not indexed (stdlib/third-party etc.)
+        const attr = m.target.specifier.split('.').pop() ?? '';
+        if (attr && !target.exports.includes(attr)) {
+          out.push(
+            issue(
+              { module, index } as RuleContext,
+              this.id,
+              this.defaultSeverity,
+              m.span,
+              `missing-export: '${m.target.specifier}' does not resolve to a real attribute`,
+            ),
+          );
+        }
+      }
+      return out;
+    }
     for (const m of module.mocks) {
       if (!diffRelevant(ctx, m)) continue;
       if (m.target?.kind !== 'module' || !m.target.modulePath) continue;
