@@ -4,7 +4,14 @@ import { span } from '@momus/core';
 import { childField, end, start, textOf, walk, type SyntaxNode } from './tree.ts';
 import { dottedPath, resolveMockName, type PythonMockState } from './mocks.ts';
 
-const CALL_ASSERTIONS = new Set(['assertEqual', 'assertNotEqual', 'assertTrue', 'assertFalse', 'assertIs', 'assertIsNot']);
+const CALL_ASSERTIONS = new Set([
+  'assertEqual',
+  'assertNotEqual',
+  'assertTrue',
+  'assertFalse',
+  'assertIs',
+  'assertIsNot',
+]);
 
 export function extractAssertions(root: SyntaxNode, file: string, state: PythonMockState): AssertionIR[] {
   const fnSpans = testFnSpans(root, file);
@@ -90,7 +97,14 @@ function assertionFromCall(
 
 function exprIR(node: SyntaxNode, file: string, state: PythonMockState): ExprIR {
   const text = textOf(node);
-  if (node.type === 'integer' || node.type === 'float' || node.type === 'string' || node.type === 'true' || node.type === 'false' || node.type === 'none') {
+  if (
+    node.type === 'integer' ||
+    node.type === 'float' ||
+    node.type === 'string' ||
+    node.type === 'true' ||
+    node.type === 'false' ||
+    node.type === 'none'
+  ) {
     return { kind: 'literal', text, mockRefs: [], provenance: 'literal', constant: true };
   }
   const access = mockAccess(node, state);
@@ -140,7 +154,13 @@ function markReachableMocks(root: SyntaxNode, file: string, state: PythonMockSta
     if (!node.isNamed || node.type !== 'call') return;
     const path = dottedPath(childField(node, 'function'));
     // Skip mock-factory calls (Mock(...), patch(...)) and mock-member config calls (m.method()).
-    if (path.length === 0 || isMockFactory(path) || path[path.length - 1] === 'return_value' || path[path.length - 1] === 'side_effect') return;
+    if (
+      path.length === 0 ||
+      isMockFactory(path) ||
+      path[path.length - 1] === 'return_value' ||
+      path[path.length - 1] === 'side_effect'
+    )
+      return;
     const args = childField(node, 'arguments');
     for (const arg of args?.namedChildren ?? []) {
       if (arg.type === 'keyword_argument') continue;
@@ -159,7 +179,8 @@ function markReachableMocks(root: SyntaxNode, file: string, state: PythonMockSta
 
 function isMockFactory(path: string[]): boolean {
   const last = path[path.length - 1] ?? '';
-  if (last === 'Mock' || last === 'MagicMock' || last === 'AsyncMock' || last === 'create_autospec' || last === 'patch') return true;
+  if (last === 'Mock' || last === 'MagicMock' || last === 'AsyncMock' || last === 'create_autospec' || last === 'patch')
+    return true;
   if (last === 'object' && path[path.length - 2] === 'patch') return true;
   if (last === 'setattr' && path[path.length - 2] === 'monkeypatch') return true;
   return false;

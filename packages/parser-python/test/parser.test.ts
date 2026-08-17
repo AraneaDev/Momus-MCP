@@ -36,10 +36,7 @@ describe('PythonParser symbols', () => {
     const load = repo.members.find((m) => m.name === 'load')!;
     expect(load.signature!.returnType).toEqual({
       kind: 'union',
-      members: [
-        { kind: 'named', name: 'Item', typeArgs: [] },
-        { kind: 'null' },
-      ],
+      members: [{ kind: 'named', name: 'Item', typeArgs: [] }, { kind: 'null' }],
     });
 
     const helper = mod.symbols.find((s) => s.name === 'helper')!;

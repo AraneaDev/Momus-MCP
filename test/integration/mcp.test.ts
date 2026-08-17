@@ -429,3 +429,52 @@ describe('Momus MCP server (PHP language selection)', () => {
     expect(sc.result.summary.members).toBe(7);
   });
 });
+
+describe('Momus MCP server (Python language selection)', () => {
+  let client: Client;
+  let cleanup: () => Promise<void>;
+  const PY_FIXTURES = join(
+    dirname(fileURLToPath(import.meta.url)),
+    '..',
+    '..',
+    'packages',
+    'parser-python',
+    'test',
+    'fixtures',
+    'drift',
+  );
+
+  beforeAll(async () => {
+    const pair = InMemoryTransport.createLinkedPair();
+    const config = {
+      ...DEFAULT_CONFIG,
+      languages: { typescript: false, php: false, python: true },
+      cache: { dir: '.momus/cache', enabled: false },
+    };
+    const server = createMomusServer({ root: PY_FIXTURES, config });
+    cleanup = () => server.close();
+    await server.connect(pair[0]);
+    client = new Client({ name: 'momus-python-test', version: '1.0.0' }, { capabilities: {} });
+    await client.connect(pair[1]);
+  });
+
+  afterAll(async () => {
+    await cleanup();
+  });
+
+  it('routes Python audits through the composite parser', async () => {
+    const res = await client.callTool({ name: 'verify_mock_drift', arguments: {} });
+    expect(res.isError).toBeFalsy();
+    const sc = res.structuredContent as { result: { issues: Array<{ rule: string }> } };
+    expect(sc.result.issues.some((issue) => issue.rule === 'DRIFT-001')).toBe(true);
+    expect(sc.result.issues.some((issue) => issue.rule === 'DRIFT-003')).toBe(true);
+  });
+
+  it('detect_tautological_assertions surfaces the zero-reach stub', async () => {
+    const res = await client.callTool({ name: 'detect_tautological_assertions', arguments: {} });
+    expect(res.isError).toBeFalsy();
+    const sc = res.structuredContent as { result: { issues: Array<{ rule: string }> } };
+    expect(sc.result.issues.every((issue) => issue.rule.startsWith('TAUT'))).toBe(true);
+    expect(sc.result.issues.some((issue) => issue.rule === 'TAUT-005')).toBe(true);
+  });
+});

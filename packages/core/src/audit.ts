@@ -125,8 +125,7 @@ export class AuditEngine {
         module.hash = hash;
         cache?.put(f.path, hash, workspaceHash, module);
       }
-      if (module.language === 'typescript' && !this.config.languages.typescript) continue;
-      if (module.language === 'php' && !this.config.languages.php) continue;
+      if (!this.config.languages[module.language]) continue;
       if (module.kind === 'test') testModules.push(module);
       else production.push(module);
     }

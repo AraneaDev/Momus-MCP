@@ -30,4 +30,14 @@ describe('python drift rules', () => {
     );
     expect(healthyDrift).toHaveLength(0);
   });
+
+  it('skips Python modules entirely when the language gate is disabled', () => {
+    const result = new AuditEngine({
+      root: FIX,
+      parser: new CompositeParser([new PythonParser()]),
+      config: { ...DEFAULT_CONFIG, languages: { typescript: false, php: false, python: false } },
+    }).run();
+    expect(result.indexStats.symbols).toBe(0);
+    expect(result.issues).toHaveLength(0);
+  });
 });

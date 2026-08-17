@@ -127,7 +127,9 @@ function makeMock(file: string, call: SyntaxNode): { mock: MockIR } | null {
       file,
       call,
       'monkeypatch',
-      attr && obj ? { kind: 'instance-member', exportName: textOf(obj), memberName: attr, span: nodeSpan(file, obj) } : undefined,
+      attr && obj
+        ? { kind: 'instance-member', exportName: textOf(obj), memberName: attr, span: nodeSpan(file, obj) }
+        : undefined,
       framework,
     );
     return { mock };
@@ -135,7 +137,13 @@ function makeMock(file: string, call: SyntaxNode): { mock: MockIR } | null {
   return null;
 }
 
-function baseMock(file: string, node: SyntaxNode, pattern: MockIR['pattern'], target: MockTarget | undefined, framework: MockFramework): MockIR {
+function baseMock(
+  file: string,
+  node: SyntaxNode,
+  pattern: MockIR['pattern'],
+  target: MockTarget | undefined,
+  framework: MockFramework,
+): MockIR {
   return {
     id: `${file}#mock:${nodeLine(node)}:${nodeColumn(node)}`,
     span: nodeSpan(file, node),
@@ -263,7 +271,12 @@ export function valueIR(node: SyntaxNode): TypeIR | undefined {
 }
 
 /** Resolve a local variable name to the nearest mock bound at/above `node`'s line (scope-aware). */
-export function resolveMockName(state: PythonMockState, root: SyntaxNode, name: string, node: SyntaxNode): MockIR | undefined {
+export function resolveMockName(
+  state: PythonMockState,
+  root: SyntaxNode,
+  name: string,
+  node: SyntaxNode,
+): MockIR | undefined {
   const line = nodeLine(node);
   const scope = enclosingFunctionStart(root, line);
   return resolveBinding(state.bindings, scope, name, line);

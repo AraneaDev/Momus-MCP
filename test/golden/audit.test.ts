@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AuditEngine } from '@momus/core';
+import { AuditEngine, CompositeParser, DEFAULT_CONFIG } from '@momus/core';
 import { TypeScriptParser } from '@momus/parser-typescript';
+import { PythonParser } from '@momus/parser-python';
 
 const FIXTURES = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -70,6 +71,41 @@ describe('golden audit — planted violations fixture', () => {
 
   it('index contains the production classes', () => {
     expect(result.indexStats.symbols).toBeGreaterThanOrEqual(3); // Db, InvoiceRow, LedgerService
+  });
+});
+
+describe('golden audit — python drift fixtures', () => {
+  const PY = join(
+    dirname(fileURLToPath(import.meta.url)),
+    '..',
+    '..',
+    'packages',
+    'parser-python',
+    'test',
+    'fixtures',
+    'drift',
+  );
+  const result = new AuditEngine({
+    root: PY,
+    parser: new CompositeParser([new PythonParser()]),
+    config: { ...DEFAULT_CONFIG, languages: { typescript: false, php: false, python: true } },
+  }).run();
+
+  it('fires exactly the planted python drift + reachability findings', () => {
+    const found = result.issues.map((i) => `${i.rule}@${i.span.file.split('/').pop()}:${i.span.startLine}`).sort();
+    expect(found).toEqual([
+      'DRIFT-001@drift_test.py:6', // patch.object(Repo, "save2") — member does not exist
+      'DRIFT-003@drift_test.py:12', // price.return_value = "nope" not assignable to int
+      'TAUT-005@drift_test.py:11', // zero-reach stub
+      'TAUT-005@healthy_test.py:11', // zero-reach stub (annotated twin is drift-clean)
+    ]);
+  });
+
+  it('keeps the healthy annotated twin quiet on drift rules', () => {
+    const healthyDrift = result.issues.filter(
+      (i) => i.span.file.includes('healthy_test.py') && i.rule.startsWith('DRIFT'),
+    );
+    expect(healthyDrift).toEqual([]);
   });
 });
 

@@ -22,6 +22,7 @@
     "@momus/core": "~0.0.1",
     "@momus/mcp-server": "~0.0.1",
     "@momus/parser-php": "~0.0.1",
+    "@momus/parser-python": "~0.0.1",
     "@momus/parser-typescript": "~0.0.1"
   },
   "devDependencies": {

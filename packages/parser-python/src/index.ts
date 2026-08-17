@@ -1,11 +1,5 @@
 /** Python parser plugin: tree-sitter AST -> language-neutral Momus IR (mocks/assertions land in later tasks). */
-import type {
-  ImportIR,
-  LanguageParser,
-  MockFramework,
-  ModuleIR,
-  ParseContext,
-} from '@momus/core';
+import type { ImportIR, LanguageParser, MockFramework, ModuleIR, ParseContext } from '@momus/core';
 import { parsePython, childField, textOf, walk, type SyntaxNode } from './tree.ts';
 import { extractSymbols } from './symbols.ts';
 import { extractMocks } from './mocks.ts';
@@ -123,7 +117,7 @@ function importFrom(node: SyntaxNode, file: string): ImportIR {
     const local = localName(child) ?? moduleText(child) ?? '';
     if (local) names.push(local);
   }
-  return { specifier: mod, names, resolvedPath: mod ? resolvePythonImport(mod, file) ?? undefined : undefined };
+  return { specifier: mod, names, resolvedPath: mod ? (resolvePythonImport(mod, file) ?? undefined) : undefined };
 }
 
 /** The dotted module path of a `dotted_name` node (or the name inside an `aliased_import`). */

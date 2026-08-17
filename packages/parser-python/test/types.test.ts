@@ -11,17 +11,11 @@ describe('parseAnnotation', () => {
   it('unions and optionals', () => {
     expect(parseAnnotation('int | None')).toEqual({
       kind: 'union',
-      members: [
-        { kind: 'named', name: 'int', typeArgs: [] },
-        { kind: 'null' },
-      ],
+      members: [{ kind: 'named', name: 'int', typeArgs: [] }, { kind: 'null' }],
     });
     expect(parseAnnotation('Optional[int]')).toEqual({
       kind: 'union',
-      members: [
-        { kind: 'named', name: 'int', typeArgs: [] },
-        { kind: 'null' },
-      ],
+      members: [{ kind: 'named', name: 'int', typeArgs: [] }, { kind: 'null' }],
     });
   });
 
@@ -45,10 +39,7 @@ describe('parseAnnotation', () => {
     expect(parseAnnotation('"Item"')).toEqual({ kind: 'named', name: 'Item', typeArgs: [] });
     expect(parseAnnotation('"Item | None"')).toEqual({
       kind: 'union',
-      members: [
-        { kind: 'named', name: 'Item', typeArgs: [] },
-        { kind: 'null' },
-      ],
+      members: [{ kind: 'named', name: 'Item', typeArgs: [] }, { kind: 'null' }],
     });
   });
 
