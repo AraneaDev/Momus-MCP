@@ -212,14 +212,21 @@ Brings all four language families to the same level (design in
   `.venv`/`__pycache__`/`target`.
 - **Rust reachability** — bounded TAUT-005 fix: wrapper re-bindings and by-value consumption
   count as reachable, so mockall's receiver-wrapper/by-value warnings drop (11 → documented
-  genuine boundaries).
+  genuine boundaries). Follow-up pass (2026-08-18): `unsafe`-block descent, `&mock` referents,
+  UFCS/trait-qualified receivers (`Foo::foo(&mock)`, `<Mock as Foo>::foo(&mock, 4)`), and
+  `#[should_panic]` drop-panic assertions (`TestFnIR.shouldPanic`/`MockIR.fnId`, IR schema 8)
+  clear 6 more false positives — mockall stands at **5 warnings, 0 errors**, the genuine
+  cfg-gated/configured-unused set (docs/11 rows 55, §4d).
 - **Cross-language rules** — MOCK-002 mock-of-self generalized to a per-language subject
   derivation; Python DRIFT-005 (missing patched attribute) and Python/PHP TAUT-006
   (unconfigured `assert_called*`/Mockery `spy()`) shipped; `DRIFT-004` stays PHP-only
   (constructors are compiler-checked elsewhere).
 - **Python depth** — `pyright` CLI `--createstub` inference (the in-process `pyright-internal`
   API is unpublished) resolves unannotated return types into `SignatureIR`, so DRIFT-002/003
-  fire on unannotated code like TS/Rust; degrades to annotations-only on any failure.
+  fire on unannotated code like TS/Rust; degrades to annotations-only on any failure. Dogfood
+  (flask, 83 files) verified end-to-end and found/fixed a real gap: `resolvePythonImport` now
+  probes `src/` (src-layout) so DRIFT-005 fires for `patch('pkg.mod.missing')` on
+  flask/django/httpx-style repos (docs/11 §4e, row 56).
 - **Synthesis** — `synthesize_mock_contract` gained `pytest`/`unittest` (Python) and
   `mockall`/`mockito`/`wiremock` (Rust) templates, completing the four-language framework enum.
 

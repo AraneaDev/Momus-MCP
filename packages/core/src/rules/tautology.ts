@@ -180,11 +180,14 @@ export class Taut005ZeroReachStub extends BaseRule {
   check({ module }: RuleContext): Issue[] {
     const out: Issue[] = [];
     const asserted = new Set<string>();
+    const fns = new Map(module.functions.map((f) => [f.id, f]));
     for (const a of module.assertions) for (const o of a.operands) for (const m of o.mockRefs) asserted.add(m);
     for (const mock of module.mocks) {
       if (mock.configuredValues.length === 0 && mock.stubbedMembers.every((s) => s.returnValues.length === 0)) continue;
       if (mock.invocationSites.length > 0) continue;
       if (asserted.has(mock.id)) continue;
+      // A #[should_panic] test asserts the drop-time panic — the un-invoked expectation is the point.
+      if (mock.fnId ? fns.get(mock.fnId)?.shouldPanic : false) continue;
       out.push(
         issue(
           { module } as RuleContext,

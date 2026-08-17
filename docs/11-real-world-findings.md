@@ -5,7 +5,7 @@
 > reports about those codebases and (b) the bugs we found in Momus while doing so.
 > Non-normative (see `docs/README`).
 
-**Last updated:** 2026-08-17
+**Last updated:** 2026-08-18
 
 ## 1. Targets
 
@@ -16,6 +16,7 @@
 | `Momus-MCP` (self) | TypeScript + PHP | 59 audited files | Vitest | `.momusrc` (fixtures excluded) |
 | `psf/requests` (dogfood clone at `/tmp/requests-dogfood`) | Python | 35 files, 13 test files | pytest + unittest.mock (live test server) | temp `.momusrc` → `{languages:{python:true}}` |
 | `asomers/mockall` (dogfood clone at `/tmp/mockall-dogfood`) | Rust | 188 `.rs` files, 172 under `tests/` | mockall's own `#[automock]`/`mock!` + `#[test]`/`#[cfg(test)]` | temp `.momusrc` → `{languages:{rust:true}}` |
+| `pallets/flask` (dogfood clone at `/tmp/flask-dogfood`) | Python (src-layout) | 83 files, 3,000+ LOC under `tests/` | pytest (fixture-based; planted `unittest.mock` probes for the rules) | temp `.momusrc` → `{languages:{python:true}}` |
 
 ## 2. Bugs found in Momus (and fixed)
 
@@ -73,8 +74,9 @@
 | 50 | *(mutation testing, glob)* | `matchGlob` normalized backslashes in the **pattern** only, never the **path** — the old "normalizes windows separators" test passed by accident (backslashes are just non-slash chars, so `**` swallowed them whole), so `matchGlob('src/a.ts', 'src\\a.ts')` returned `false` | `matchGlob` now normalizes both sides; regression tests cover path + pattern normalization (found by a Stryker `StringLiteral` survivor on the `pattern.replace(/\\/g, '/')` line) |
 | 51 | *(dogfood, requests)* | Python assertion extraction was **quadratic**: `enclosingFunctionStart` walked the whole tree on every operand lookup (every assertion operand and call argument re-walked the tree) | `test_requests.py` (3,094 lines, 353 assertions) parsed in 12.2s — SYS-004 over the 2s budget; whole-workspace audit 15.4s. A line→scope map is now precomputed once per file (one walk → O(1) lookups): single-file parse 146ms, cold workspace audit 0.9s; regression test pins a 300-fn/600-assert suite under 5s |
 | 52 | *(dogfood, mockall)* | Rust mock `invocationSites` were **never populated**, so every `expect_*().returning()` config read as zero-reach (TAUT-005) | `MockFoo::new()` now binds to its variable (incl. `Box`/`Arc`/`Rc`/`Pin` wrappers) and records a call site on any non-`expect_*` method invocation; field/deref/paren wrappers recurse (`*m.foo().0`). 100+ false TAUT-005 → 0 |
-| 53 | *(dogfood, mockall)* | a `mock!` macro **and** `MockFoo::new()` both emitted a `MockIR`, and bare names resolved through the wrong-file global fallback | one mock per `MockFoo::new()`; `mock! { impl Trait for Foo }` maps to trait `Trait`, inherent-only `mock! { Foo { .. } }` to no target; the audit engine resolves the bare `exportName` against production (TS/PHP precedent). False DRIFT-001 → 0 |
 | 54 | *(dogfood, mockall)* | `tests/` integration tests (incl. compile-only, no `#[test]`) were indexed as **production**, polluting the symbol graph | paths under `tests/` are now classified as test files. 17 false errors → 0 |
+| 55 | *(dogfood, mockall 2nd pass)* | Rust `invocationSites` still missed three real invocation shapes: `unsafe { mock.bar(…) }` blocks (execution-time code) were not descended into, `syn::Expr::Reference` (`&mock`) was serialized without its referent so `&mock` never resolved as a receiver/arg, and trait-qualified/UFCS calls (`Foo::foo(&mock)`, `<Mock as Foo>::foo(&mock, 4)`) never recorded — plus TAUT-005 fired on `#[should_panic]` tests whose drop-panic **is** the assertion | 6 false TAUT-005 warnings on mockall (`mock_refmut_arguments`, `automock_impl_trait_for`, `automock_impl_generic_trait_for`, `automock_trait_variant`, `mock_trait_variant`, `automock_many_args`). Now: blocks/unsafe serialize their statements, `Reference` renders its referent, qualified-path callees keep the `<Ty as Trait>::` prefix, first-arg receivers mark the mock reached, and `TestFnIR.shouldPanic` + `MockIR.fnId` (IR schema 8) suppress TAUT-005 inside panic tests. 11 → 5 |
+| 56 | *(dogfood, flask)* | `resolvePythonImport` never probed a `src/` ancestor (src-layout), so `patch('flask.sessions.X')` on flask/httpx/django-style repos never resolved `modulePath` and DRIFT-005 **silently degraded** (module target skipped, no issue) | `src/` is now probed at each ancestor alongside the flat layout; planted `patch('flask.sessions.NonexistentSessionAttr')` fires a DRIFT-005 error on the real flask clone, the healthy twin (`existing_attr`) stays quiet, and the clean flask/httpx baselines unchanged (0 issues) |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -162,23 +164,49 @@ full audit of mockall's **own test suite** (188 `.rs` files, 172 under `tests/`)
   TAUT-005), double-`MockIR` emission for `mock!` + `MockFoo::new()` (false DRIFT-001), and
   `tests/` integration tests indexed as production (17 false errors). Result: **265 issues
   (17 errors) → 16 warnings, 0 errors.**
-- **Remaining 16 TAUT-005 warnings — all on mockall's codegen edge cases, none are errors,**
-  and none are false DRIFT/TAUT-001 positives. They fall into three documented static-analysis
-  boundaries:
-  1. **Receiver-wrapper re-bindings** (`automock_auto_impl.rs:28`
-     `let boxed: Box<dyn Foo> = Box::new(mock); assert_eq!(5, boxed.foo(4))`;
-     `mock_box_self.rs` `Arc::new(mock).bean()` / `Rc::new(mock).blez()` /
-     `Pin::new(Box::new(mock)).booz()`) — the method is invoked on a re-cast/wrapper value, not
-     the bound variable, so the invocation isn't traced to the stub.
-  2. **By-value consumption** (`automock_generic_future.rs` `block_on(mock)` — `poll()` is
-     driven inside the future executor, not called on the variable directly).
-  3. **cfg-gated compile-only tests** (`mock_cfg.rs` `#[cfg(feature = "nightly")]` variants
-     configure `expect_foo()`/`expect_beez()` but never invoke them — the test only checks the
-     proc-macro codegen compiles). These are arguably *true* zero-reach (the stub genuinely is
-     never called) but are compile-checks, not behavior assertions.
+- **Status after the bounded reachability fix (row 55, IR schema 8): 11 → 5 warnings, 0 errors.**
+  The fixed shapes were all real invocation patterns the walker missed, now covered and pinned by
+  parser + rule tests:
+  1. **UFCS / trait-qualified receivers** (`automock_impl_trait_for.rs:22`
+     `<MockSomeStruct as Foo>::foo(&mock, 4)`; `automock_impl_generic_trait_for.rs:24`;
+     `automock_trait_variant.rs:84` / `mock_trait_variant.rs:86` `Foo::foo(&mock)` under
+     `block_on(…)`) — first-arg receiver calls on a bound mock now count as invocations.
+  2. **`unsafe` blocks** (`mock_refmut_arguments.rs:45` — `unsafe { mock.bar(…) }` is
+     execution-time code, not cfg-dead) — block/unsafe statements are now descended into.
+  3. **`#[should_panic]` tests** (`automock_many_args.rs:30` `not_yet_satisfied`: configures
+     `expect_foo().times(1)` and intentionally never invokes — the drop-time panic is the
+     assertion) — TAUT-005 is suppressed inside should-panic tests (`TestFnIR.shouldPanic`).
+- **Remaining 5 TAUT-005 warnings — the genuine zero-reach set, kept on purpose:**
+  1. **cfg-gated compile-only tests** (`mock_cfg.rs:38,46,54,62` — `#[cfg(feature = "nightly")]`
+     and its `not` twin configure `expect_foo()`/`expect_beez()` and never invoke them; the
+     test only checks the proc-macro codegen compiles, and momus cannot evaluate `cfg` features).
+  2. **A configured-but-unused mock in a real test** (`mock_struct.rs:125` `one_match` — a
+     second mock `mock1` is configured with two `.with(eq(…))` expectations and never called;
+     mockall's default times semantics make the test pass, so it is a textually-true
+     zero-reach stub). These are warnings, never errors, and they are the honest boundary
+     (docs/03 §3.3.1 TAUT-005): suppressing them would hide real dead config.
 - **`mock!` DSL:** mockall's `mock!`/`#[automock]` are proc-macros, so `syn` sees the invocation,
   not the generated mock — the parser hand-models the `mock!` token stream and resolves the
-  target trait from the crate index (see spec §4). Verified against the full `tests/` corpus.
+  target trait from the crate graph (see crate spec). Verified against the full `tests/` corpus.
+
+## 4e. Findings about `pallets/flask` (Python — second Python dogfood, parity round)
+
+Cloned to `/tmp/flask-dogfood` (temp `.momusrc` → `{languages:{python:true}}`), full audit of
+flask's own repo (**83 files, 3,000+ LOC of pytest tests**, src-layout package under `src/flask/`).
+
+- **Baseline: 0 issues, 0 false positives** on 83 real files — the pyright-inference path (DRIFT-002/003
+  on unannotated code), TAUT detection, and DRIFT-005 all stayed quiet on genuine, healthy tests.
+- **Planted-probe verification** (throwaway test deleted after the run) proved every new rule fires
+  end-to-end on the real repo: `patch('flask.sessions.NonexistentSessionAttr')` → DRIFT-005 error,
+  `MagicMock()` + `assert_called_once()` with no stub → TAUT-006, `side_effect`-configured mock
+  never invoked → TAUT-005, mock-only assertion → TAUT-004.
+- **Real bug found (row 56):** the planted DRIFT-005 probe *didn't fire* before the fix — flask is
+  **src-layout** (`src/flask/…`), and `resolvePythonImport` only searched ancestors of the test file
+  for flat layouts, so `flask.sessions` never resolved and the module-target check silently
+  degraded. `src/` is now probed at each ancestor; the planted probe fires (error), the healthy
+  twin (`existing_attr`) is quiet, and both baselines (flask + httpx) re-audit at 0 issues.
+  *Boundary:* third-party/venv targets stay unresolved (SYS-003) — the `src/` fallback is
+  workspace-local by design.
 
 ## 5. Open / candidate improvements
 
@@ -341,3 +369,13 @@ full audit of mockall's **own test suite** (188 `.rs` files, 172 under `tests/`)
     the total audit stayed 5647ms. This is the documented cost of subprocess inference (the
     in-process `pyright-internal` API is unpublished), not a regression. PHP/TS baselines (Knossos /
     Chaos) re-audited unchanged.
+29. ✅ mockall third pass (row 55, IR schema 8): after the bounded reachability fix, **11 → 5**
+    TAUT-005 warnings — 6 false positives cleared (UFCS/trait-qualified receivers ×4, `unsafe`-block
+    descent ×1, `#[should_panic]` drop-panic assertion ×1) by serializer + walker upgrades
+    (`Reference` referent, block/unsafe statements, qualified-path callees) and rule-level
+    should-panic suppression (`TestFnIR.shouldPanic` + `MockIR.fnId`). The remaining 5 are the
+    genuine set (4 cfg-gated compile-only + 1 configured-but-unused mock), kept as honest warnings.
+30. ✅ flask dogfood (row 56): 83 files, **0 issues / 0 false positives** on real code; planted
+    probes verified DRIFT-005/TAUT-004/005/006 fire end-to-end — and the DRIFT-005 probe exposed a
+    real gap: **src-layout resolution** (`resolvePythonImport` never probed `src/`), now fixed with
+    a per-ancestor `src/` fallback + fixtures + regression tests. flask + httpx re-audited at 0.

@@ -10,7 +10,7 @@ import type { Language } from './languages.ts';
  * invalidates cached modules even when the audited workspace is unchanged. Bump whenever the
  * ModuleIR shape or any parser's extraction changes in a way that would make cached IR stale.
  */
-export const IR_SCHEMA_VERSION = '7'; // 7: Mockery spy pattern ('mockery-spy') for PHP TAUT-006
+export const IR_SCHEMA_VERSION = '8'; // 8: TestFnIR.shouldPanic + MockIR.fnId (Rust should-panic reach)
 
 export type { Language };
 export type Severity = 'error' | 'warning' | 'info';
@@ -100,6 +100,8 @@ export interface TestFnIR {
   hasProductionCalls: boolean;
   productionCallCount: number;
   assertionCount: number;
+  /** Rust: the fn carries `#[should_panic]` — the drop-time panic is the assertion (TAUT-005). */
+  shouldPanic?: boolean;
 }
 
 // ---------------------------------------------------------------- symbols
@@ -196,6 +198,8 @@ export interface MockIR {
   configuredValues: ConfiguredValueIR[];
   invocationSites: SourceSpan[];
   isAutomock: boolean;
+  /** Enclosing test fn id (TestFnIR.id) when the mock is created inside one. */
+  fnId?: string;
   /** PHP constructor arguments supplied when original construction is explicitly enabled. */
   constructorArgs?: { count: number; span: SourceSpan };
 }

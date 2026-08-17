@@ -27,4 +27,16 @@ describe('extractTestFunctions', () => {
     expect(fns).toHaveLength(1);
     expect(fns[0]!.assertionCount).toBe(2);
   });
+
+  it('flags #[should_panic] test functions', () => {
+    const file = parseRust(`#[test]\n#[should_panic(expected = "fails as designed")]\nfn a() { assert_eq!(1, 1); }\n`);
+    const fns = extractTestFunctions(file, '/c/src/t.rs');
+    expect(fns[0]!.shouldPanic).toBe(true);
+  });
+
+  it('leaves shouldPanic false for ordinary tests', () => {
+    const file = parseRust(`#[test]\nfn a() { assert_eq!(1, 1); }\n`);
+    const fns = extractTestFunctions(file, '/c/src/t.rs');
+    expect(fns[0]!.shouldPanic).toBe(false);
+  });
 });

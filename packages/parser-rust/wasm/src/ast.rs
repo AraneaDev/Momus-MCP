@@ -322,9 +322,24 @@ fn expr(e: &syn::Expr) -> Value {
             "receiver": expr(p.expr.as_ref()),
             "span": span_of(e),
         }),
-        syn::Expr::Reference(_r) => json!({
+        syn::Expr::Reference(r) => json!({
             "kind": "other",
             "text": text,
+            // Preserve the referent so `&mock` args remain walkable (trait-qualified receivers).
+            "receiver": expr(r.expr.as_ref()),
+            "span": span_of(e),
+        }),
+        syn::Expr::Block(b) => json!({
+            "kind": "block",
+            "text": text,
+            "stmts": block_exprs(&b.block),
+            "span": span_of(e),
+        }),
+        syn::Expr::Unsafe(u) => json!({
+            "kind": "block",
+            "text": text,
+            // Unsafe blocks execute at runtime — descend so `unsafe { mock.foo() }` counts.
+            "stmts": block_exprs(&u.block),
             "span": span_of(e),
         }),
         _ => json!({ "kind": "other", "text": text, "span": span_of(e) }),
@@ -333,8 +348,31 @@ fn expr(e: &syn::Expr) -> Value {
 
 fn callee_of(func: &syn::Expr) -> Value {
     match func {
-        syn::Expr::Path(p) => json!({ "kind": "path", "text": path_text(&p.path), "span": span_of(p) }),
+        syn::Expr::Path(p) => json!({
+            "kind": "path",
+            "text": callee_path_text(&p.path, p.qself.as_ref()),
+            "span": span_of(p),
+        }),
         _ => expr(func),
+    }
+}
+
+/// `<MockFoo as Foo<u32>>::foo` keeps its qualified prefix so the TS layer can recognise
+/// UFCS/trait-qualified invocations where the mock is the receiver argument.
+fn callee_path_text(p: &syn::Path, qself: Option<&syn::QSelf>) -> String {
+    if let Some(q) = qself {
+        let ty = q.ty.to_token_stream().to_string();
+        let segs: Vec<String> = p.segments.iter().map(|s| s.ident.to_string()).collect();
+        if let Some(_as) = &q.as_token {
+            let split = q.position.min(segs.len());
+            let trait_path = segs[..split].join("::");
+            let rest = segs[split..].join("::");
+            format!("<{} as {}>::{}", ty, trait_path, rest)
+        } else {
+            format!("<{}>::{}", ty, segs.join("::"))
+        }
+    } else {
+        path_text(p)
     }
 }
 

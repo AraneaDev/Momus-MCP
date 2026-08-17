@@ -34,7 +34,27 @@ describe('python drift rules', () => {
     expect(result.issues.some((i) => i.rule === 'DRIFT-005')).toBe(true);
   });
 
-  it('stays quiet on the healthy annotated twin (no drift findings)', () => {
+  it('DRIFT-005 resolves src-layout packages (`src/pkg/mod.py`) and fires on a missing attr', () => {
+    const fix = join(import.meta.dirname, 'fixtures', 'src-layout');
+    const result = new AuditEngine({
+      root: fix,
+      parser: new CompositeParser([new PythonParser()]),
+      config: { ...DEFAULT_CONFIG, languages: { typescript: false, php: false, python: true } },
+    }).run();
+    expect(result.issues.some((i) => i.rule === 'DRIFT-005' && i.message.includes('prod_missing.nope'))).toBe(true);
+  });
+
+  it('stays quiet patching a real src-layout attribute', () => {
+    const fix = join(import.meta.dirname, 'fixtures', 'src-layout');
+    const result = new AuditEngine({
+      root: fix,
+      parser: new CompositeParser([new PythonParser()]),
+      config: { ...DEFAULT_CONFIG, languages: { typescript: false, php: false, python: true } },
+    }).run();
+    expect(result.issues.some((i) => i.rule === 'DRIFT-005' && i.message.includes('existing_attr'))).toBe(false);
+  });
+
+  it('stays quiet on the healthy module twin (no drift findings)', () => {
     const result = engine().run();
     const healthyDrift = result.issues.filter(
       (i) => i.span.file.includes('healthy_test.py') && (i.rule === 'DRIFT-001' || i.rule === 'DRIFT-003'),

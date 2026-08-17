@@ -411,6 +411,59 @@ describe('TAUT-005 zero-reach-stub edges', () => {
     expect(issue.message).toContain('zero-reach');
     expect(issue.id).toContain('TAUT-005');
   });
+
+  it('stays quiet for a zero-reach mock inside a #[should_panic] test (drop-panic is the assertion)', () => {
+    const m = testModule({
+      functions: [
+        {
+          id: 'f1',
+          span: sp(FILE, 1),
+          hasProductionCalls: false,
+          productionCallCount: 0,
+          assertionCount: 0,
+          shouldPanic: true,
+        },
+      ],
+      mocks: [
+        mock({
+          id: 'm1',
+          fnId: 'f1',
+          stubbedMembers: [
+            {
+              name: 'foo',
+              span: sp(FILE, 5),
+              api: 'unknown',
+              returnValues: [{ span: sp(FILE, 5), api: 'returning', once: false, assignable: 'unknown' }],
+            },
+          ],
+        }),
+      ],
+    });
+    expect(runRules(rulesOf('TAUT-005'), ctx(m))).toHaveLength(0);
+  });
+
+  it('still flags a configured mock whose enclosing test fn is not should_panic', () => {
+    const m = testModule({
+      functions: [
+        { id: 'f1', span: sp(FILE, 1), hasProductionCalls: false, productionCallCount: 0, assertionCount: 0 },
+      ],
+      mocks: [
+        mock({
+          id: 'm1',
+          fnId: 'f1',
+          stubbedMembers: [
+            {
+              name: 'foo',
+              span: sp(FILE, 5),
+              api: 'unknown',
+              returnValues: [{ span: sp(FILE, 5), api: 'returning', once: false, assignable: 'unknown' }],
+            },
+          ],
+        }),
+      ],
+    });
+    expect(runRules(rulesOf('TAUT-005'), ctx(m))).toHaveLength(1);
+  });
 });
 
 describe('TAUT-006 unconfigured-spy-assert edges', () => {
