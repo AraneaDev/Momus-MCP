@@ -286,6 +286,34 @@ export class Drift003ReturnTypeMismatch extends DriftRule {
       }
       return out;
     }
+    if (module.language === 'python') {
+      // Python: the parser has no cross-file type checker (annotations are textual), so compare
+      // configured values against annotated production return types here (the PHP precedent).
+      for (const m of module.mocks) {
+        if (!diffRelevant(ctx, m)) continue;
+        if (!m.target?.symbolId) continue;
+        const members = index.membersOf(m.target.symbolId);
+        for (const stub of m.stubbedMembers) {
+          const prod = members.find((s) => s.name === stub.name);
+          if (!prod?.signature?.returnType) continue;
+          for (const v of stub.returnValues) {
+            if (!v.value) continue;
+            if (!pyReturnAssignable(v.value, prod.signature.returnType)) {
+              out.push(
+                issue(
+                  ctx,
+                  this.id,
+                  this.defaultSeverity,
+                  v.span,
+                  `return-type-mismatch: configured value does not match '${stub.name}'s production return type`,
+                ),
+              );
+            }
+          }
+        }
+      }
+      return out;
+    }
     for (const m of module.mocks) {
       if (!diffRelevant(ctx, m)) continue;
       for (const v of m.configuredValues) {
@@ -351,6 +379,46 @@ function phpReturnAssignable(value: TypeIR, production: TypeIR, index: SymbolInd
       return prodSym.id === valueSym.id;
     }
     return false;
+  }
+  return value.kind === production.kind;
+}
+
+/** Directional check for Python: configured value -> annotated production return type. */
+function pyReturnAssignable(value: TypeIR, production: TypeIR): boolean {
+  if (production.kind === 'unknown' || value.kind === 'unknown') return true; // escape hatch
+  if (production.kind === 'union') return production.members.some((m) => pyReturnAssignable(value, m));
+  if (value.kind === 'union') return value.members.every((m) => pyReturnAssignable(m, production));
+  const isVoid = production.kind === 'void';
+  if (isVoid) return value.kind === 'null' || value.kind === 'void';
+  if (value.kind === 'null') {
+    return production.kind === 'null' || (production.kind === 'named' && production.name === 'None');
+  }
+  if (production.kind === 'null') return false;
+  if (production.kind === 'named') {
+    const name = production.name;
+    if (name === 'Any' || name === 'object') return true;
+    if (name === 'int' || name === 'float') {
+      return value.kind === 'literal'
+        ? typeof value.value === 'number'
+        : value.kind === 'named' && (value.name === 'int' || value.name === 'float');
+    }
+    if (name === 'str') {
+      return value.kind === 'literal'
+        ? typeof value.value === 'string'
+        : value.kind === 'named' && value.name === 'str';
+    }
+    if (name === 'bool') {
+      return value.kind === 'literal'
+        ? typeof value.value === 'boolean'
+        : value.kind === 'named' && value.name === 'bool';
+    }
+    if (name === 'list' || name === 'dict' || name === 'tuple' || name === 'set' || name === 'frozenset') {
+      return value.kind === 'named' && value.name === name;
+    }
+    // class-like production type: literals/arrays never; identical names pass; unresolvable → conservative pass.
+    if (value.kind === 'literal' || value.kind === 'array') return false;
+    if (value.kind === 'named') return value.name === name;
+    return true;
   }
   return value.kind === production.kind;
 }

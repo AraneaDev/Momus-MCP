@@ -2,6 +2,10 @@
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, relative, isAbsolute, resolve } from 'node:path';
 import { anyMatch } from './glob.ts';
+import { allExtensions } from './languages.ts';
+
+/** Source-file extensions recognized for indexing, derived from the language registry. */
+const SOURCE_EXT = new RegExp(`[.](${allExtensions().join('|')})$`);
 
 export interface DiscoveredFile {
   path: string; // absolute
@@ -72,7 +76,7 @@ export function discoverFiles(opts: DiscoveryOptions): DiscoveryResult {
       }
       if (!e.isFile()) continue;
       const rel = relative(root, abs).replace(/\\/g, '/');
-      if (!isTest(rel) && !/\.(ts|tsx|js|jsx|mts|cts|php)$/.test(rel)) continue;
+      if (!isTest(rel) && !SOURCE_EXT.test(rel)) continue;
       let st;
       try {
         st = statSync(abs);

@@ -4,3 +4,6 @@ experiments/node_modules/
 **/.momus/cache/
 coverage/
 .stryker-tmp/
+.agents/
+.claude/
+skills-lock.json

@@ -1,4 +1,5 @@
 export * from './ir.ts';
+export * from './languages.ts';
 export * from './parser.ts';
 export * from './compositeParser.ts';
 export * from './config.ts';

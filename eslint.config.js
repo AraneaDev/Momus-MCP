@@ -16,6 +16,8 @@ export default tseslint.config(
       'syntax-only-fixtures/**',
       '**/test/golden/fixtures/**',
       'experiments/**',
+      '.agents/**',
+      '.claude/**',
       '.momus/**',
       '*.sqlite',
     ],

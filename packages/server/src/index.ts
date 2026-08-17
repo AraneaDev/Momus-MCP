@@ -33,6 +33,7 @@ import {
   promiseTypeArg,
 } from '@momus/parser-typescript';
 import { PhpParser } from '@momus/parser-php';
+import { PythonParser } from '@momus/parser-python';
 import { openParseCache } from './cache.ts';
 
 export { SqliteParseCache, openParseCache } from './cache.ts';
@@ -142,7 +143,7 @@ const SERVER_VERSION = (() => {
 export function createMomusServer(opts: MomusServerOptions): McpServer {
   const root = opts.root;
   const config = opts.config ?? loadConfig(root);
-  const parser = new CompositeParser([new TypeScriptParser(), new PhpParser()]);
+  const parser = new CompositeParser([new TypeScriptParser(), new PhpParser(), new PythonParser()]);
   const cache = opts.cache ?? openParseCache(root, config.cache);
   const server = new McpServer(
     { name: 'momus-mcp', version: SERVER_VERSION },
@@ -316,7 +317,7 @@ export async function serve(opts: MomusServerOptions): Promise<void> {
   await server.connect(new StdioServerTransport());
 }
 
-const SOURCE_RE = /\.(ts|tsx|js|jsx|mts|cts|mjs|php)$/i;
+const SOURCE_RE = /\.(ts|tsx|js|jsx|mts|cts|mjs|php|py)$/i;
 
 /**
  * Watch the workspace for source-file changes (spec docs/06 §6.5, Phase 3): every add/change/

@@ -11,7 +11,8 @@
       "additionalProperties": false,
       "properties": {
         "typescript": { "type": "boolean", "default": true },
-        "php": { "type": "boolean", "default": false }
+        "php": { "type": "boolean", "default": false },
+        "python": { "type": "boolean", "default": false }
       }
     },
     "testFilePatterns": { "type": "array", "items": { "type": "string" } },

@@ -1,5 +1,6 @@
 /** Language parser plugin contract (spec docs/02 §2.3.1). */
-import type { Language, ModuleIR } from './ir.ts';
+import type { ModuleIR } from './ir.ts';
+import type { Language } from './languages.ts';
 
 export interface ParseContext {
   config: unknown; // language-agnostic config slice

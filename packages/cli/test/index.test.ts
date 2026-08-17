@@ -9,6 +9,8 @@ import {
   buildAnnotateLines,
   phpReadiness,
   phpProjectSignals,
+  pythonReadiness,
+  pythonProjectSignals,
   runAudit,
   runDrift,
   runRules,
@@ -21,10 +23,11 @@ import { DEFAULT_CONFIG } from '@momus/core';
 const BIN = resolve(import.meta.dirname, '../../../node_modules/.bin/momus');
 
 describe('CLI workspace parser selection', () => {
-  it('claims both TypeScript and PHP files without executing the CLI entrypoint', () => {
+  it('claims TypeScript, PHP and Python files without executing the CLI entrypoint', () => {
     const parser = createWorkspaceParser();
     expect(parser.canParse('/workspace/tests/example.test.ts', '')).toBe(true);
     expect(parser.canParse('/workspace/tests/ExampleTest.php', '<?php')).toBe(true);
+    expect(parser.canParse('/workspace/tests/test_example.py', 'def test_it(): pass')).toBe(true);
   });
 
   it('dispatches PHP source to the PHP parser', () => {
@@ -653,6 +656,59 @@ describe('doctor PHP readiness', () => {
       writeFileSync(join(dir, 'src', 'Legacy.php'), '<?php class Legacy {}');
       const readiness = phpReadiness(dir, { ...DEFAULT_CONFIG, languages: { typescript: true, php: true } });
       expect(readiness).toMatch(/^enabled — 1 \.php file but no composer\.json/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('doctor Python readiness', () => {
+  it('reports Python off when the language gate is disabled', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-doctor-py-off-'));
+    try {
+      writeFileSync(join(dir, 'pyproject.toml'), '[project]\n');
+      writeFileSync(join(dir, 'example.py'), 'def f(): pass\n');
+      const readiness = pythonReadiness(dir, {
+        ...DEFAULT_CONFIG,
+        languages: { typescript: true, php: false, python: false },
+      });
+      expect(readiness).toMatch(/^off /);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports Python ready when enabled with a pyproject.toml and .py files', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-doctor-py-ready-'));
+    try {
+      writeFileSync(join(dir, 'pyproject.toml'), '[project]\n');
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      mkdirSync(join(dir, 'tests'), { recursive: true });
+      writeFileSync(join(dir, 'src', 'repo.py'), 'class Repo: pass\n');
+      writeFileSync(join(dir, 'tests', 'test_repo.py'), 'def test_it(): pass\n');
+      const signals = pythonProjectSignals(dir);
+      expect(signals.pyprojectToml).toBe(true);
+      expect(signals.pyFiles).toBe(2);
+      const readiness = pythonReadiness(dir, {
+        ...DEFAULT_CONFIG,
+        languages: { typescript: true, php: false, python: true },
+      });
+      expect(readiness).toMatch(/^ready — pyproject\.toml present, 2 \.py files$/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports Python enabled-but-loose without a pyproject.toml', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-doctor-py-loose-'));
+    try {
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      writeFileSync(join(dir, 'src', 'legacy.py'), 'def f(): pass\n');
+      const readiness = pythonReadiness(dir, {
+        ...DEFAULT_CONFIG,
+        languages: { typescript: true, php: false, python: true },
+      });
+      expect(readiness).toMatch(/^enabled — 1 \.py file but no pyproject\.toml/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

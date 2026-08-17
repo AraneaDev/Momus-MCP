@@ -9,7 +9,7 @@ This document contains the drafts for submitting Momus-MCP to the official Model
 Add the following under the appropriate category (e.g., **Development Tools** or **Testing**):
 
 ```markdown
-- [@momus/mcp-server](https://github.com/AraneaDev/Momus-MCP) - Unsparing mock and test integrity auditor for TypeScript and PHP coding agents. Detects test contract drift and tautological assertions statically.
+- [@momus/mcp-server](https://github.com/AraneaDev/Momus-MCP) - Unsparing mock and test integrity auditor for TypeScript, PHP, and Python coding agents. Detects test contract drift and tautological assertions statically.
 ```
 
 ### Server Details for Official Directory
@@ -17,7 +17,7 @@ Add the following under the appropriate category (e.g., **Development Tools** or
 If the registry requires a detailed JSON/YAML entry or issue submission:
 
 - **Name**: Momus-MCP
-- **Description**: An unsparing mock & test integrity auditor. Momus statically analyzes TypeScript (Vitest/Jest) and PHP (PHPUnit/Pest) test suites to catch "false green" tests where mocks have drifted from their production contracts, or where tautological assertions test the mock instead of the system.
+- **Description**: An unsparing mock & test integrity auditor. Momus statically analyzes TypeScript (Vitest/Jest), PHP (PHPUnit/Pest), and Python (pytest/unittest) test suites to catch "false green" tests where mocks have drifted from their production contracts, or where tautological assertions test the mock instead of the system.
 - **Source**: `https://github.com/AraneaDev/Momus-MCP`
 - **Installation / Usage**:
   ```bash

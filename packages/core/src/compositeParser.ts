@@ -1,6 +1,7 @@
 /** Dispatches each file to the first language parser that claims its extension. */
 import type { LanguageParser, ParseContext } from './parser.ts';
-import type { Language, ModuleIR } from './ir.ts';
+import type { ModuleIR } from './ir.ts';
+import type { Language } from './languages.ts';
 
 export class CompositeParser implements LanguageParser {
   // The contract predates multi-language parsers; AuditEngine uses each ModuleIR.language.

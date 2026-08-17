@@ -24,6 +24,7 @@ import {
 } from '@momus/core';
 import { TypeScriptParser } from '@momus/parser-typescript';
 import { PhpParser } from '@momus/parser-php';
+import { PythonParser } from '@momus/parser-python';
 import { serve, serveHttp, watchWorkspace, openParseCache } from '@momus/mcp-server';
 import { collectFixable, editsByFile, buildFixDiff, applyFixToFiles } from './fix.ts';
 
@@ -92,7 +93,7 @@ export function buildCheckAnnotations(
 }
 
 export function createWorkspaceParser(): CompositeParser {
-  return new CompositeParser([new TypeScriptParser(), new PhpParser()]);
+  return new CompositeParser([new TypeScriptParser(), new PhpParser(), new PythonParser()]);
 }
 
 /** PHP project signals used by `momus doctor` (bounded, read-only). */
@@ -110,6 +111,68 @@ export function phpReadiness(root: string, config: MomusConfig): string {
   if (phpFiles > 0)
     return `enabled — ${phpFiles} .php file${phpFiles === 1 ? '' : 's'} but no composer.json (class resolution will be loose)`;
   return 'enabled — no composer.json or .php files found';
+}
+
+/** Python project signals used by `momus doctor` (bounded, read-only). */
+export function pythonProjectSignals(root: string): { pyprojectToml: boolean; pyFiles: number } {
+  return { pyprojectToml: findPyprojectToml(root), pyFiles: countPyFiles(root, 200) };
+}
+
+/** One-line Python-language readiness summary for `momus doctor`. */
+export function pythonReadiness(root: string, config: MomusConfig): string {
+  if (!config.languages.python) {
+    return 'off — set "languages": { "python": true } in .momusrc to audit pytest/unittest suites';
+  }
+  const { pyprojectToml, pyFiles } = pythonProjectSignals(root);
+  if (pyprojectToml) return `ready — pyproject.toml present, ${pyFiles} .py file${pyFiles === 1 ? '' : 's'}`;
+  if (pyFiles > 0)
+    return `enabled — ${pyFiles} .py file${pyFiles === 1 ? '' : 's'} but no pyproject.toml (import resolution will be loose)`;
+  return 'enabled — no pyproject.toml or .py files found';
+}
+
+function findPyprojectToml(root: string): boolean {
+  let dir = root;
+  for (let depth = 0; depth < 8; depth++) {
+    if (existsSync(join(dir, 'pyproject.toml'))) return true;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return false;
+}
+
+function countPyFiles(root: string, cap: number): number {
+  let count = 0;
+  const stack = [root];
+  const seen = new Set<string>();
+  while (stack.length && count < cap) {
+    const dir = stack.pop()!;
+    if (seen.has(dir)) continue;
+    seen.add(dir);
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (count >= cap) break;
+      if (
+        entry.name === 'node_modules' ||
+        entry.name === '.git' ||
+        entry.name === 'vendor' ||
+        entry.name === 'dist' ||
+        entry.name === '.venv' ||
+        entry.name === 'venv' ||
+        entry.name === '__pycache__'
+      )
+        continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) stack.push(full);
+      else if (entry.isFile() && entry.name.endsWith('.py')) count++;
+    }
+  }
+  return count;
 }
 
 function findComposerJson(root: string): boolean {
@@ -558,7 +621,7 @@ export function runInit(root: string, argv: string[]): number {
   }
   const template = `{
   "$schema": "./schemas/momusrc.schema.json",
-  "languages": { "typescript": true, "php": false },
+  "languages": { "typescript": true, "php": false, "python": false },
   "testFilePatterns": ["**/*.{test,spec}.{ts,tsx,js,jsx,mjs}", "**/__tests__/**"],
   "rules": {},
   "mockSaturationThreshold": 0.7,
@@ -584,9 +647,10 @@ export async function runDoctor(root: string, _argv: string[]): Promise<number> 
   const cfg = existsSync(join(root, '.momusrc')) ? 'present' : 'absent (defaults)';
   process.stdout.write(`  .momusrc:   ${cfg}\n`);
   process.stdout.write(
-    `  languages:  typescript=${config.languages.typescript ? 'enabled' : 'disabled'} php=${config.languages.php ? 'enabled' : 'disabled'}\n`,
+    `  languages:  typescript=${config.languages.typescript ? 'enabled' : 'disabled'} php=${config.languages.php ? 'enabled' : 'disabled'} python=${config.languages.python ? 'enabled' : 'disabled'}\n`,
   );
   process.stdout.write(`  php readiness: ${phpReadiness(root, config)}\n`);
+  process.stdout.write(`  python readiness: ${pythonReadiness(root, config)}\n`);
   const testFiles = ['src', 'tests', 'test'].filter((d) => existsSync(join(root, d)));
   process.stdout.write(`  source dirs: ${testFiles.join(', ') || 'none found'}\n`);
   return 0;
