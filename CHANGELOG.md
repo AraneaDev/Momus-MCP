@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.0.6](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.5...v0.0.6) (2026-08-17)
+
+
+### Features
+
+* derive mock-of-self subject per language ([71b53ee](https://github.com/AraneaDev/Momus-MCP/commit/71b53eee45e7883d7dd5ceb243c6787b702a1e5b))
+* four-language parity (pyright inference + cross-language rules + 4-language synthesis) ([843b694](https://github.com/AraneaDev/Momus-MCP/commit/843b694509fb2e6518b9fd994dddd5e23a0a23e1))
+* **parser-python:** pyright type inference for unannotated signatures ([fff1e5e](https://github.com/AraneaDev/Momus-MCP/commit/fff1e5e8dddc9f4535324bc00a9aebb5940ef691))
+* **parser-rust:** trace wrapper re-bindings and by-value mock consumption ([dbb7c39](https://github.com/AraneaDev/Momus-MCP/commit/dbb7c3950ab7b42dd54a81667eeb97bd53ebd885))
+* PHP TAUT-006 for unconfigured Mockery spies ([75853a9](https://github.com/AraneaDev/Momus-MCP/commit/75853a9f01c246c86008999fc9486bfbdd36c9d1))
+* Python DRIFT-005 for patch of a missing module attribute ([70b891f](https://github.com/AraneaDev/Momus-MCP/commit/70b891fa2b57eb2ff686be3b67ab33d9378dbadd))
+* Python TAUT-006 for unconfigured assert_called mocks ([16de8bf](https://github.com/AraneaDev/Momus-MCP/commit/16de8bf05febf21327ceef82c92bb3a9b69e71e8))
+* synthesize pytest/unittest and mockall/mockito/wiremock contracts ([657c6d9](https://github.com/AraneaDev/Momus-MCP/commit/657c6d92047f49467406e86c8bb1d8f72083fdf5))
+
+
+### Bug Fixes
+
+* include rs in watcher and ignore Python/Rust build dirs ([20c9cc8](https://github.com/AraneaDev/Momus-MCP/commit/20c9cc86bf35e97a3e1e936b830fec3bed545cdc))
+
 ## [0.0.5](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.4...v0.0.5) (2026-08-17)
 
 
