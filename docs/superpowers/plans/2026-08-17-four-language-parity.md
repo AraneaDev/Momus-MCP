@@ -428,11 +428,13 @@ git commit -m "feat: PHP TAUT-006 for unconfigured Mockery spies"
 
 - [ ] **Step 3: Record cold-start + memory** on a mock-heavy pytest repo (e.g. a shallow clone of httpx) — one number for `first-run analyze` and one for `cached` (the `better-sqlite3` IR cache absorbs repeat cost).
 
-- [ ] **Step 4: Report findings** — a short note in the plan's progress ledger stating the chosen package/entry point and the cost numbers. Do not commit the spike; the throwaway answer drives Task 9.
+- [x] **Step 4: Report findings** — **DONE (2026-08-17).** `pyright-internal` is unpublished (npm 404 since 2024-05-11); `basedpyright-internal` does not exist. The `pyright` npm package (1.1.413) bundles the analyzer only as an undocumented webpack module registry (`dist/pyright-internal.js` exports `{ ids, modules }`), not a clean CJS API. The LSP server (`pyright-langserver`) responds to `initialize` (~110ms) but `textDocument/hover`/`documentSymbol`/`definition` time out under Node 25 (no `publishDiagnostics` after `didOpen`). **Decision:** use the `pyright` CLI `--createstub` subprocess instead — verified it infers unannotated types (`def get_count()` → `# -> Literal[42]:`, `def get_name(flag)` → `# -> Literal['hello'] | None:`), cold start ~180ms. Task 9 is revised to parse `--createstub` output (whole-file stub with inferred types as comments) rather than an in-process evaluator.
 
 ---
 
 ### Task 9: pyright type inference in `@momus/parser-python`
+
+> **REVISED (2026-08-17):** per Task 8 findings, this task uses the `pyright` CLI `--createstub` subprocess (parsing the generated `.pyi` stub's `# -> Type:` / param-type comments) rather than an in-process `pyright-internal` evaluator. `inferTypes` therefore runs one subprocess per production module, memoized per workspace root; it is async and degrades to annotations-only on any failure.
 
 **Files:**
 - Modify: `packages/parser-python/package.json` (add `pyright` dependency)

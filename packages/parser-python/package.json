@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@momus/core": "~0.0.1",
+    "pyright": "^1.1.413",
     "tree-sitter": "^0.25.1",
     "tree-sitter-python": "^0.25.0"
   },

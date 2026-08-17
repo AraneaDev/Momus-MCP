@@ -5,6 +5,7 @@ import { extractSymbols } from './symbols.ts';
 import { extractMocks } from './mocks.ts';
 import { extractAssertions, extractTestFunctions } from './assertions.ts';
 import { resolvePythonImport } from './resolve.ts';
+import { getInferredReturnTypes } from './pyright.ts';
 
 export class PythonParser implements LanguageParser {
   readonly language = 'python' as const;
@@ -20,11 +21,14 @@ export class PythonParser implements LanguageParser {
   parseModule(path: string, source: string, _ctx: ParseContext): ModuleIR {
     try {
       const { root, hasError } = parsePython(source);
-      const symbols = extractSymbols(root, path);
+      const isTest = isTestFile(path);
+      // Only production symbols feed the drift rules, and inference shells out to pyright
+      // (expensive), so it is skipped for test files and degrades to annotations-only on failure.
+      const inferred = isTest ? undefined : getInferredReturnTypes(path);
+      const symbols = extractSymbols(root, path, inferred);
       const mockState = extractMocks(root, path, symbols);
       const assertions = extractAssertions(root, path, mockState);
       const functions = extractTestFunctions(root, path);
-      const isTest = isTestFile(path);
       return {
         path,
         language: 'python',

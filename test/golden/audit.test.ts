@@ -97,9 +97,11 @@ describe('golden audit — python drift fixtures', () => {
     expect(found).toEqual([
       'DRIFT-001@drift_test.py:6', // patch.object(Repo, "save2") — member does not exist
       'DRIFT-003@drift_test.py:12', // price.return_value = "nope" not assignable to int
+      'DRIFT-003@drift_test.py:17', // count.return_value = "nope" not assignable to inferred int
       'DRIFT-005@test_patch_missing.py:5', // patch("prod_missing.missing") — attribute does not exist
       'MOCK-001@test_patch_missing.py:1', // over-mocking heuristic on the mock-only patch fixture
       'TAUT-005@drift_test.py:11', // zero-reach stub
+      'TAUT-005@drift_test.py:16', // zero-reach stub (test_count mock)
       'TAUT-005@healthy_test.py:11', // zero-reach stub (annotated twin is drift-clean)
     ]);
   });

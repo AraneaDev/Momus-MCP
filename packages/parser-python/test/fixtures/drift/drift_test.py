@@ -10,3 +10,8 @@ def test_save():
 def test_price():
     m = Mock(spec=Repo)
     m.price.return_value = "nope"
+
+
+def test_count():
+    m = Mock(spec=Repo)
+    m.count.return_value = "nope"
