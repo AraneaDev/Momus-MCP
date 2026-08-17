@@ -5,7 +5,7 @@ import { anyMatch } from './glob.ts';
 import { allExtensions } from './languages.ts';
 
 /** Source-file extensions recognized for indexing, derived from the language registry. */
-const SOURCE_EXT = new RegExp(`\.(${allExtensions().join('|')})$`);
+const SOURCE_EXT = new RegExp(`[.](${allExtensions().join('|')})$`);
 
 export interface DiscoveredFile {
   path: string; // absolute

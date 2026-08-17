@@ -3,6 +3,8 @@ dist/
 coverage/
 .momus/
 experiments/
+.agents/
+.claude/
 **/test/fixtures/
 **/test/fixtures-syntax-only/
 **/test/syntax-only-fixtures/
