@@ -327,6 +327,23 @@ describe('TAUT-006 unconfigured spy assert', () => {
     expect(runRules(rulesOf('TAUT-006'), ctx(reached))).toHaveLength(0);
   });
 
+  it('flags shouldHaveReceived on an unconfigured, unreached Mockery spy', () => {
+    const m = testModule({
+      language: 'php',
+      framework: 'phpunit',
+      mocks: [mock({ id: 'm1', pattern: 'mockery-spy', framework: 'phpunit' })],
+      assertions: [
+        assertion({
+          api: 'shouldHaveReceived',
+          operands: [
+            expr({ kind: 'call', text: "$spy->shouldHaveReceived('m')", mockRefs: ['m1'], provenance: 'mock-call' }),
+          ],
+        }),
+      ],
+    });
+    expect(runRules(rulesOf('TAUT-006'), ctx(m))).toHaveLength(1);
+  });
+
   it('flags assert_called on an unconfigured, unreached Python mock', () => {
     const m = testModule({
       language: 'python',

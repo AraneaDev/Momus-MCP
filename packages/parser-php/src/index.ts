@@ -497,7 +497,13 @@ function extractMocks(file: string, nodes: PhpNode[], imports: ImportIR[]): PhpM
     if (!name || (!MOCK_FACTORIES.has(name) && !isPestMock && !isMockery)) continue;
     const id = `${file}#mock:${nodeLine(call)}:${nodeColumn(call)}`;
     const targetName = resolveClassAlias(classNameFromArg(call.arguments?.[0]), imports);
-    const pattern: MockIR['pattern'] = isPestMock ? 'pest-mock' : isMockery ? 'mockery' : (name as MockIR['pattern']);
+    const pattern: MockIR['pattern'] = isPestMock
+      ? 'pest-mock'
+      : isMockery
+        ? name === 'spy'
+          ? 'mockery-spy'
+          : 'mockery'
+        : (name as MockIR['pattern']);
     const mock: MockIR = {
       id,
       span: nodeSpan(file, call),
@@ -848,19 +854,36 @@ function extractAssertions(
   const assertions: AssertionIR[] = [];
   const methods = nodes.filter((node) => node.kind === 'method');
   const classes = nodes.filter((node) => node.kind === 'class' && !node.isAnonymous);
-  for (const call of nodes.filter((node) =>
-    ['assertSame', 'assertEquals', 'assertNotSame'].includes(callName(node) ?? ''),
-  )) {
+  const VALUE_ASSERTIONS = new Set(['assertSame', 'assertEquals', 'assertNotSame']);
+  const SPY_ASSERTIONS = new Set(['shouldHaveReceived', 'shouldNotHaveReceived']);
+  for (const call of nodes.filter((node) => node.kind === 'call')) {
+    const name = callName(call) ?? '';
+    const isValueAssertion = VALUE_ASSERTIONS.has(name);
+    const isSpyAssertion = SPY_ASSERTIONS.has(name);
+    if (!isValueAssertion && !isSpyAssertion) continue;
     const fn = functions.find(
       (candidate) => candidate.span.startLine <= nodeLine(call) && nodeLine(call) <= candidate.span.endLine,
     );
-    const operands = (call.arguments ?? [])
-      .slice(0, 2)
-      .map((value: PhpNode) => phpExpr(value, file, mocks, bindings, methods, classes));
+    // `$spy->shouldHaveReceived('m')`: the operand is the receiver (the spy mock), so
+    // TAUT-006 can resolve its mockRef and check for a missing shouldReceive stub.
+    const operands: ExprIR[] = isSpyAssertion
+      ? [
+          phpExpr(
+            call.what?.kind === 'propertylookup' ? call.what.what : call.what,
+            file,
+            mocks,
+            bindings,
+            methods,
+            classes,
+          ),
+        ]
+      : (call.arguments ?? [])
+          .slice(0, 2)
+          .map((value: PhpNode) => phpExpr(value, file, mocks, bindings, methods, classes));
     assertions.push({
       id: `${file}#assert:${nodeLine(call)}:${nodeColumn(call)}`,
       span: nodeSpan(file, call),
-      api: callName(call) ?? 'assertSame',
+      api: name,
       operands,
       fnId: fn?.id ?? '',
     });

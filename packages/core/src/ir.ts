@@ -10,7 +10,7 @@ import type { Language } from './languages.ts';
  * invalidates cached modules even when the audited workspace is unchanged. Bump whenever the
  * ModuleIR shape or any parser's extraction changes in a way that would make cached IR stale.
  */
-export const IR_SCHEMA_VERSION = '6'; // 6: rust reachability (wrapper re-bindings + by-value consumption)
+export const IR_SCHEMA_VERSION = '7'; // 7: Mockery spy pattern ('mockery-spy') for PHP TAUT-006
 
 export type { Language };
 export type Severity = 'error' | 'warning' | 'info';
@@ -170,6 +170,7 @@ export type MockPattern =
   | 'getMockBuilder'
   | 'getMockForAbstractClass'
   | 'mockery'
+  | 'mockery-spy'
   | 'pest-mock'
   | 'anonymous-class'
   | 'object-literal'
