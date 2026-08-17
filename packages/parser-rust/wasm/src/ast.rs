@@ -240,6 +240,12 @@ fn block_exprs(block: &syn::Block) -> Vec<Value> {
                 "args": macro_args(&m.mac.tokens),
                 "span": span_of(&m.mac),
             })),
+            syn::Stmt::Local(l) => {
+                // `let mut m = MockFoo::new();` — surface the initializer expression.
+                if let Some(init) = &l.init {
+                    out.push(expr(&init.expr));
+                }
+            }
             _ => {}
         }
     }

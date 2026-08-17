@@ -2,8 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 import { RustCrateIndex } from './crateIndex.ts';
 
-let index: RustCrateIndex | null = null;
-let indexRoot: string | null = null;
+const cache = new Map<string, RustCrateIndex>(); // crate root -> index
 
 function findCrateRoot(fromFile: string): string {
   let dir = dirname(fromFile);
@@ -49,11 +48,12 @@ function listRsFiles(root: string): string[] {
 /** Lazily build (and memoize per crate root) the crate index for a source file. */
 export function getCrateIndex(fromFile: string): RustCrateIndex {
   const root = findCrateRoot(fromFile);
-  if (index && indexRoot === root) return index;
+  const cached = cache.get(root);
+  if (cached) return cached;
   const files = listRsFiles(root).map((path) => ({ path, source: readFileSync(path, 'utf8') }));
-  index = new RustCrateIndex(files);
-  indexRoot = root;
-  return index;
+  const idx = new RustCrateIndex(files);
+  cache.set(root, idx);
+  return idx;
 }
 
 /** Resolve a `use`/`mod` specifier to an absolute path, or null (LanguageParser contract). */

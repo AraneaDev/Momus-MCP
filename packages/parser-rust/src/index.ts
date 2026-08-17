@@ -1,10 +1,11 @@
 /** Rust parser plugin: syn-WASM AST -> language-neutral Momus IR. */
-import type { LanguageParser, MockFramework, ModuleIR, ParseContext } from '@momus/core';
+import type { LanguageParser, ModuleIR, ParseContext } from '@momus/core';
 import { parseRust } from './wasm.ts';
 import type { RustFile, RustItem } from './ast.ts';
 import { extractSymbols } from './symbols.ts';
 import { extractImports } from './imports.ts';
-import { resolveRustImport } from './resolve.ts';
+import { extractMocks } from './mocks.ts';
+import { getCrateIndex, resolveRustImport } from './resolve.ts';
 
 export class RustParser implements LanguageParser {
   readonly language = 'rust' as const;
@@ -23,15 +24,16 @@ export class RustParser implements LanguageParser {
       if (file.error) throw new Error(file.error);
       const symbols = extractSymbols(file, path);
       const isTest = isTestSource(file);
+      const mocks = extractMocks(file, path, getCrateIndex(path));
       return {
         path,
         language: 'rust',
         kind: isTest ? 'test' : 'production',
-        framework: isTest ? detectFramework(file) : undefined,
+        framework: isTest ? (mocks[0]?.framework ?? 'manual') : undefined,
         imports: extractImports(file),
         symbols,
         exports: symbols.map((s) => s.name),
-        mocks: [],
+        mocks,
         assertions: [],
         functions: [],
         comments: [],
@@ -69,15 +71,6 @@ function isTestSource(file: RustFile): boolean {
   const check = (items: RustItem[]): boolean =>
     items.some((i) => attrsOf(i).some((a) => a.path === 'test') || (i.kind === 'mod' && check(i.items)));
   return check(file.items);
-}
-
-function detectFramework(file: RustFile): MockFramework {
-  // mockall: a `mock!` macro or an `#[automock]` attr anywhere. HTTP crates (mockito/
-  // wiremock) are call expressions, detected in the mocks task (Task 6).
-  const hasMockall = file.items.some(
-    (i) => attrsOf(i).some((a) => a.path === 'automock') || (i.kind === 'macro' && i.path === 'mock'),
-  );
-  return hasMockall ? 'mockall' : 'manual';
 }
 
 function attrsOf(item: RustItem): { path: string; args: string | null }[] {
