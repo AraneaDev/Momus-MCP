@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.3](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.2...v0.0.3) (2026-08-17)
+
+
+### Bug Fixes
+
+* ignore docs/.vitepress/dist in ESLint ([77c3a8c](https://github.com/AraneaDev/Momus-MCP/commit/77c3a8c53b1e7f4d61148c1adf6155c3d1ae1250))
+
 ## [0.0.2](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.1...v0.0.2) (2026-08-16)
 
 
