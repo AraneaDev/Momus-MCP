@@ -226,7 +226,7 @@ describe('PHP parser', () => {
     const mockery = parse(join(ROOT, 'tests', 'MockeryPestTest.php'));
     expect(mockery.mocks.map((mock) => mock.pattern)).toEqual([
       'mockery',
-      'mockery',
+      'mockery-spy',
       'mockery',
       'mockery',
       'pest-mock',
@@ -240,6 +240,32 @@ describe('PHP parser', () => {
     ]);
     expect(mockery.mocks.every((mock) => mock.configuredValues[0]?.api === 'andReturn')).toBe(true);
     expect(mockery.mocks.every((mock) => mock.target?.exportName === 'InvoiceRepository')).toBe(true);
+  });
+
+  it('extracts Mockery spy factories as mockery-spy and shouldHaveReceived assertions', () => {
+    const src = `<?php
+
+namespace App\\Tests;
+
+use App\\InvoiceRepository;
+use PHPUnit\\Framework\\TestCase;
+
+final class SpyTest extends TestCase
+{
+    public function testSpy(): void
+    {
+        $spy = Mockery::spy(InvoiceRepository::class);
+        $spy->shouldHaveReceived('findById');
+    }
+}
+`;
+    const module = parser.parseModule(join(ROOT, 'tests', 'SpyTest.php'), src, {
+      config: undefined,
+      resolveImport: () => null,
+    });
+    expect(module.mocks.map((mock) => mock.pattern)).toEqual(['mockery-spy']);
+    const assertion = module.assertions.find((a) => a.api === 'shouldHaveReceived');
+    expect(assertion?.operands[0]?.mockRefs).toEqual([module.mocks[0]!.id]);
   });
 
   it('extracts original-constructor argument counts for PHP doubles', () => {

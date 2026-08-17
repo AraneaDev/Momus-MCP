@@ -20,6 +20,7 @@ import {
   buildMarkdownReport,
   buildJsonEnvelope,
   filterResult,
+  RULES_CATALOG,
   type MomusConfig,
   type AuditResult,
   type TypeIR,
@@ -45,88 +46,6 @@ export interface MomusServerOptions {
   /** Pre-opened parse cache to reuse (serveHttp shares one across sessions). */
   cache?: ParseCache;
 }
-
-const RULE_LIST = [
-  {
-    id: 'TAUT-001',
-    name: 'self-comparison',
-    severity: 'error',
-    description: 'assertion compares an expression with itself',
-  },
-  {
-    id: 'TAUT-002',
-    name: 'mock-echo',
-    severity: 'error',
-    description: "assertion re-asserts a stub's own configured return",
-  },
-  {
-    id: 'TAUT-003',
-    name: 'constant-tautology',
-    severity: 'error',
-    description: 'both assertion sides are compile-time constants',
-  },
-  {
-    id: 'TAUT-004',
-    name: 'mock-only-assertion',
-    severity: 'warning',
-    description: 'test exercises no production code',
-  },
-  {
-    id: 'TAUT-005',
-    name: 'zero-reach-stub',
-    severity: 'warning',
-    description: 'mock configured but never invoked or asserted',
-  },
-  {
-    id: 'TAUT-006',
-    name: 'unconfigured-spy-assert',
-    severity: 'warning',
-    description: 'toHaveBeenCalled* on a spy with no stub and no call path',
-  },
-  {
-    id: 'DRIFT-001',
-    name: 'missing-member',
-    severity: 'error',
-    description: 'stubbed member does not exist on the production target',
-  },
-  {
-    id: 'DRIFT-002',
-    name: 'signature-mismatch',
-    severity: 'warning',
-    description: 'stub call signature diverges from production (arity)',
-  },
-  {
-    id: 'DRIFT-003',
-    name: 'return-type-mismatch',
-    severity: 'warning',
-    description: 'configured value not assignable to the production return type',
-  },
-  {
-    id: 'DRIFT-004',
-    name: 'constructor-drift',
-    severity: 'error',
-    description: 'double construction omits required constructor parameters (PHP)',
-  },
-  {
-    id: 'DRIFT-005',
-    name: 'missing-export',
-    severity: 'error',
-    description: 'vi.mock factory keys reference exports that do not exist',
-  },
-  {
-    id: 'DRIFT-006',
-    name: 'stale-mock',
-    severity: 'warning',
-    description: 'mock target changed since the base ref but the mock file was not updated (git-diff mode)',
-  },
-  { id: 'MOCK-001', name: 'mock-saturation', severity: 'warning', description: 'over-mocking heuristic' },
-  {
-    id: 'MOCK-002',
-    name: 'mock-of-self',
-    severity: 'info',
-    description: 'the test mocks a module it also imports as the SUT',
-  },
-];
 
 const ANN = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
@@ -259,7 +178,9 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
     {
       targetPath: z.string().describe('Production file declaring the class/interface (workspace-relative)'),
       symbolName: z.string().optional().describe('Class/interface to mock; defaults to primary export'),
-      framework: z.enum(['vitest', 'jest', 'phpunit', 'pest']).default('vitest'),
+      framework: z
+        .enum(['vitest', 'jest', 'phpunit', 'pest', 'pytest', 'unittest', 'mockall', 'mockito', 'wiremock'])
+        .default('vitest'),
       includeReturnValues: z.boolean().default(true),
     },
     { ...ANN, title: 'Synthesize Mock Contract' },
@@ -268,7 +189,14 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
       if ('error' in result) {
         return { content: [{ type: 'text', text: `## Error\n${result.error}` }], isError: true };
       }
-      const fence = framework === 'phpunit' || framework === 'pest' ? 'php' : 'ts';
+      const fence =
+        framework === 'phpunit' || framework === 'pest'
+          ? 'php'
+          : framework === 'pytest' || framework === 'unittest'
+            ? 'python'
+            : framework === 'mockall' || framework === 'mockito' || framework === 'wiremock'
+              ? 'rust'
+              : 'ts';
       return {
         content: [{ type: 'text', text: '```' + fence + '\n' + result.template + '\n```' }],
         structuredContent: {
@@ -286,7 +214,7 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
     {},
     { ...ANN, title: 'List Rules' },
     async () => {
-      const rules = RULE_LIST.map((r) => {
+      const rules = RULES_CATALOG.map((r) => {
         const override = config.rules[r.id];
         const sev = typeof override === 'object' ? override.severity : override;
         return { ...r, severity: sev ?? r.severity, enabled: (sev ?? r.severity) !== 'off' };
@@ -318,7 +246,7 @@ export async function serve(opts: MomusServerOptions): Promise<void> {
   await server.connect(new StdioServerTransport());
 }
 
-const SOURCE_RE = /\.(ts|tsx|js|jsx|mts|cts|mjs|php|py)$/i;
+const SOURCE_RE = /\.(ts|tsx|js|jsx|mts|cts|mjs|php|py|rs)$/i;
 
 /**
  * Watch the workspace for source-file changes (spec docs/06 §6.5, Phase 3): every add/change/
@@ -338,6 +266,10 @@ export function watchWorkspace(
       /(^|[\\/])vendor[\\/]/,
       /(^|[\\/])coverage[\\/]/,
       /(^|[\\/])\.momus[\\/]/,
+      /(^|[\\/])\.venv[\\/]/,
+      /(^|[\\/])venv[\\/]/,
+      /(^|[\\/])__pycache__[\\/]/,
+      /(^|[\\/])target[\\/]/,
     ],
     ignoreInitial: true,
     persistent: true,
@@ -506,6 +438,12 @@ export function synthesizeContract(
   const source = readFileSync(abs, 'utf8');
   if (/\.php$/i.test(abs)) {
     return synthesizePhpContract(abs, source, targetPath, symbolName, framework, includeReturnValues);
+  }
+  if (/\.py$/i.test(abs)) {
+    return synthesizePythonContract(abs, source, targetPath, symbolName, framework, includeReturnValues);
+  }
+  if (/\.rs$/i.test(abs)) {
+    return synthesizeRustContract(abs, source, targetPath, symbolName, framework, includeReturnValues);
   }
   const sf = ts.createSourceFile(abs, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const decls = sf.statements.filter(
@@ -761,4 +699,265 @@ function phpReturnExample(type: TypeIR | undefined): string {
 
 function lowerFirst(s: string): string {
   return s[0]!.toLowerCase() + s.slice(1);
+}
+
+function synthesizePythonContract(
+  abs: string,
+  source: string,
+  targetPath: string,
+  symbolName: string | undefined,
+  framework: string,
+  includeReturnValues: boolean,
+):
+  | { template: string; contract: Array<{ member: string; signature: string; returnType: string }>; summary: object }
+  | { error: string } {
+  const module = new PythonParser().parseModule(abs, source, { config: undefined, resolveImport: () => null });
+  const cls = symbolName
+    ? module.symbols.find((s) => s.name === symbolName)
+    : (module.symbols.find((s) => s.kind === 'class') ?? module.symbols[0]);
+  if (!cls) return { error: `no class found in ${targetPath}` };
+  const className = cls.name;
+  const methods = cls.members.filter((m) => m.kind === 'method' && !m.name.startsWith('__'));
+  const contract: Array<{ member: string; signature: string; returnType: string }> = [];
+  const lines: string[] = [];
+  for (const m of methods) {
+    const params = (m.signature?.parameters ?? [])
+      .filter((p) => p.name !== 'self' && p.name !== 'cls')
+      .map((p) => {
+        const prefix = `${p.variadic ? '*' : ''}${p.name}`;
+        return p.type ? `${prefix}: ${renderPyType(p.type)}` : prefix;
+      })
+      .join(', ');
+    const ret = m.signature?.returnType ? renderPyType(m.signature.returnType) : 'Any';
+    const sig = `${m.name}(${params})${m.signature?.returnType ? ' -> ' + ret : ''}`;
+    contract.push({ member: m.name, signature: sig, returnType: ret });
+    const retVal = includeReturnValues ? pyReturnExample(m.signature?.returnType) : 'None';
+    lines.push(`  # ${sig}`);
+    lines.push(`  with patch.object(${className}, '${m.name}', return_value=${retVal}):`);
+    lines.push('      pass');
+  }
+  const template = [
+    `# Generated by momus synthesize_mock_contract — ${className} (${framework})`,
+    `# Contract verified against ${targetPath} (${contract.length} public members)`,
+    'from unittest.mock import patch',
+    '',
+    ...lines,
+  ].join('\n');
+  return {
+    template,
+    contract,
+    summary: { targetPath, symbol: className, framework, members: contract.length },
+  };
+}
+
+function renderPyType(type: TypeIR): string {
+  switch (type.kind) {
+    case 'named':
+      return type.typeArgs.length ? `${type.name}[${type.typeArgs.map(renderPyType).join(', ')}]` : type.name;
+    case 'union':
+      return type.members.map(renderPyType).join(' | ');
+    case 'intersection':
+      return type.members.map(renderPyType).join(' & ');
+    case 'literal':
+      return typeof type.value === 'string' ? `'${type.value}'` : String(type.value);
+    case 'array':
+      return type.element ? `list[${renderPyType(type.element)}]` : 'list';
+    case 'tuple':
+      return `tuple[${type.elements.map(renderPyType).join(', ')}]`;
+    case 'function':
+      return 'Callable';
+    case 'void':
+    case 'never':
+    case 'null':
+    case 'undefined':
+      return 'None';
+    case 'unknown':
+      return 'Any';
+  }
+}
+
+function pyReturnExample(type: TypeIR | undefined): string {
+  if (!type) return 'None';
+  switch (type.kind) {
+    case 'void':
+    case 'null':
+    case 'never':
+    case 'undefined':
+      return 'None';
+    case 'array':
+    case 'tuple':
+      return '[]';
+    case 'literal':
+      return typeof type.value === 'string'
+        ? `'${type.value}'`
+        : type.value === true
+          ? 'True'
+          : type.value === false
+            ? 'False'
+            : String(type.value);
+    case 'unknown':
+      return 'None';
+    case 'named': {
+      const name = type.name;
+      if (name === 'int' || name === 'float') return '0';
+      if (name === 'str') return "''";
+      if (name === 'bool') return 'False';
+      if (name === 'list' || name === 'dict' || name === 'tuple' || name === 'set') return '[]';
+      return 'None';
+    }
+    case 'union': {
+      const nonNull = type.members.find((member) => member.kind !== 'null');
+      return nonNull ? pyReturnExample(nonNull) : 'None';
+    }
+    case 'intersection':
+    case 'function':
+      return 'None';
+  }
+}
+
+function synthesizeRustContract(
+  abs: string,
+  source: string,
+  targetPath: string,
+  symbolName: string | undefined,
+  framework: string,
+  includeReturnValues: boolean,
+):
+  | { template: string; contract: Array<{ member: string; signature: string; returnType: string }>; summary: object }
+  | { error: string } {
+  const module = new RustParser().parseModule(abs, source, { config: undefined, resolveImport: () => null });
+  const sym = symbolName
+    ? module.symbols.find((s) => s.name === symbolName)
+    : module.symbols.find((s) => s.kind === 'interface' || s.kind === 'class' || s.kind === 'function');
+  if (!sym) return { error: `no trait/struct found in ${targetPath}` };
+  const name = sym.name;
+  const methods = sym.members.filter((m) => m.kind === 'method');
+  const contract: Array<{ member: string; signature: string; returnType: string }> = [];
+  const sigs: Array<{ name: string; params: string; ret: string }> = [];
+  for (const m of methods) {
+    const params = (m.signature?.parameters ?? [])
+      .map((p) => `${p.name}: ${renderRustType(p.type ?? { kind: 'unknown' })}`)
+      .join(', ');
+    const ret = m.signature?.returnType ? renderRustType(m.signature.returnType) : '()';
+    const sig = `fn ${m.name}(&self${params ? ', ' + params : ''}) -> ${ret};`;
+    contract.push({ member: m.name, signature: sig, returnType: ret });
+    sigs.push({ name: m.name, params, ret });
+  }
+  let body: string[];
+  if (framework === 'mockall') {
+    const mockName = `Mock${name}`;
+    const implLines = sigs.map((s) => `        fn ${s.name}(&self${s.params ? ', ' + s.params : ''}) -> ${s.ret};`);
+    const setupLines = methods.map((m) => {
+      const args = (m.signature?.parameters ?? []).map((p) => p.name);
+      const retVal = includeReturnValues ? rustReturnExample(m.signature?.returnType) : 'todo!()';
+      return `    mock.expect_${m.name}().returning(|${args.join(', ')}| ${retVal});`;
+    });
+    body = [
+      `mock! {`,
+      `    pub ${mockName} {}`,
+      `    impl ${name} for ${mockName} {`,
+      ...implLines,
+      `    }`,
+      `}`,
+      ``,
+      `#[test]`,
+      `fn test_${lowerFirst(name)}() {`,
+      `    let mut mock = ${mockName}::new();`,
+      ...setupLines,
+      `}`,
+    ];
+  } else {
+    // mockito / wiremock target HTTP routes; the symbol carries no route info, so emit a
+    // labeled scaffold the user wires to the real endpoint.
+    body =
+      framework === 'mockito'
+        ? [
+            `// Scaffold: mockito mocks HTTP endpoints — wire the route below to the real one.`,
+            `let mut server = mockito::Server::new();`,
+            `let _m = server.mock("GET", "/path")`,
+            `    .with_status(200)`,
+            `    .with_body("")`,
+            `    .create();`,
+          ]
+        : [
+            `// Scaffold: wiremock mocks HTTP requests — wire the matcher below to the real one.`,
+            `Mock::given(method("GET"))`,
+            `    .and(path("/path"))`,
+            `    .respond_with(ResponseTemplate::new(200))`,
+            `    .mount(&server)`,
+            `    .await;`,
+          ];
+  }
+  const template = [
+    `// Generated by momus synthesize_mock_contract — ${name} (${framework})`,
+    `// Contract verified against ${targetPath} (${contract.length} public members)`,
+    '',
+    ...body,
+  ].join('\n');
+  return {
+    template,
+    contract,
+    summary: { targetPath, symbol: name, framework, members: contract.length },
+  };
+}
+
+function renderRustType(type: TypeIR): string {
+  switch (type.kind) {
+    case 'named':
+      return type.typeArgs.length ? `${type.name}<${type.typeArgs.map(renderRustType).join(', ')}>` : type.name;
+    case 'void':
+      return '()';
+    case 'never':
+      return '!';
+    case 'tuple':
+      return `(${type.elements.map(renderRustType).join(', ')})`;
+    case 'literal':
+      return JSON.stringify(type.value);
+    case 'array':
+      return type.element ? `Vec<${renderRustType(type.element)}>` : 'Vec<()>';
+    case 'unknown':
+      return '_';
+    default:
+      return '()';
+  }
+}
+
+function rustReturnExample(type: TypeIR | undefined): string {
+  if (!type) return 'todo!()';
+  switch (type.kind) {
+    case 'void':
+      return '()';
+    case 'never':
+      return 'panic!()';
+    case 'tuple':
+      return `(${type.elements.map(rustReturnExample).join(', ')})`;
+    case 'literal':
+      return JSON.stringify(type.value);
+    case 'unknown':
+      return 'todo!()';
+    case 'named': {
+      const name = type.name;
+      const ints = new Set(['u8', 'u16', 'u32', 'u64', 'usize', 'i8', 'i16', 'i32', 'i64', 'isize']);
+      if (ints.has(name)) return '0';
+      if (name === 'f32' || name === 'f64') return '0.0';
+      if (name === 'bool') return 'false';
+      if (name === 'String') return 'String::from("")';
+      if (name === 'str' || name === '&str') return '""';
+      if (name === 'char') return "'a'";
+      if (name === 'Option') return 'None';
+      if (name === 'Result') {
+        const ok = type.typeArgs[0] ? rustReturnExample(type.typeArgs[0]) : '()';
+        return `Ok(${ok})`;
+      }
+      if (name === 'Vec') return 'vec![]';
+      return 'todo!()';
+    }
+    case 'union':
+    case 'intersection':
+    case 'array':
+    case 'function':
+    case 'null':
+    case 'undefined':
+      return 'todo!()';
+  }
 }

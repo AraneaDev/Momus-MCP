@@ -32,11 +32,25 @@ const issue = (
 
 const FRAMEWORK_SPECIFIERS = /^(vitest|@vitest\/.*|jest|@jest\/.*)$/;
 
-/** Test file's subject: ledger.test.ts -> ledger */
-function testSubject(modulePath: string): string | undefined {
-  const base = modulePath.split('/').pop() ?? '';
-  const m = base.match(/^(.+?)\.(test|spec)\.[cm]?[jt]sx?$/);
-  return m?.[1];
+/** Test file's subject by language: ledger.test.ts / test_ledger.py / LedgerTest.php -> ledger/Ledger. */
+export function testSubject(module: ModuleIR): string | undefined {
+  const base = module.path.split('/').pop() ?? '';
+  switch (module.language) {
+    case 'typescript': {
+      const m = base.match(/^(.+?)\.(test|spec)\.[cm]?[jt]sx?$/);
+      return m?.[1];
+    }
+    case 'python': {
+      const m = base.match(/^test_(.+)\.py$/) ?? base.match(/^(.+)_test\.py$/);
+      return m?.[1];
+    }
+    case 'php': {
+      const m = base.match(/^(.+)Test\.php$/);
+      return m?.[1];
+    }
+    case 'rust':
+      return undefined;
+  }
 }
 
 export class Mock001Saturation extends HygieneRule {
@@ -83,14 +97,32 @@ export class Mock002MockOfSelf extends HygieneRule {
   readonly description = 'the test mocks a module it also imports as the SUT';
   check({ module }: RuleContext): Issue[] {
     const out: Issue[] = [];
-    const subject = testSubject(module.path);
-    if (!subject) return out;
     for (const m of module.mocks) {
+      // Rust: a #[cfg(test)] mod tests mocking a struct/trait declared in the same file.
+      if (module.language === 'rust') {
+        if (
+          m.target?.exportName &&
+          module.symbols.some((s) => (s.kind === 'class' || s.kind === 'interface') && s.name === m.target!.exportName)
+        ) {
+          out.push(
+            issue(
+              { module } as RuleContext,
+              this.id,
+              this.defaultSeverity,
+              m.span,
+              `mock-of-self: '${m.target.exportName}' is mocked but also declared as the subject under test`,
+            ),
+          );
+        }
+        continue;
+      }
+      const subject = testSubject(module);
+      if (!subject) continue;
       if (m.target?.kind === 'module' && m.target.modulePath) {
         const targetBase = m.target.modulePath
           .split('/')
           .pop()
-          ?.replace(/\.(ts|tsx|js|jsx|mts|cts|mjs)$/, '');
+          ?.replace(/\.(ts|tsx|js|jsx|mts|cts|mjs|php|py)$/, '');
         if (targetBase === subject) {
           out.push(
             issue(
@@ -102,6 +134,23 @@ export class Mock002MockOfSelf extends HygieneRule {
             ),
           );
         }
+      } else if (
+        module.language !== 'typescript' &&
+        m.target?.kind === 'class' &&
+        m.target.exportName &&
+        m.target.exportName.toLowerCase() === subject.toLowerCase()
+      ) {
+        // Python/PHP class-target mocks: patch.object(Ledger, …) in test_ledger.py, or
+        // LedgerTest.php mocking Ledger.
+        out.push(
+          issue(
+            { module } as RuleContext,
+            this.id,
+            this.defaultSeverity,
+            m.span,
+            `mock-of-self: '${m.target.exportName}' is mocked but also the subject under test`,
+          ),
+        );
       }
     }
     return out;

@@ -131,4 +131,20 @@ fn t() {
     const mocks = extractMocks(file, '/c/src/t.rs');
     expect(mocks.some((m) => m.pattern === 'wiremock' && m.target?.specifier === '/x')).toBe(true);
   });
+
+  it('records an invocation site through a Box re-binding', () => {
+    const file = parseRust(
+      `#[test]\nfn t() {\n  let mock = MockRepo::new();\n  mock.expect_fetch().returning(|| 1);\n  let boxed: Box<dyn Repo> = Box::new(mock);\n  assert_eq!(1, boxed.fetch());\n}\n`,
+    );
+    const mocks = extractMocks(file, '/c/src/t.rs');
+    expect(mocks[0]!.invocationSites.length).toBeGreaterThan(0);
+  });
+
+  it('marks a mock reached when consumed by value', () => {
+    const file = parseRust(
+      `#[test]\nfn t() {\n  let mock = MockRepo::new();\n  mock.expect_fetch().returning(|| 1);\n  block_on(mock);\n}\n`,
+    );
+    const mocks = extractMocks(file, '/c/src/t.rs');
+    expect(mocks[0]!.invocationSites.length).toBeGreaterThan(0);
+  });
 });

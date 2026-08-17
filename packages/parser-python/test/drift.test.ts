@@ -23,6 +23,17 @@ describe('python drift rules', () => {
     expect(result.issues.some((i) => i.rule === 'DRIFT-003')).toBe(true);
   });
 
+  it('DRIFT-003 fires on an unannotated method whose return type is inferred via pyright', () => {
+    const result = engine().run();
+    const d3 = result.issues.filter((i) => i.rule === 'DRIFT-003');
+    expect(d3.some((i) => i.message.includes('count'))).toBe(true);
+  });
+
+  it('DRIFT-005 fires when patch() targets a missing module attribute', () => {
+    const result = engine().run();
+    expect(result.issues.some((i) => i.rule === 'DRIFT-005')).toBe(true);
+  });
+
   it('stays quiet on the healthy annotated twin (no drift findings)', () => {
     const result = engine().run();
     const healthyDrift = result.issues.filter(

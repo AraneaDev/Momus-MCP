@@ -55,4 +55,15 @@ class TestThing(unittest.TestCase):
     expect(a.api).toBe('assertEqual');
     expect(a.operands).toHaveLength(2);
   });
+
+  it('extracts assert_called assertions with the mock ref', () => {
+    const src = `from unittest.mock import Mock
+
+def test_it():
+    m = Mock()
+    m.assert_called()
+`;
+    const mod = parser.parseModule('/x/test_x.py', src, { config: undefined, resolveImport: () => null });
+    expect(mod.assertions.some((a) => a.api === 'assert_called' && a.operands[0]?.mockRefs.length === 1)).toBe(true);
+  });
 });

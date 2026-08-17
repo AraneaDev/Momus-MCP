@@ -327,7 +327,17 @@ full audit of mockall's **own test suite** (188 `.rs` files, 172 under `tests/`)
 27. ✅ Dogfood probe round (no code gaps found): `vi.hoisted(() => vi.fn())` and
     `vi.hoisted(() => ({ key: vi.fn() }))` — the pervasive real-world pattern for sharing mock fns
     with `vi.mock` factories — resolve correctly on Chaos-MCP: the hoisted `vi.fn` is a standalone
-    mock, the factory keys (`listChangedFiles`, `Server`, …) extract as `mockFactoryKey` stubs, and
+    mock, the factory keys (`listChangedFiles`, `Server`, …) extract as    `mockFactoryKey` stubs, and
     MOCK-001 counts stay accurate (no double-counting, no false TAUT/DRIFT). Class-valued factory
     keys (`Server: class { … }`) also extract. Chaos re-audit unchanged (0 errors / 4 MOCK-001);
     Knossos unchanged (6 sentinel errors, all deliberate `assertSame(true, true)` markers).
+28. ✅ Four-language parity dogfood (row 48): **mockall** re-audited after the Rust reachability
+    fix (wrapper re-bindings + by-value consumption) — warnings dropped 16 → 11, the remaining 11
+    are the 4 cfg-gated compile-only tests + 7 deeper UFCS/unsafe/multi-config patterns (documented
+    static-analysis boundaries, §4d). **httpx** (shallow clone, mock-heavy pytest repo) audited
+    with `languages.python: true` exercising the pyright `--createstub` inference: 60 files, **0
+    issues** — the first-file parse (`httpx/__init__.py`) paid the one-time pyright cold start
+    (3117ms vs the 2000ms single-file budget → a `SYS-004` note), memoized across the workspace so
+    the total audit stayed 5647ms. This is the documented cost of subprocess inference (the
+    in-process `pyright-internal` API is unpublished), not a regression. PHP/TS baselines (Knossos /
+    Chaos) re-audited unchanged.

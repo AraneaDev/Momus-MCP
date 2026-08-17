@@ -4,16 +4,16 @@ import { span } from '@momus/core';
 import { childField, end, start, textOf, walk, type SyntaxNode } from './tree.ts';
 import { parseAnnotation } from './types.ts';
 
-export function extractSymbols(root: SyntaxNode, file: string): SymbolIR[] {
+export function extractSymbols(root: SyntaxNode, file: string, inferred?: Map<string, string>): SymbolIR[] {
   const symbols: SymbolIR[] = [];
   // Module-level functions (incl. decorated).
   for (const child of root.namedChildren) {
     const fn = unwrapDecorated(child);
-    if (fn) symbols.push(functionToSymbol(file, fn));
+    if (fn) symbols.push(functionToSymbol(file, fn, inferred));
   }
   // Classes (top-level + nested), with methods as members.
   walk(root, (node) => {
-    if (node.isNamed && node.type === 'class_definition') symbols.push(classToSymbol(file, node));
+    if (node.isNamed && node.type === 'class_definition') symbols.push(classToSymbol(file, node, inferred));
   });
   return symbols;
 }
@@ -27,15 +27,15 @@ function unwrapDecorated(node: SyntaxNode): SyntaxNode | null {
   return null;
 }
 
-function classToSymbol(file: string, node: SyntaxNode): SymbolIR {
+function classToSymbol(file: string, node: SyntaxNode, inferred?: Map<string, string>): SymbolIR {
   const name = textOf(childField(node, 'name')) || 'anonymous';
   const id = `${file}#${name}`;
   const body = childField(node, 'body');
-  const members = body ? directFunctions(body).map((m) => methodToSymbol(file, id, m)) : [];
+  const members = body ? directFunctions(body).map((m) => methodToSymbol(file, id, name, m, inferred)) : [];
   return { id, name, kind: 'class', span: nodeSpan(file, node), members, extendsIds: [], implementsIds: [] };
 }
 
-function functionToSymbol(file: string, node: SyntaxNode): SymbolIR {
+function functionToSymbol(file: string, node: SyntaxNode, inferred?: Map<string, string>): SymbolIR {
   const name = textOf(childField(node, 'name')) || 'anonymous';
   return {
     id: `${file}#${name}`,
@@ -45,11 +45,17 @@ function functionToSymbol(file: string, node: SyntaxNode): SymbolIR {
     members: [],
     extendsIds: [],
     implementsIds: [],
-    signature: functionSignature(node),
+    signature: functionSignature(node, inferred?.get(name)),
   };
 }
 
-function methodToSymbol(file: string, parentId: string, node: SyntaxNode): SymbolIR {
+function methodToSymbol(
+  file: string,
+  parentId: string,
+  className: string,
+  node: SyntaxNode,
+  inferred?: Map<string, string>,
+): SymbolIR {
   const name = textOf(childField(node, 'name')) || 'anonymous';
   return {
     id: `${parentId}.${name}`,
@@ -59,7 +65,7 @@ function methodToSymbol(file: string, parentId: string, node: SyntaxNode): Symbo
     members: [],
     extendsIds: [],
     implementsIds: [],
-    signature: functionSignature(node),
+    signature: functionSignature(node, inferred?.get(`${className}.${name}`)),
   };
 }
 
@@ -73,12 +79,13 @@ function directFunctions(body: SyntaxNode): SyntaxNode[] {
   return out;
 }
 
-function functionSignature(node: SyntaxNode): SignatureIR {
+function functionSignature(node: SyntaxNode, inferredReturn?: string): SignatureIR {
   const paramsNode = childField(node, 'parameters');
   const retNode = childField(node, 'return_type');
+  const sourceType = retNode ? parseAnnotation(textOf(retNode)) : undefined;
   return {
     parameters: paramsNode ? extractParams(paramsNode) : [],
-    returnType: retNode ? parseAnnotation(textOf(retNode)) : undefined,
+    returnType: sourceType ?? (inferredReturn ? parseAnnotation(inferredReturn) : undefined),
     typeParams: [],
   };
 }
