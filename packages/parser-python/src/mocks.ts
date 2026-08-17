@@ -95,9 +95,12 @@ function makeMock(file: string, call: SyntaxNode): { mock: MockIR } | null {
   const args = childField(call, 'arguments');
 
   if (lastTwo === 'patch.object') {
+    const memberName = stringArg(args, 1);
     const target = instanceMemberTarget(args, file);
     const mock = baseMock(file, call, 'patch-object', target, framework);
-    attachKwargConfig(mock, args, file, stringArg(args, 1) ?? undefined);
+    // The patched member is itself a stub (DRIFT-001 checks it against the production class).
+    if (memberName) ensureStub(mock, memberName, file, argAt(args, 1) ?? call);
+    attachKwargConfig(mock, args, file, memberName ?? undefined);
     return { mock };
   }
   if (last === 'patch') {
