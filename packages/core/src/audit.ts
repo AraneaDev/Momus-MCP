@@ -185,7 +185,8 @@ export class AuditEngine {
       totalWarnings: count(sorted, 'warning'),
       totalInfos: count(sorted, 'info'),
       suppressed: suppressed.length,
-      durationMs: Date.now() - t0,
+      // Guard against a backward clock jump (VM/NTP skew) ever producing a negative duration.
+      durationMs: Math.max(0, Date.now() - t0),
       truncated,
     };
     return {

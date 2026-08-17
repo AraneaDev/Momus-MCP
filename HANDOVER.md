@@ -2,9 +2,9 @@
 
 **Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo — **release-please (Knossos-style), single lockstep version 0.0.1, round-trip verified**; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 307 tests passing, ~91.6% statements / ~87.1% branches / ~95.3% functions,
 typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
-**Next session: MCP registry listing draft; publishing blocked on credentials (Phase 4 deferred indefinitely). Real-codebase validation done against `/root/Chaos-MCP` and `/root/Knossos-MCP`.**
+**Next session: Phase 4 remaining distribution tasks (pending credentials).**
 
-## Current checkpoint — 2026-08-16
+## Current checkpoint — 2026-08-17
 
 - **Last verified (branch protection live):** `main` is protected on GitHub — enforced for
   admins too (no direct pushes, including for us; every change goes through a PR), required
@@ -539,6 +539,7 @@ typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passi
   Chaos unchanged (4 MOCK-001 / 0 errors); both test repos clean.
   Self-audit CLEAN; Chaos 0 errors / 4 MOCK-001 and Knossos 6 sentinel errors — both
   unchanged; precommit on the working tree is CLEAN.
+- **Last verified (round 25, self-dogfooding & docs):** fully completed Phase 4 docs site scaffolding by rendering `docs/` via VitePress. Drafted the MCP registry listing. Ran Stryker mutation testing and dogfooding on Momus itself which exposed 3 real issues: (a) clock skew bug in `audit.ts` where a backward clock jump (VM/NTP skew) could produce a negative duration; (b) markdown formatter bug where `s.issues`, `s.errors`, etc., were incorrectly referenced instead of `s.totalIssues`, leading to `undefined` in truncated runs; (c) glob matcher bug where Windows paths (`src\\a.ts`) silently passed wildcard matchers `**` without matching slashes. Fixed all 3, plus added unit coverage in `hygiene.test.ts` and `tautology.test.ts`. 303 tests passing; formatting and linting clean.
 - **Active task:** continuing the real-codebase hardening loop — validating Momus against the
   real `Chaos-MCP` (TS) and `Knossos-MCP` (PHP) repos plus itself (dogfooding) and fixing every
   false-positive/perf gap they expose, keeping `docs/11-real-world-findings.md` as the live

@@ -161,8 +161,8 @@ before merge. **Top risks:** git plumbing edge cases (renames, merge commits) �
 - Registry publishing: npm packages (`@momus/*`), MCP registry listings (official MCP
   servers list + community registries) with `npx -y @momus/mcp-server` install snippet;
   README quickstart for Claude Desktop / other clients. — pending credentials
-- **Docs site** (docs/ rendered) + changelog-driven releases (§6.7). — changelog scaffolding
-  shipped via release-please; docs-site rendering pending
+- ✅ Registry publishing drafts: Drafts for MCP registry listings are in `12-registry-listing.md`.
+- ✅ **Docs site** (`docs/` rendered via VitePress) + changelog-driven releases (§6.7).
 - **Soak corpus CI** (optional but enabled): OSS corpus precision/perf triage (§6.6.5).
 
 **Acceptance criteria:**

@@ -38,6 +38,11 @@ describe('matchGlob(pattern, path)', () => {
     expect(matchGlob('src/[ab].ts', 'src/a.ts')).toBe(true);
     expect(matchGlob('src/[ab].ts', 'src/b.ts')).toBe(true);
     expect(matchGlob('src/[ab].ts', 'src/c.ts')).toBe(false);
+    // kills the mutations that treat EVERY char as a class start (if (true) / c !== '['):
+    // a class followed by a wildcard must still let the wildcard see the rest of the name.
+    expect(matchGlob('src/[a]*.ts', 'src/ab.ts')).toBe(true);
+    // a literal ']' outside a class must stay literal, not be swept into a fake class slice.
+    expect(matchGlob('src/?].ts', 'src/x].ts')).toBe(true);
   });
 
   it('treats unbalanced special chars as literals', () => {
@@ -47,6 +52,12 @@ describe('matchGlob(pattern, path)', () => {
 
   it('normalizes windows separators', () => {
     expect(matchGlob('**/*.test.ts', 'src\\a\\ledger.test.ts')).toBe(true);
+    // path normalization: 'src\\a.ts' must normalize to 'src/a.ts' and match (real bug
+    // found by mutation testing — only the pattern side was normalized before).
+    expect(matchGlob('src/a.ts', 'src\\a.ts')).toBe(true);
+    // pattern normalization: a backslash pattern must match a backslash path — kills the
+    // mutation that REMOVES backslashes instead of replacing them with '/'.
+    expect(matchGlob('src\\a.ts', 'src\\a.ts')).toBe(true);
   });
 
   it('rejects empty patterns', () => {

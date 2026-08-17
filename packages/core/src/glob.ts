@@ -5,7 +5,10 @@
  * A trailing slash after ** also matches zero directories.
  */
 export function matchGlob(pattern: string, path: string): boolean {
-  return toRegExp(pattern).test(path);
+  // Normalize BOTH sides: a Windows-style path ('src\\a.ts') must match a forward-slash
+  // pattern ('src/a.ts') and vice versa. (Found by mutation testing: the old test passed
+  // by accident — backslashes are just non-slash chars, so '**' swallowed them whole.)
+  return toRegExp(pattern).test(path.replace(/\\/g, '/'));
 }
 
 export function anyMatch(patterns: string[], path: string): boolean {

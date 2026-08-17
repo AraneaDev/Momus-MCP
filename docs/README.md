@@ -76,7 +76,7 @@ interface, rule, schema, and phase below is normative unless explicitly marked *
 - [x] Phase 3 (git-diff hooks + CLI companion) — `precommit`, `audit|drift --git-diff`, DRIFT-006, MCP git-diff scope, `hook`, `serve --transport http`, `serve --watch` (chokidar), `annotate` (JSONL), and `audit --fix` (DRIFT-001 rename fix; TAUT-* are semantic and intentionally descriptive-only).
 - [x] Test-coverage tooling — `npm run test:coverage` (v8) with floors 80% statements/lines, 75% branches, 90% functions; currently ~84% statements / ~82% branches across library modules.
 - [x] Persistent IR cache — `better-sqlite3` at `.momus/cache/`, keyed by file content hash + workspace digest (advisory, deterministic); ESLint + Prettier authoring gates (`lint`/`format` scripts) shipped.
-- [ ] Phase 4 (CI action + registry publishing) — action + `annotate-pr` + `release-please` shipped in-repo; npm/MCP publishing pending credentials
+- [ ] Phase 4 (CI action + registry publishing + docs) — action + `annotate-pr` + `release-please` shipped in-repo; MCP registry drafted (`12-registry-listing.md`); `docs/` rendered via VitePress; npm/MCP publishing pending credentials
 
 See [`10-build-plan.md`](./10-build-plan.md) for the achievable goal and sequenced work, and
 [`07-roadmap.md`](./07-roadmap.md) for the original phased plan.

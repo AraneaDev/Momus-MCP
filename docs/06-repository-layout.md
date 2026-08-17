@@ -136,7 +136,8 @@ Root `package.json` scripts (normative — **the implemented scripts**):
     "test": "vitest run",
     "test:watch": "vitest",
     "audit-self": "tsx packages/cli/src/index.ts audit . --max-issues 0",
-    "serve": "tsx packages/cli/src/index.ts serve"
+    "serve": "tsx packages/cli/src/index.ts serve",
+    "mutation": "node scripts/mutate.mjs"
   }
 }
 ```
@@ -147,8 +148,31 @@ in Phase 1 — `exports` maps point at `./src/index.ts`). `engines: { node: ">=2
 ### 6.4.1 Exit codes and CI honesty
 
 `momus audit`/`momus drift` exit `1` when **errors** exist, `0` when clean, `2` usage/config
-error, `3` internal. Exit codes and the report's `CLEAN:` flag use the **pre-truncation**
-counts (`summary.totalErrors`), so `--max-issues 0` (summary-only) never masks findings.
+error, `3` internal. Exit codes, the report's `CLEAN:` flag, **and the header's issue counts**
+use the **pre-truncation** totals (`summary.totalErrors` / `summary.totalIssues`), so
+`--max-issues 0` (summary-only) never masks findings — a truncated report prints
+`4 issues … CLEAN:false … more issues omitted`, never `0 issues … CLEAN:false`.
+
+### 6.4.2 Internal mutation testing (Stryker, manual)
+
+Momus mutation-tests its own rules and helpers with StrykerJS's **command runner**
+(`@stryker-mutator/core` devDependency, `stryker.config.mjs`), modeled on Chaos-MCP's proven
+setup: the command runner runs a plain test command as a black box per mutant and grades on the
+exit code, so it works with vitest 3 (no vitest-runner plugin dependency). `scripts/mutate.mjs`
+scopes **both** the mutated files and the test command (`vitest related <targets> --run` — only
+the tests whose module graph includes the mutated files), so a bare `npx stryker run` stays an
+empty no-op (a whole-repo run would execute the full suite for every mutant):
+
+```
+npm run mutation -- packages/core/src/rules/drift.ts          # one file
+npm run mutation -- packages/core/src/rules                   # a directory (recursed)
+npm run mutation -- packages/core/src/glob.ts --tests packages/core/test/glob.test.ts
+```
+
+Runs are **manual-only** (slow: ~1–5 min per module at `concurrency: 2`) and not wired into CI.
+Current scores: glob 96.4% · suppress 95.6% · tokens 100% · hygiene 94.9% · tautology 95.2%
+(remaining survivors are functionally equivalent mutants or unreachable defensive slices).
+`coverageAnalysis: 'off'`, temp dir `.stryker-tmp` (gitignored).
 
 ## 6.5 CI/CD
 
