@@ -26,7 +26,10 @@ function collect(
     if (item.kind === 'macro' && (item.path === 'mock' || item.path === 'Mock')) {
       mocks.push(fromMockMacro(item, path, index));
     } else if (item.kind === 'fn' && item.attrs.some((a) => a.path === 'test')) {
-      for (const expr of item.body) walkExpr(expr, mocks, path, index, imports);
+      for (const expr of item.body) {
+        walkExpr(expr, mocks, path, index, imports);
+        scanWiremock(expr, mocks, path);
+      }
     } else if (item.kind === 'mod') {
       collect(item.items, mocks, path, index, imports);
     }
@@ -45,6 +48,11 @@ function walkExpr(
     const spec = imports.get(typeName);
     const symbolId = spec ? index.resolveSymbolId(spec) : null;
     mocks.push(mockOf(path, e.span, 'automock', symbolId));
+  }
+
+  if (e.kind === 'call' && e.callee?.text === 'mock') {
+    const route = e.args?.map((a) => a.literal?.value).find((v) => v?.startsWith('/'));
+    mocks.push(httpMock(path, e.span, 'mockito', route));
   }
 
   if (e.kind === 'method-call') {
@@ -91,6 +99,43 @@ function walkExpr(
   if (e.right) walkExpr(e.right, mocks, path, index, imports);
 }
 
+/** A `Mock::given(...).and(path("/x")).respond_with(...)` statement -> one wiremock mock. */
+function scanWiremock(e: RustExpr, mocks: MockIR[], path: string): void {
+  if (hasCallee(e, 'Mock::given')) {
+    mocks.push(httpMock(path, e.span, 'wiremock', findRoute(e)));
+  }
+}
+
+function hasCallee(e: RustExpr, name: string): boolean {
+  if (e.kind === 'call' && e.callee?.text === name) return true;
+  if (e.receiver && hasCallee(e.receiver, name)) return true;
+  for (const a of e.args ?? []) if (hasCallee(a, name)) return true;
+  if (e.left && hasCallee(e.left, name)) return true;
+  if (e.right && hasCallee(e.right, name)) return true;
+  return false;
+}
+
+function findRoute(e: RustExpr): string | undefined {
+  if (e.literal?.kind === 'string' && e.literal.value.startsWith('/')) return e.literal.value;
+  if (e.receiver) {
+    const r = findRoute(e.receiver);
+    if (r) return r;
+  }
+  for (const a of e.args ?? []) {
+    const r = findRoute(a);
+    if (r) return r;
+  }
+  if (e.left) {
+    const r = findRoute(e.left);
+    if (r) return r;
+  }
+  if (e.right) {
+    const r = findRoute(e.right);
+    if (r) return r;
+  }
+  return undefined;
+}
+
 function fromMockMacro(m: RustMacroCall, path: string, index: RustCrateIndex): MockIR {
   const traitMatch = /impl\s+([A-Za-z0-9_:]+)\s+for\s+([A-Za-z0-9_]+)/.exec(m.tokens);
   const members = [...m.tokens.matchAll(/fn\s+(\w+)\s*\(/g)].map((x) => x[1]!);
@@ -117,6 +162,22 @@ function mockOf(
     configuredValues: [],
     invocationSites: [],
     isAutomock: pattern === 'automock',
+  };
+}
+
+function httpMock(path: string, span: RustSpan, pattern: 'mockito' | 'wiremock', route: string | undefined): MockIR {
+  return {
+    id: `${path}#mock:${span.line}:${span.column}`,
+    span: spanOf(path, span),
+    framework: pattern,
+    pattern,
+    target: route
+      ? { kind: 'unknown', specifier: route, span: spanOf(path, span) }
+      : { kind: 'unknown', span: spanOf(path, span) },
+    stubbedMembers: [],
+    configuredValues: [],
+    invocationSites: [],
+    isAutomock: false,
   };
 }
 

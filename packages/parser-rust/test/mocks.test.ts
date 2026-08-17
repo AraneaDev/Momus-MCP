@@ -45,4 +45,20 @@ mod tests {
     expect(mocks[0]!.pattern).toBe('mock-macro');
     expect(mocks[0]!.stubbedMembers.map((s) => s.name)).toEqual(['bar', 'baz']);
   });
+
+  it('detects a mockito route mock', () => {
+    const file = parseRust(
+      `#[test]\nfn t() { let m = mock("GET", "/users").with_status(200).create(); m.assert(); }\n`,
+    );
+    const mocks = extractMocks(file, '/c/src/t.rs', idx());
+    expect(mocks.some((m) => m.pattern === 'mockito' && m.target?.specifier === '/users')).toBe(true);
+  });
+
+  it('detects a wiremock expectation', () => {
+    const file = parseRust(
+      `#[test]\nfn t() { Mock::given(method("GET")).and(path("/x")).respond_with(ResponseTemplate::new(200)); }\n`,
+    );
+    const mocks = extractMocks(file, '/c/src/t.rs', idx());
+    expect(mocks.some((m) => m.pattern === 'wiremock' && m.target?.specifier === '/x')).toBe(true);
+  });
 });
