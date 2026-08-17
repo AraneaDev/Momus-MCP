@@ -131,7 +131,7 @@ function mockAccess(node: SyntaxNode, state: PythonMockState): { mock: MockIR | 
       const base = childField(fn, 'object');
       const member = textOf(childField(fn, 'attribute'));
       const baseName = rootName(base);
-      const mock = baseName ? resolveMockName(state, rootOf(node), baseName, node) : undefined;
+      const mock = baseName ? resolveMockName(state, baseName, node) : undefined;
       const stub = mock && member ? mock.stubbedMembers.find((s) => s.name === member) : undefined;
       return { mock: mock ?? null, configured: stub?.returnValues[0] };
     }
@@ -142,7 +142,7 @@ function mockAccess(node: SyntaxNode, state: PythonMockState): { mock: MockIR | 
     if (attr === 'return_value' || attr === 'side_effect') {
       const base = childField(node, 'object');
       const baseName = rootName(base);
-      const mock = baseName ? resolveMockName(state, rootOf(node), baseName, node) : undefined;
+      const mock = baseName ? resolveMockName(state, baseName, node) : undefined;
       return { mock: mock ?? null, configured: mock?.configuredValues[0] };
     }
   }
@@ -166,7 +166,7 @@ function markReachableMocks(root: SyntaxNode, file: string, state: PythonMockSta
       if (arg.type === 'keyword_argument') continue;
       const name = rootName(arg);
       if (!name) continue;
-      const mock = resolveMockName(state, root, name, arg);
+      const mock = resolveMockName(state, name, arg);
       if (mock) {
         const line = nodeLine(node);
         if (!mock.invocationSites.some((s) => s.startLine === line)) {
@@ -236,13 +236,6 @@ function enclosingFn(fnSpans: Array<{ start: number; end: number; id: string }>,
     if (fn.start <= line && line <= fn.end) return fn.id;
   }
   return '';
-}
-
-/** Walk up to the tree root (for scope resolution). */
-function rootOf(node: SyntaxNode): SyntaxNode {
-  let cur = node;
-  while (cur.parent) cur = cur.parent;
-  return cur;
 }
 
 function nodeLine(node: SyntaxNode): number {

@@ -16,6 +16,8 @@ export interface PythonMockState {
   mocks: MockIR[];
   /** Binding entries per `scope:name` key, ordered by assignment line for shadowing semantics. */
   bindings: Map<string, Array<{ line: number; mock: MockIR }>>;
+  /** line → innermost enclosing function start line (0 = top-level), for O(1) scope resolution. */
+  scopeMap: Map<number, number>;
 }
 
 const FACTORY_NAMES = new Set(['Mock', 'MagicMock', 'AsyncMock', 'create_autospec']);
@@ -25,7 +27,8 @@ export function extractMocks(root: SyntaxNode, file: string, _symbols: SymbolIR[
   const bindings = new Map<string, Array<{ line: number; mock: MockIR }>>();
   const byCall = new Map<string, MockIR>();
 
-  const scopeOf = (node: SyntaxNode): number => enclosingFunctionStart(root, start(node).line + 1);
+  const scopeMap = buildScopeMap(root);
+  const scopeOf = (node: SyntaxNode): number => scopeMap.get(start(node).line + 1) ?? 0;
   const recordBinding = (scope: number, name: string, mock: MockIR): void => {
     const key = `${scope}:${name}`;
     const entries = bindings.get(key) ?? [];
@@ -82,7 +85,7 @@ export function extractMocks(root: SyntaxNode, file: string, _symbols: SymbolIR[
     }
   });
 
-  return { mocks, bindings };
+  return { mocks, bindings, scopeMap };
 }
 
 function makeMock(file: string, call: SyntaxNode): { mock: MockIR } | null {
@@ -271,14 +274,9 @@ export function valueIR(node: SyntaxNode): TypeIR | undefined {
 }
 
 /** Resolve a local variable name to the nearest mock bound at/above `node`'s line (scope-aware). */
-export function resolveMockName(
-  state: PythonMockState,
-  root: SyntaxNode,
-  name: string,
-  node: SyntaxNode,
-): MockIR | undefined {
+export function resolveMockName(state: PythonMockState, name: string, node: SyntaxNode): MockIR | undefined {
   const line = nodeLine(node);
-  const scope = enclosingFunctionStart(root, line);
+  const scope = state.scopeMap.get(line) ?? 0;
   return resolveBinding(state.bindings, scope, name, line);
 }
 
@@ -301,20 +299,20 @@ function resolveBinding(
   return best;
 }
 
-/** Start line of the innermost enclosing function, or 0 when top-level. */
-function enclosingFunctionStart(root: SyntaxNode, line: number): number {
-  let best = 0;
-  let bestSize = Number.POSITIVE_INFINITY;
+/**
+ * line → innermost enclosing function start line (0 = top-level). Built in ONE walk;
+ * the naive per-lookup full-tree walk made assertion extraction quadratic (~17s on a
+ * 3k-line file — found by the requests dogfood, docs/11 row).
+ */
+function buildScopeMap(root: SyntaxNode): Map<number, number> {
+  const map = new Map<number, number>();
   walk(root, (node) => {
     if (!node.isNamed || node.type !== 'function_definition') return;
     const fnStart = start(node).line + 1;
     const fnEnd = end(node).line + 1;
-    if (fnStart <= line && line <= fnEnd && fnEnd - fnStart < bestSize) {
-      best = fnStart;
-      bestSize = fnEnd - fnStart;
-    }
+    for (let line = fnStart; line <= fnEnd; line++) map.set(line, fnStart);
   });
-  return best;
+  return map;
 }
 
 function posKey(node: SyntaxNode): string {
