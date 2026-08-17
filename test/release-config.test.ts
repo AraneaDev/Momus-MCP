@@ -19,6 +19,14 @@ describe('release-please config', () => {
     expect(out).toContain('release-please config consistent');
   });
 
+  it('sync-versions.mjs --check passes (every package.json at the manifest version)', () => {
+    const out = execFileSync('node', ['scripts/sync-versions.mjs', '--check'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    });
+    expect(out).toContain('package.json files at v');
+  });
+
   it('all six packages are version-locked with ~ internal deps admitting the version', () => {
     const manifest = JSON.parse(readFileSync(join(ROOT, '.release-please-manifest.json'), 'utf8'));
     const version = manifest['.'];

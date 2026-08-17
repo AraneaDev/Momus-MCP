@@ -1,10 +1,22 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-17 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; **Python support shipped** (third language family — single language registry + `@momus/parser-python` via tree-sitter-python + PEP 484/526 annotations) — release-please (Knossos-style), single lockstep version, persistent IR cache (better-sqlite3), ESLint+Prettier, coverage tooling — 425 tests passing, typecheck clean, lint clean, format clean, self-audit clean.
-**Next session: Python dogfood (real pytest repo), then Rust (`syn` via WASM); Phase 4 distribution stays pending credentials.**
+**Date:** 2026-08-17 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; **Python support shipped + released (v0.0.4)** — single language registry + `@momus/parser-python` (tree-sitter-python + PEP 484/526 annotations), 6 packages lockstep at 0.0.4 — release-please, persistent IR cache, ESLint+Prettier, coverage tooling — 426 tests passing, typecheck clean, lint clean, format clean, self-audit clean.
+**Next session: Rust (`syn` via WASM) spec (brainstorm in progress) + pyright inference; Phase 4 distribution stays pending credentials.**
 
 ## Current checkpoint — 2026-08-17
 
+- **Last verified (version-sync automation):** added `scripts/sync-versions.mjs`
+  (`npm run version:sync` + `version:check`) to align every `package.json` version to
+  `.release-please-manifest.json`, plus a `.githooks/pre-commit` hook that runs it on every
+  commit — a **new** package now starts at the current lockstep version instead of a hardcoded
+  one (the manual 0.0.2→0.0.3 alignment on parser-python is what prompted this). docs/06 §6.5.2
+  and the Python plan's package template updated to say "run version:sync, never hardcode".
+- **Last verified (0.0.4 released):** PR #8 (`feat: Python language support`) merged to main
+  (all 4 gates green), release-please opened PR #9 (`chore(main): release 0.0.4`) which merged
+  and cut **v0.0.4** tag + GitHub Release (2026-08-17) — 6 packages lockstep (parser-python
+  aligned to the 0.0.3 baseline before merge so the release-config gate stayed green). A live
+  GitHub 503 incident ate the release-please run and the release-PR CI dispatch (`action_required`
+  with 0 jobs); both recovered via `gh run rerun` — no config changes needed.
 - **Last verified (0.0.3 release unblocked):** PR #7 (`chore(main): release 0.0.3`) was
   deadlocked — the required `conventional-title` check (the `PR Title` workflow, triggered by
   `pull_request_target`) never runs on release-please PRs because GitHub does not create new
