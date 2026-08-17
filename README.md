@@ -4,6 +4,11 @@
 
 **The ultimate critic among the deities — pointed at your test suite.**
 
+![Release](https://img.shields.io/github/v/tag/AraneaDev/Momus-MCP?label=Release&color=orange)
+![Language](https://img.shields.io/github/languages/top/AraneaDev/Momus-MCP)
+![Tests](https://img.shields.io/github/actions/workflow/status/AraneaDev/Momus-MCP/ci.yml?label=tests)
+![Coverage](https://img.shields.io/codecov/c/github/AraneaDev/Momus-MCP)
+
 </div>
 
 > **Momus** (Μῶμος) is the ancient Greek spirit and personification of **satire, mockery,

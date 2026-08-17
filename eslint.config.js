@@ -8,6 +8,7 @@ export default tseslint.config(
     ignores: [
       'node_modules/**',
       'dist/**',
+      'docs/.vitepress/dist/**',
       'coverage/**',
       '**/test/fixtures/**',
       '**/test/fixtures-syntax-only/**',

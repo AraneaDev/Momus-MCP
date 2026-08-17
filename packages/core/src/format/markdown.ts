@@ -12,12 +12,14 @@ export interface MarkdownOptions {
 export function buildMarkdownReport(result: AuditResult, opts: MarkdownOptions): string {
   const { workspaceRoot, scopeLabel } = opts;
   const s = result.summary;
-  // CLEAN reflects the full (pre-truncation) picture so summary-only runs stay honest
+  // The header, like CLEAN and the exit code, reports the PRE-TRUNCATION totals so a
+  // summary-only run (--max-issues 0 / verbosity summary) never masks findings: a truncated
+  // report prints "4 issues … CLEAN:false … more issues omitted", never "0 issues … CLEAN:false".
   const clean = s.totalErrors === 0 && s.totalWarnings === 0;
   const header =
     `# Momus audit — ${scopeLabel}\n\n` +
-    `Audited ${s.filesAudited} file${s.filesAudited === 1 ? '' : 's'} · ${s.issues} issue${s.issues === 1 ? '' : 's'} ` +
-    `(${s.errors} error · ${s.warnings} warning · ${s.infos} info) · ${s.durationMs}ms — CLEAN:${clean}`;
+    `Audited ${s.filesAudited} file${s.filesAudited === 1 ? '' : 's'} · ${s.totalIssues} issue${s.totalIssues === 1 ? '' : 's'} ` +
+    `(${s.totalErrors} error · ${s.totalWarnings} warning · ${s.totalInfos} info) · ${s.durationMs}ms — CLEAN:${clean}`;
 
   if (opts.verbosity === 'summary') return header + '\n';
 

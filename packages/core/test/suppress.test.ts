@@ -36,10 +36,22 @@ describe('parseSuppression', () => {
   it('parses docblocks', () => {
     expect(parseSuppression(raw('/** @momus-ignore */', 7, 'docblock'))).toEqual({ rules: undefined, docblock: true });
   });
+  it('tolerates missing whitespace after // and around ** (kills \\s* -> \\s regex mutants)', () => {
+    expect(parseSuppression(raw('//@momus-ignore', 1))).toEqual({ rules: undefined });
+    expect(parseSuppression(raw('//@momus-ignore-file', 1))).toEqual({ file: true });
+    expect(parseSuppression(raw('/**@momus-ignore */', 2, 'docblock'))).toEqual({ rules: undefined, docblock: true });
+    expect(parseSuppression(raw('/** @momus-ignore*/', 3, 'docblock'))).toEqual({ rules: undefined, docblock: true });
+  });
+  it('trims trailing whitespace before matching (kills the .trim() removal mutant)', () => {
+    expect(parseSuppression(raw('// @momus-ignore ', 1))).toEqual({ rules: undefined });
+    expect(parseSuppression(raw('// @momus-ignore-file\t', 1))).toEqual({ file: true });
+  });
   it('rejects lookalikes and plain comments', () => {
     expect(parseSuppression(raw('// @momus-ignoree', 1))).toBeNull();
     expect(parseSuppression(raw('// regular comment', 2))).toBeNull();
     expect(parseSuppression(raw('// @momus-ignore:TAUT-002 extra text', 3))).toBeNull();
+    // the file banner must be exact too (kills the FILE_BANNER_RE $ anchor removal)
+    expect(parseSuppression(raw('// @momus-ignore-file extra', 1))).toBeNull();
   });
 });
 
@@ -77,6 +89,15 @@ describe('buildSuppressionState / isSuppressed', () => {
     expect(isSuppressed(issue('MOCK-001', 99), ok)).toBe(true);
     const late = buildSuppressionState([raw('// @momus-ignore-file', 42)], '/ws/t.ts');
     expect(isSuppressed(issue('MOCK-001', 99), late)).toBe(false);
+    // boundary: line 10 is still in the first 10 lines (kills <= -> < mutant)
+    const boundary = buildSuppressionState([raw('// @momus-ignore-file', 10)], '/ws/t.ts');
+    expect(isSuppressed(issue('MOCK-001', 99), boundary)).toBe(true);
+  });
+
+  it('ignores comments that are not suppressions (kills the if (!p) continue -> false mutant)', () => {
+    const state = buildSuppressionState([raw('// regular comment', 5)], '/ws/t.ts');
+    expect(isSuppressed(issue('TAUT-002', 6), state)).toBe(false);
+    expect(isSuppressed(issue('TAUT-002', 5), state)).toBe(false);
   });
 
   it('docblock above a test fn suppresses the whole function span', () => {
@@ -92,7 +113,67 @@ describe('buildSuppressionState / isSuppressed', () => {
     const state = buildSuppressionState([raw('/** @momus-ignore */', 8, 'docblock')], '/ws/t.ts', fns);
     expect(isSuppressed(issue('TAUT-004', 9), state)).toBe(true);
     expect(isSuppressed(issue('TAUT-004', 14), state)).toBe(true);
+    // the fn's own end line is still suppressed (kills for-loop <= endLine -> < mutant)
+    expect(isSuppressed(issue('TAUT-004', 15), state)).toBe(true);
     expect(isSuppressed(issue('TAUT-004', 16), state)).toBe(false);
+  });
+
+  it('docblock does NOT bind a fn too far below it (kills (f) => true / && -> || / upper-bound mutants)', () => {
+    const fns: TestFnIR[] = [
+      {
+        id: 'far',
+        span: { file: '/ws/t.ts', startLine: 20, startCol: 1, endLine: 25, endCol: 2 },
+        hasProductionCalls: false,
+        productionCallCount: 0,
+        assertionCount: 1,
+      },
+    ];
+    const state = buildSuppressionState([raw('/** @momus-ignore */', 8, 'docblock')], '/ws/t.ts', fns);
+    expect(isSuppressed(issue('TAUT-004', 20), state)).toBe(false);
+  });
+
+  it('docblock does NOT bind a fn that starts before/on the comment (kills lower-bound mutants)', () => {
+    const fns: TestFnIR[] = [
+      {
+        id: 'above',
+        span: { file: '/ws/t.ts', startLine: 5, startCol: 1, endLine: 7, endCol: 2 },
+        hasProductionCalls: false,
+        productionCallCount: 0,
+        assertionCount: 1,
+      },
+    ];
+    const state = buildSuppressionState([raw('/** @momus-ignore */', 8, 'docblock')], '/ws/t.ts', fns);
+    expect(isSuppressed(issue('TAUT-004', 5), state)).toBe(false);
+
+    // a fn whose START line is the docblock's own line must not be bound either (the
+    // docblock only suppresses its own line then) — kills the dropped-lower-bound mutants
+    // that would match it and extend the suppression across the whole fn span.
+    const sameLine: TestFnIR[] = [
+      {
+        id: 'same',
+        span: { file: '/ws/t.ts', startLine: 8, startCol: 1, endLine: 12, endCol: 2 },
+        hasProductionCalls: false,
+        productionCallCount: 0,
+        assertionCount: 1,
+      },
+    ];
+    const state2 = buildSuppressionState([raw('/** @momus-ignore */', 8, 'docblock')], '/ws/t.ts', sameLine);
+    expect(isSuppressed(issue('TAUT-004', 8), state2)).toBe(true); // own line still suppressed
+    expect(isSuppressed(issue('TAUT-004', 12), state2)).toBe(false); // fn span NOT covered
+  });
+
+  it('docblock binds a fn starting exactly DOCBLOCK_FN_GAP lines below (kills <= -> < upper-bound mutant)', () => {
+    const fns: TestFnIR[] = [
+      {
+        id: 'edge',
+        span: { file: '/ws/t.ts', startLine: 12, startCol: 1, endLine: 14, endCol: 2 },
+        hasProductionCalls: false,
+        productionCallCount: 0,
+        assertionCount: 1,
+      },
+    ];
+    const state = buildSuppressionState([raw('/** @momus-ignore */', 8, 'docblock')], '/ws/t.ts', fns);
+    expect(isSuppressed(issue('TAUT-004', 12), state)).toBe(true);
   });
 
   it('docblock without a following fn suppresses its own line', () => {

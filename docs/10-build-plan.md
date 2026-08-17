@@ -168,7 +168,8 @@ covered by a bin-symlink regression test); TAUT-003/TAUT-006 and invocation-site
    `pr-title.yml` gates Conventional Commit titles; on `release_created` the workflow runs the
    CI gate. npm publishing is **manual-only** (`scripts/publish.mjs`, dependency order) —
    not part of CI by project decision; run it deliberately when publishing is sanctioned.
-   Registering `momus-mcp` in the MCP registry remains pending.
+   Registering `momus-mcp` in the MCP registry remains pending, but drafts are in `docs/12-registry-listing.md`.
+3. ✅ **Docs site** (`docs/` rendered via VitePress) + changelog-driven releases (§6.7).
    **Acceptance:** a PR on any TS repo shows Momus annotations; `npx -y momus-mcp` serves.
 
 ## 10.4 Rules of engagement (hard constraints from §1)

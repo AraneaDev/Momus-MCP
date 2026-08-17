@@ -3,3 +3,4 @@ experiments/node_modules/
 *.tsbuildinfo
 **/.momus/cache/
 coverage/
+.stryker-tmp/

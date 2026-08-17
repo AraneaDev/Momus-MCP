@@ -30,6 +30,13 @@ describe('renderIssueLine / issueTokens', () => {
     expect(line).toContain('fix: assert against a production-derived value');
   });
 
+  it('renders a fix-less issue without any fix suffix (kills the empty-string fallback mutant)', () => {
+    const noFix = { ...makeIssue('plain message'), fix: undefined };
+    const line = renderIssueLine(noFix, '/ws');
+    // byte-exact: a fix-less issue must end at the message with no suffix of any kind
+    expect(line).toBe('tests/ledger.test.ts:23:5 [TAUT-002] warning — plain message');
+  });
+
   it('stays under the 100-token contract for real messages', () => {
     const line = renderIssueLine(makeIssue('mock-echo: asserts stubbed value (42) against itself'), '/ws');
     expect(estimateTokens(line)).toBeLessThan(MAX);
@@ -39,6 +46,14 @@ describe('renderIssueLine / issueTokens', () => {
 
   it('assertTokenBudget throws on violations', () => {
     expect(() => assertTokenBudget('x '.repeat(500), 50)).toThrow(/token budget/);
+  });
+
+  it('assertTokenBudget throws exactly at the boundary (kills >= -> > mutant)', () => {
+    // estimateTokens('x'.repeat(13)) = ceil(13/4) + 4 = 4 + 4 = 8; 8 >= 8 must throw.
+    expect(estimateTokens('x'.repeat(13))).toBe(8);
+    expect(() => assertTokenBudget('x'.repeat(13), 8)).toThrow(/token budget/);
+    // one short is fine
+    expect(() => assertTokenBudget('x'.repeat(12), 8)).not.toThrow();
   });
 });
 

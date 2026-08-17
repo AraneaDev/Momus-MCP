@@ -15,5 +15,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
-  "dependencies": {}
+  "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1"
+  }
 }

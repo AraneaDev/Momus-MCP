@@ -21,7 +21,11 @@
   "dependencies": {
     "@momus/core": "~0.0.1",
     "@momus/mcp-server": "~0.0.1",
-    "@momus/parser-typescript": "~0.0.1",
-    "@momus/parser-php": "~0.0.1"
+    "@momus/parser-php": "~0.0.1",
+    "@momus/parser-typescript": "~0.0.1"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1",
+    "stryker": "npm:@stryker-mutator/core@^10.0.0"
   }
 }

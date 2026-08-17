@@ -1,8 +1,24 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { discoverFiles, type DiscoveryOptions } from '../src/discovery.ts';
+
+let throwFsError = false;
+vi.mock('node:fs', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...orig,
+    readdirSync: (path: import('node:fs').PathLike, options?: any) => {
+      if (throwFsError && typeof path === 'string' && path.endsWith('bad-dir')) throw new Error('EACCES');
+      return orig.readdirSync(path, options as any);
+    },
+    statSync: (path: import('node:fs').PathLike, options?: any) => {
+      if (throwFsError && typeof path === 'string' && path.endsWith('bad-file.ts')) throw new Error('EACCES');
+      return orig.statSync(path, options as any);
+    },
+  };
+});
 
 function opts(root: string, overrides: Partial<DiscoveryOptions> = {}): DiscoveryOptions {
   return {
@@ -95,6 +111,29 @@ describe('discoverFiles', () => {
       expect(files).toEqual([]);
       expect(skipped.map((s) => s.reason)).toEqual(['SYS-002: workspace exceeds maxIndexedLines']);
     } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('gracefully skips unreadable directories and files', () => {
+    const root = mkdtempSync(join(tmpdir(), 'momus-discover-unreadable-'));
+    try {
+      const badDir = join(root, 'bad-dir');
+      const badFile = join(root, 'bad-file.ts');
+      const goodFile = join(root, 'good-file.ts');
+
+      mkdirSync(badDir);
+      writeFileSync(badFile, 'export {}');
+      writeFileSync(goodFile, 'export {}');
+
+      throwFsError = true;
+      const { files, skipped } = discoverFiles(opts(root));
+      throwFsError = false;
+
+      expect(files.map((f) => f.path.slice(root.length + 1))).toEqual(['good-file.ts']);
+      expect(skipped).toEqual([]);
+    } finally {
+      throwFsError = false;
       rmSync(root, { recursive: true, force: true });
     }
   });

@@ -94,6 +94,28 @@ describe('buildMarkdownReport', () => {
     expect(out).toContain('2 findings suppressed');
   });
 
+  it('header uses pre-truncation totals so --max-issues 0 never reports a false 0 issues', () => {
+    // 4 real findings, all truncated out of the shown list (maxIssues 0): the headline must
+    // still say 4 warnings + CLEAN:false, not "0 issues … CLEAN:false".
+    const r = result({
+      issues: [], // shown list is empty after truncation
+      summary: summary({
+        issues: 0,
+        errors: 0,
+        warnings: 0,
+        infos: 0,
+        totalIssues: 4,
+        totalErrors: 0,
+        totalWarnings: 4,
+        totalInfos: 0,
+        truncated: true,
+      }),
+    });
+    const out = buildMarkdownReport(r, { workspaceRoot: ROOT, verbosity: 'summary', scopeLabel: 'workspace' });
+    expect(out).toContain('Audited 3 files · 4 issues (0 error · 4 warning · 0 info)');
+    expect(out).toContain('CLEAN:false');
+  });
+
   it('singularizes file/issue/finding labels for exactly one of each', () => {
     const r = result({
       summary: summary({ filesAudited: 1, suppressed: 1, issues: 1, errors: 1 }),

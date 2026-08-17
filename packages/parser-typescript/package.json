@@ -18,5 +18,8 @@
   "dependencies": {
     "@momus/core": "~0.0.1",
     "typescript": "^5.9.0"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1"
   }
 }
