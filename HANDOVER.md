@@ -1,17 +1,39 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-16 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo — **release-please (Knossos-style), single lockstep version 0.0.1, round-trip verified**; persistent IR cache (better-sqlite3), ESLint+Prettier, and coverage tooling shipped — 307 tests passing, ~91.6% statements / ~87.1% branches / ~95.3% functions,
-typecheck clean, lint clean, format clean, self-audit clean, fixture smoke passing, pack dry-runs clean.
-**Next session: Phase 4 remaining distribution tasks (pending credentials).**
+**Date:** 2026-08-17 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; **Python support shipped** (third language family — single language registry + `@momus/parser-python` via tree-sitter-python + PEP 484/526 annotations) — release-please (Knossos-style), single lockstep version, persistent IR cache (better-sqlite3), ESLint+Prettier, coverage tooling — 425 tests passing, typecheck clean, lint clean, format clean, self-audit clean.
+**Next session: Python dogfood (real pytest repo), then Rust (`syn` via WASM); Phase 4 distribution stays pending credentials.**
 
 ## Current checkpoint — 2026-08-17
 
+- **Last verified (0.0.3 release unblocked):** PR #7 (`chore(main): release 0.0.3`) was
+  deadlocked — the required `conventional-title` check (the `PR Title` workflow, triggered by
+  `pull_request_target`) never runs on release-please PRs because GitHub does not create new
+  workflow runs for events triggered by `GITHUB_TOKEN` (release-please opens PRs with
+  `secrets.GITHUB_TOKEN`); `--admin` merges stay blocked too (`enforce_admins` + required
+  status checks). Fixed by dropping `conventional-title` from the required checks on `main`
+  (now `commit-hygiene` + `release-config` + `test`, strict still on) — the title check still
+  runs on human PRs and release-please titles are auto-conventional anyway. PR #7 merged →
+  **v0.0.3 tagged + released** (2026-08-17); CI + release-please runs on main green.
+- **Last verified (Python support):** Python shipped as a third language family. A single
+  language registry (`packages/core/src/languages.ts`) now drives the `Language` type, config
+  defaults, test-file patterns, and the discovery extension regex; the audit engine's language
+  gate is `config.languages[module.language]` (no hardcoded per-language checks).
+  `@momus/parser-python` parses pytest/unittest via `tree-sitter-python` + textual PEP
+  484/526/585/604 annotations into the same `ModuleIR` (rules untouched): `patch`/
+  `patch.object`/`Mock(spec=)`/`mocker`/`monkeypatch` mocks, `assert`/`pytest.raises`
+  assertions, DRIFT-001 (missing patched member) + annotated DRIFT-002/003 (unannotated →
+  SYS-003), TAUT-*/MOCK-* parity. Wired through CLI/server (`createWorkspaceParser`/
+  `createMomusServer`), `momus doctor` Python-readiness, schema flag, release/publish config,
+  golden + MCP round-trip tests. Full gate green: 425 tests, typecheck, lint, format,
+  `audit-self` clean on 84 files. Design spec + plan under `docs/superpowers/…`. **Rust (`syn`
+  via WASM) + pyright type inference remain follow-ups.**
 - **Last verified (branch protection live):** `main` is protected on GitHub — enforced for
   admins too (no direct pushes, including for us; every change goes through a PR), required
-  checks `commit-hygiene` + `conventional-title` + `release-config` + `test` with branches
-  required up-to-date (strict), no review required (solo repo), force-push and branch
-  deletion blocked. The release-please bot's version PRs pass the same gates. docs/06 §6.5.1
-  updated to the real job set.
+  checks `commit-hygiene` + `release-config` + `test` (`conventional-title` dropped as a
+  required check on 2026-08-17 — `pull_request_target` cannot fire on GITHUB_TOKEN-opened
+  release-please PRs, see the 0.0.3 bullet) with branches required up-to-date (strict), no
+  review required (solo repo), force-push and branch deletion blocked. The release-please
+  bot's version PRs pass the same gates. docs/06 §6.5.1 updated to the real job set.
 - **Last verified (live release flow):** repo pushed to `https://github.com/AraneaDev/Momus-MCP`
   (first push ever — CI had never run before, which is how several latent CI bugs survived).
   Release-please now works end-to-end against the real GitHub API: **v0.0.1** bootstrapped
@@ -869,19 +891,25 @@ in `audit.ts` — only inline comments are. (Verify before relying on it.)
 | Suppression | spec grammar | implemented incl. trailing detection + docblock-fn scoping |
 | Summary | truncated counts | **pre-truncation `totalErrors` etc.** for exit codes / CLEAN |
 | Phase 0/1 status | not started | ✅ done (docs/07 headers annotated; see `docs/10`) |
+| Language lists (`Language` union, config, discovery regex) | hand-maintained in several places | **single registry** `packages/core/src/languages.ts` (§2.2.4) |
+| MockFramework/MockPattern unions | TS + PHP only | **+ `unittest`/`pytest` + `patch`/`patch-object`/`autospec`/`pytest-mock`/`monkeypatch`** (IR schema v4) |
 
 ---
 
 ## 9. Next session — recommended sequence
 
-1. **Continue the hardening loop** — dogfood the audit + `synthesize_mock_contract` on Momus
+1. **Python dogfood → Rust follow-up** — dogfood the Python parser against a real pytest-heavy
+   repo (record findings + false-positive fixes in `docs/11-real-world-findings.md`), then spec
+   and build **Rust** (`syn` via WASM) reusing the single language registry; optionally wire
+   pyright type inference behind the parser-internal seam.
+2. **Continue the hardening loop** — dogfood the audit + `synthesize_mock_contract` on Momus
    itself and against `Chaos-MCP`/`Knossos-MCP`, fixing every false-positive/perf gap they
    expose; keep `docs/11-real-world-findings.md` + this handover current.
-2. **Optional hardening** — wire `lint` + `format:check` into `ci.yml`; extract the CLI `main()`
+3. **Optional hardening** — wire `lint` + `format:check` into `ci.yml`; extract the CLI `main()`
    dispatch into pure functions (raises the CLI entrypoint's subprocess-blind v8 coverage); cover
    the remaining `format/markdown`/`drift`/`dataflow` branch edges; add perf-budget asserts (§2.7)
    and the incremental `ts.createWatchProgram` program.
-3. **Phase 4 (publishing + MCP registry) is deferred indefinitely** — do not spend cycles on it
+4. **Phase 4 (publishing + MCP registry) is deferred indefinitely** — do not spend cycles on it
    unless the project preference changes; the in-repo scaffolding (action, release-please,
    annotate-pr, registry draft) remains available.
 

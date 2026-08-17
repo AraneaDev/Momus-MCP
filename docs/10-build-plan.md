@@ -29,6 +29,7 @@ except registry publishing):
 | `@momus/core` — IR, config (JSONC), discovery, built-in glob, suppression, token budget, `SymbolIndex`, 14 rule classes, markdown/JSON formatters | `packages/core/src/` | 60 unit tests |
 | `@momus/parser-typescript` — custom-host program (parent pointers, F5), symbols/signatures, mock detection (vi.mock / vi.fn / vi.spyOn / vi.mocked / object-literal / proxy / automock helpers), dataflow provenance (const-aware, F5/F6), comments with trailing detection | `packages/parser-typescript/src/` | 33 unit tests + fixture gallery |
 | `@momus/parser-php` — `php-parser` plugin, typed symbols, PHPUnit/Mockery/Pest mock chains, configured values, `use` aliases, Composer PSR-4 + classmap resolution, PHP assertions | `packages/parser-php/src/` | 7 integration tests + fixture gallery |
+| `@momus/parser-python` — `tree-sitter-python` plugin, PEP 484/526/585/604 annotation typing, pytest/unittest mock catalog (`patch`/`patch.object`/`Mock(spec=)`/`mocker`/`monkeypatch`), assertions + provenance | `packages/parser-python/src/` | 20 unit tests + drift fixtures + golden + MCP |
 | `@momus/mcp-server` — 5 tools (audit_test_fidelity, detect_tautological_assertions, verify_mock_drift, synthesize_mock_contract, list_rules), annotations + structuredContent, no stdout writes | `packages/server/src/` | 10 integration tests (in-memory client round-trip, including PHP language selection) |
 | `@momus/cli` — audit / drift / contract / rules / serve / init / doctor, honest exit codes (pre-truncation) | `packages/cli/src/` | golden audit tests + smoke |
 | Self-audit gate | `.momusrc` + `npm run audit-self` | clean on 30 repo files |
@@ -171,6 +172,21 @@ covered by a bin-symlink regression test); TAUT-003/TAUT-006 and invocation-site
    Registering `momus-mcp` in the MCP registry remains pending, but drafts are in `docs/12-registry-listing.md`.
 3. ✅ **Docs site** (`docs/` rendered via VitePress) + changelog-driven releases (§6.7).
    **Acceptance:** a PR on any TS repo shows Momus annotations; `npx -y momus-mcp` serves.
+
+### Step 6 — Python support (third language family) · `complete`
+
+1. ✅ Single language registry (`packages/core/src/languages.ts`) drives `Language`, config
+   defaults, test-file patterns, and the discovery extension regex; the audit engine's language
+   gate is `config.languages[module.language]` (no hardcoded per-language checks).
+2. ✅ `@momus/parser-python` parses `pytest`/`unittest` via `tree-sitter-python` (native) +
+   textual PEP 484/526/585/604 annotations into the same `ModuleIR`: `patch`/`patch.object`/
+   `Mock(spec=)`/`mocker`/`monkeypatch` mocks, `assert`/`pytest.raises` assertions, provenance.
+3. ✅ Annotated drift: DRIFT-001 (missing patched member) and DRIFT-002/003 fire only on
+   annotated signatures (unannotated degrades with `SYS-003`); DRIFT-004 stays PHP-only.
+4. ✅ Wired through CLI/server, `momus doctor` Python-readiness, schema flag, release/publish
+   config; golden + MCP round-trip tests pin the planted drift fixtures.
+   **Acceptance:** `momus audit` on a pytest repo reports drift; self-audit clean; Rust + pyright
+   inference remain follow-ups.
 
 ## 10.4 Rules of engagement (hard constraints from §1)
 

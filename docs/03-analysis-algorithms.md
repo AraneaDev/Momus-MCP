@@ -131,6 +131,7 @@ fixture data and exempt (configurable: `options.checkObjectLiteralDataKeys`, def
 | 1 | TAUT-001…006, DRIFT-000…005, MOCK-001, MOCK-002 (TS/Vitest+Jest) |
 | 2 | Same rules for PHP (PHPUnit/Pest), DRIFT-004 constructor-awareness, anonymous-class handling |
 | 3 | ✅ DRIFT-006 (git integration shipped: `gitChangedPaths` + `DiffScope`), `momus precommit`, `hook`, `annotate-pr`, `annotate` (JSONL), `serve --transport http`, `audit --fix` mechanism + DRIFT-001 rename fix. TAUT-001/002/003 are semantic tautologies — **no auto-fix** (any rewrite would invent the asserted value); they carry descriptive suggestions only (§3.6) |
+| Python slice | Same rules for Python (pytest/unittest): `TAUT-*`, `DRIFT-001/005/006`, `MOCK-*`. `DRIFT-002`/`DRIFT-003` fire **only when a member carries a PEP 484/526/585/604 annotation**; unannotated signatures degrade with `SYS-003` (annotations-first; pyright deferred). `DRIFT-004` (constructor drift) remains PHP-only. |
 | 4 | (no new rules; distribution) |
 
 ## 3.4 Structural assignability (DRIFT-003)

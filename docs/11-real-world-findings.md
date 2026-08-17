@@ -5,7 +5,7 @@
 > reports about those codebases and (b) the bugs we found in Momus while doing so.
 > Non-normative (see `docs/README`).
 
-**Last updated:** 2026-08-16
+**Last updated:** 2026-08-17
 
 ## 1. Targets
 
@@ -14,6 +14,7 @@
 | `/root/Chaos-MCP` | TypeScript (ESM, NodeNext) | 320 files, 97 test files | Vitest (`vi.*`), Stryker mutation testing | default TS |
 | `/root/Knossos-MCP` | PHP ≥ 8.3 | 154 src + 221 test files | PHPUnit 12, Infection | `.momusrc` → `{languages:{php:true}}` (temp) |
 | `Momus-MCP` (self) | TypeScript + PHP | 59 audited files | Vitest | `.momusrc` (fixtures excluded) |
+| `psf/requests` (dogfood clone at `/tmp/requests-dogfood`) | Python | 35 files, 13 test files | pytest + unittest.mock (live test server) | temp `.momusrc` → `{languages:{python:true}}` |
 
 ## 2. Bugs found in Momus (and fixed)
 
@@ -69,6 +70,7 @@
 | 48 | *(perf budget)* | §2.7 time/memory budgets were asserted nowhere; the workspace-time budget was documented-only | `packages/core/test/perf.test.ts` generates a 100k-LOC PHP workspace and asserts 15s/500 MB ceilings (normative 2s/200 MB; probe measured 169ms/45 MB) + correct findings at scale; a lazy `require('@momus/parser-php')` in the test initially tanked coverage (91.6→85%) via a second module-graph copy — top-level import fixes it |
 | 49 | *(dogfood, Chaos `--max-issues 0`)* | the markdown header printed the **shown** (post-truncation) counts while `CLEAN:` used the totals — so `momus audit . --max-issues 0` on a repo with findings printed `0 issues … CLEAN:false … more issues omitted`, a self-contradictory headline that masks findings for a human reader | header now prints the pre-truncation **totals** (`totalIssues`/`totalErrors`/`totalWarnings`/`totalInfos`), consistent with `CLEAN:` and the exit code; regression test pins `4 issues … CLEAN:false` for a fully-truncated run |
 | 50 | *(mutation testing, glob)* | `matchGlob` normalized backslashes in the **pattern** only, never the **path** — the old "normalizes windows separators" test passed by accident (backslashes are just non-slash chars, so `**` swallowed them whole), so `matchGlob('src/a.ts', 'src\\a.ts')` returned `false` | `matchGlob` now normalizes both sides; regression tests cover path + pattern normalization (found by a Stryker `StringLiteral` survivor on the `pattern.replace(/\\/g, '/')` line) |
+| 51 | *(dogfood, requests)* | Python assertion extraction was **quadratic**: `enclosingFunctionStart` walked the whole tree on every operand lookup (every assertion operand and call argument re-walked the tree) | `test_requests.py` (3,094 lines, 353 assertions) parsed in 12.2s — SYS-004 over the 2s budget; whole-workspace audit 15.4s. A line→scope map is now precomputed once per file (one walk → O(1) lookups): single-file parse 146ms, cold workspace audit 0.9s; regression test pins a 300-fn/600-assert suite under 5s |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -137,6 +139,15 @@ Verified against source after fixes; working tree at commit `3ff6b0c` (now with 
   found` (now supported — data properties become plain values, methods become `vi.fn` stubs).
   `momus contract packages/core/src/ir.ts --symbol ModuleIR` now yields a correct 13-property
   `ModuleIR` mock.
+
+## 4c. Findings about `psf/requests` (Python — first Python dogfood)
+
+Cloned to `/tmp/requests-dogfood` (temp `.momusrc` → `{languages:{python:true}}`, cache off),
+full audit: **35 files, 0 issues**, cold parse 0.9s (15.4s before the row-51 fix). requests'
+tests mock sparingly (5 `@patch`/`mock.patch`, 3 `Mock`/`MagicMock` — most tests run against
+a live test server), so DRIFT/TAUT had little to fire on: **no false positives**, and the one
+planted perf bug (row 51) was caught and fixed here. The Python drift rules get a stronger
+real-world workout in the next dogfood (a mock-heavy pytest repo — e.g. httpx/flask).
 
 ## 5. Open / candidate improvements
 

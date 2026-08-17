@@ -52,6 +52,7 @@ momus-mcp/
 │  │  ├─ src/
 │  │  │  ├─ ir.ts                   # §2.3 IR types
 │  │  │  ├─ parser.ts               # LanguageParser, ParseContext
+│  │  │  ├─ languages.ts            # single language registry (extensions, patterns, defaults)
 │  │  │  ├─ index.ts                # SymbolIndex, resolution, incremental updates
 │  │  │  ├─ discovery.ts            # file walk, .gitignore, caps
 │  │  │  ├─ rules/
@@ -72,6 +73,9 @@ momus-mcp/
 │  │  ├─ src/index.ts               # implements LanguageParser
 │  │  └─ test/
 │  ├─ parser-php/                   # @momus/parser-php — php-parser → IR
+│  │  ├─ src/index.ts
+│  │  └─ test/
+│  ├─ parser-python/                # @momus/parser-python — tree-sitter-python → IR
 │  │  ├─ src/index.ts
 │  │  └─ test/
 │  ├─ server/                       # @momus/mcp-server — the MCP daemon
@@ -108,10 +112,11 @@ momus-mcp/
 
 ```
 cli ──▶ core · server
-server ──▶ core, parser-typescript, parser-php, @modelcontextprotocol/sdk
+server ──▶ core, parser-typescript, parser-php, parser-python, @modelcontextprotocol/sdk
 core ──▶ (no package deps; parsers injected)
 parser-typescript ──▶ core (types only)
 parser-php ──▶ core (types only)
+parser-python ──▶ core (types only)
 action ──▶ (wraps cli via npx)
 ```
 
@@ -194,10 +199,13 @@ smoke — see `.github/workflows/ci.yml`):
 | `conventional-title` | PR title matches Conventional Commits (`feat`/`fix`/`!` cut a release) |
 
 **Branch protection on `main` (live):** no direct pushes (enforced for admins too — every
-change goes through a PR); required checks `commit-hygiene` + `conventional-title` +
-`release-config` + `test`, branches must be up to date with `main` (strict); no review
-required (solo repo); force-push and branch deletion blocked. The release-please bot's
-version PRs pass the same gates.
+change goes through a PR); required checks `commit-hygiene` + `release-config` + `test`,
+branches must be up to date with `main` (strict); no review required (solo repo); force-push
+and branch deletion blocked. `conventional-title` is **not** a required check (dropped
+2026-08-17): the `PR Title` workflow's `pull_request_target` trigger never fires on
+release-please PRs (GitHub doesn't spawn workflow runs for events triggered by
+`GITHUB_TOKEN`), which deadlocked release PRs; it still runs on human PRs. The release-please
+bot's version PRs pass the same gates.
 
 ### 6.5.2 `release-please.yml` (shipped in-repo)
 

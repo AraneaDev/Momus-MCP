@@ -177,6 +177,18 @@ client can attach `momus-mcp` the same way it attaches any other server.
 
 ---
 
+## Python support (shipped) — annotations-first, pyright deferred
+
+Added as a third language family (separate from the numbered phases; design in
+`docs/superpowers/specs/2026-08-17-python-language-support-design.md`). A single language
+registry now drives `Language`/config/test-patterns/discovery, and `@momus/parser-python`
+parses `pytest`/`unittest` suites via `tree-sitter-python` + textual PEP 484/526/585/604
+annotations into the same `ModuleIR` — rules stay IR-only. `DRIFT-002`/`DRIFT-003` fire only on
+annotated signatures (unannotated degrades with `SYS-003`); `DRIFT-004` stays PHP-only. pyright
+type inference and the **Rust** language family (`syn` via WASM) remain follow-ups.
+
+---
+
 ## Cross-cutting concerns (all phases)
 
 | Concern | Requirement |
