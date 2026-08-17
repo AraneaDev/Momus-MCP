@@ -185,7 +185,20 @@ registry now drives `Language`/config/test-patterns/discovery, and `@momus/parse
 parses `pytest`/`unittest` suites via `tree-sitter-python` + textual PEP 484/526/585/604
 annotations into the same `ModuleIR` — rules stay IR-only. `DRIFT-002`/`DRIFT-003` fire only on
 annotated signatures (unannotated degrades with `SYS-003`); `DRIFT-004` stays PHP-only. pyright
-type inference and the **Rust** language family (`syn` via WASM) remain follow-ups.
+type inference remains a follow-up.
+
+---
+
+## Rust support (shipped) — semantic-from-day-one, `syn` → WASM
+
+Added as a fourth language family (design in
+`docs/superpowers/specs/2026-08-17-rust-language-support-design.md`). `@momus/parser-rust`
+compiles `syn` to `wasm32-unknown-unknown` and exposes a synchronous `parse_file → JSON AST` FFI;
+all extraction (symbols, imports, structural `#[test]`/`#[cfg(test)]` detection, `mockall`/
+`mockito`/`wiremock` mocks, assertions) happens in TypeScript over that AST, reusing the existing
+`SymbolIndex` and `ModuleIR` seam. A crate-wide index resolves `use`/`mod` paths and trait method
+signatures so drift rules are semantic-from-day-one (external-crate traits degrade with `SYS-003`).
+`DRIFT-004` stays PHP-only; `momus doctor` reports Rust-readiness (`Cargo.toml` + `.rs` count).
 
 ---
 

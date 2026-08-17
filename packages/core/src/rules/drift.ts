@@ -314,6 +314,32 @@ export class Drift003ReturnTypeMismatch extends DriftRule {
       }
       return out;
     }
+    if (module.language === 'rust') {
+      for (const m of module.mocks) {
+        if (!diffRelevant(ctx, m)) continue;
+        if (!m.target?.symbolId) continue;
+        const members = index.membersOf(m.target.symbolId);
+        for (const stub of m.stubbedMembers) {
+          const prod = members.find((s) => s.name === stub.name);
+          if (!prod?.signature?.returnType) continue;
+          for (const v of stub.returnValues) {
+            if (!v.value) continue;
+            if (!rustReturnAssignable(v.value, prod.signature.returnType, index, module.path)) {
+              out.push(
+                issue(
+                  ctx,
+                  this.id,
+                  this.defaultSeverity,
+                  v.span,
+                  `return-type-mismatch: configured value does not match '${stub.name}'s production return type`,
+                ),
+              );
+            }
+          }
+        }
+      }
+      return out;
+    }
     for (const m of module.mocks) {
       if (!diffRelevant(ctx, m)) continue;
       for (const v of m.configuredValues) {
@@ -420,6 +446,75 @@ function pyReturnAssignable(value: TypeIR, production: TypeIR): boolean {
     if (value.kind === 'named') return value.name === name;
     return true;
   }
+  return value.kind === production.kind;
+}
+
+/** Directional check for Rust: configured value -> production return type (spec §6). */
+function rustReturnAssignable(value: TypeIR, production: TypeIR, _index: SymbolIndex, _fromModule: string): boolean {
+  if (production.kind === 'unknown' || value.kind === 'unknown') return true; // escape hatch
+  if (production.kind === 'union')
+    return production.members.some((m) => rustReturnAssignable(value, m, _index, _fromModule));
+  if (value.kind === 'union')
+    return value.members.every((m) => rustReturnAssignable(m, production, _index, _fromModule));
+  if (production.kind === 'void' || production.kind === 'never')
+    return value.kind === 'void' || value.kind === 'never' || value.kind === 'null';
+  if (production.kind === 'tuple') {
+    return (
+      value.kind === 'tuple' &&
+      production.elements.length === value.elements.length &&
+      production.elements.every((e, i) => rustReturnAssignable(value.elements[i]!, e, _index, _fromModule))
+    );
+  }
+  if (production.kind === 'named') {
+    const name = production.name;
+    if (name === 'str' || name === 'String') {
+      return value.kind === 'literal'
+        ? typeof value.value === 'string'
+        : value.kind === 'named' && value.name === 'str';
+    }
+    if (
+      name === 'u8' ||
+      name === 'u16' ||
+      name === 'u32' ||
+      name === 'u64' ||
+      name === 'usize' ||
+      name === 'i8' ||
+      name === 'i16' ||
+      name === 'i32' ||
+      name === 'i64' ||
+      name === 'isize' ||
+      name === 'f32' ||
+      name === 'f64'
+    ) {
+      return value.kind === 'literal' ? typeof value.value === 'number' : value.kind === 'named' && value.name === name;
+    }
+    if (name === 'bool') {
+      return value.kind === 'literal'
+        ? typeof value.value === 'boolean'
+        : value.kind === 'named' && value.name === 'bool';
+    }
+    if (name === 'Option' && production.typeArgs.length === 1) {
+      return value.kind === 'null' || rustReturnAssignable(value, production.typeArgs[0]!, _index, _fromModule);
+    }
+    if (name === 'Result' && production.typeArgs.length === 2) {
+      return rustReturnAssignable(value, production.typeArgs[0]!, _index, _fromModule);
+    }
+    if (name === 'Vec' && production.typeArgs.length === 1) {
+      return (
+        value.kind === 'array' &&
+        (!value.element || rustReturnAssignable(value.element, production.typeArgs[0]!, _index, _fromModule))
+      );
+    }
+    if (production.typeArgs.length > 0 && value.kind === 'named' && value.name === name) {
+      return production.typeArgs.every((arg, i) =>
+        rustReturnAssignable(value.typeArgs[i] ?? { kind: 'unknown' }, arg, _index, _fromModule),
+      );
+    }
+    if (value.kind === 'named' && value.name === name) return true;
+    return false;
+  }
+  // `null` (Option::None) against a non-Option production type only matches null itself.
+  if (value.kind === 'null') return production.kind === 'null';
   return value.kind === production.kind;
 }
 

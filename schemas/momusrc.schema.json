@@ -12,7 +12,8 @@
       "properties": {
         "typescript": { "type": "boolean", "default": true },
         "php": { "type": "boolean", "default": false },
-        "python": { "type": "boolean", "default": false }
+        "python": { "type": "boolean", "default": false },
+        "rust": { "type": "boolean", "default": false }
       }
     },
     "testFilePatterns": { "type": "array", "items": { "type": "string" } },

@@ -1,0 +1,25 @@
+{
+  "name": "@momus/parser-rust",
+  "version": "0.0.4",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "description": "Rust parser plugin for Momus using syn (compiled to wasm32)",
+  "files": [
+    "src",
+    "wasm/pkg"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@momus/core": "~0.0.1"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1"
+  }
+}

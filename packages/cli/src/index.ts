@@ -25,6 +25,7 @@ import {
 import { TypeScriptParser } from '@momus/parser-typescript';
 import { PhpParser } from '@momus/parser-php';
 import { PythonParser } from '@momus/parser-python';
+import { RustParser } from '@momus/parser-rust';
 import { serve, serveHttp, watchWorkspace, openParseCache } from '@momus/mcp-server';
 import { collectFixable, editsByFile, buildFixDiff, applyFixToFiles } from './fix.ts';
 
@@ -93,7 +94,7 @@ export function buildCheckAnnotations(
 }
 
 export function createWorkspaceParser(): CompositeParser {
-  return new CompositeParser([new TypeScriptParser(), new PhpParser(), new PythonParser()]);
+  return new CompositeParser([new TypeScriptParser(), new PhpParser(), new PythonParser(), new RustParser()]);
 }
 
 /** PHP project signals used by `momus doctor` (bounded, read-only). */
@@ -128,6 +129,66 @@ export function pythonReadiness(root: string, config: MomusConfig): string {
   if (pyFiles > 0)
     return `enabled — ${pyFiles} .py file${pyFiles === 1 ? '' : 's'} but no pyproject.toml (import resolution will be loose)`;
   return 'enabled — no pyproject.toml or .py files found';
+}
+
+/** Rust project signals used by `momus doctor` (bounded, read-only). */
+export function rustProjectSignals(root: string): { cargoToml: boolean; rsFiles: number } {
+  return { cargoToml: findCargoToml(root), rsFiles: countRsFiles(root, 200) };
+}
+
+/** One-line Rust-language readiness summary for `momus doctor`. */
+export function rustReadiness(root: string, config: MomusConfig): string {
+  if (!config.languages.rust) {
+    return 'off — set "languages": { "rust": true } in .momusrc to audit mockall/mockito/wiremock suites';
+  }
+  const { cargoToml, rsFiles } = rustProjectSignals(root);
+  if (cargoToml) return `ready — Cargo.toml present, ${rsFiles} .rs file${rsFiles === 1 ? '' : 's'}`;
+  if (rsFiles > 0)
+    return `enabled — ${rsFiles} .rs file${rsFiles === 1 ? '' : 's'} but no Cargo.toml (module resolution will be loose)`;
+  return 'enabled — no Cargo.toml or .rs files found';
+}
+
+function findCargoToml(root: string): boolean {
+  let dir = root;
+  for (let depth = 0; depth < 8; depth++) {
+    if (existsSync(join(dir, 'Cargo.toml'))) return true;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return false;
+}
+
+function countRsFiles(root: string, cap: number): number {
+  let count = 0;
+  const stack = [root];
+  const seen = new Set<string>();
+  while (stack.length && count < cap) {
+    const dir = stack.pop()!;
+    if (seen.has(dir)) continue;
+    seen.add(dir);
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (count >= cap) break;
+      if (
+        entry.name === 'node_modules' ||
+        entry.name === '.git' ||
+        entry.name === 'vendor' ||
+        entry.name === 'dist' ||
+        entry.name === 'target'
+      )
+        continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) stack.push(full);
+      else if (entry.isFile() && entry.name.endsWith('.rs')) count++;
+    }
+  }
+  return count;
 }
 
 function findPyprojectToml(root: string): boolean {
@@ -621,7 +682,7 @@ export function runInit(root: string, argv: string[]): number {
   }
   const template = `{
   "$schema": "./schemas/momusrc.schema.json",
-  "languages": { "typescript": true, "php": false, "python": false },
+  "languages": { "typescript": true, "php": false, "python": false, "rust": false },
   "testFilePatterns": ["**/*.{test,spec}.{ts,tsx,js,jsx,mjs}", "**/__tests__/**"],
   "rules": {},
   "mockSaturationThreshold": 0.7,
@@ -647,10 +708,11 @@ export async function runDoctor(root: string, _argv: string[]): Promise<number> 
   const cfg = existsSync(join(root, '.momusrc')) ? 'present' : 'absent (defaults)';
   process.stdout.write(`  .momusrc:   ${cfg}\n`);
   process.stdout.write(
-    `  languages:  typescript=${config.languages.typescript ? 'enabled' : 'disabled'} php=${config.languages.php ? 'enabled' : 'disabled'} python=${config.languages.python ? 'enabled' : 'disabled'}\n`,
+    `  languages:  typescript=${config.languages.typescript ? 'enabled' : 'disabled'} php=${config.languages.php ? 'enabled' : 'disabled'} python=${config.languages.python ? 'enabled' : 'disabled'} rust=${config.languages.rust ? 'enabled' : 'disabled'}\n`,
   );
   process.stdout.write(`  php readiness: ${phpReadiness(root, config)}\n`);
   process.stdout.write(`  python readiness: ${pythonReadiness(root, config)}\n`);
+  process.stdout.write(`  rust readiness: ${rustReadiness(root, config)}\n`);
   const testFiles = ['src', 'tests', 'test'].filter((d) => existsSync(join(root, d)));
   process.stdout.write(`  source dirs: ${testFiles.join(', ') || 'none found'}\n`);
   return 0;

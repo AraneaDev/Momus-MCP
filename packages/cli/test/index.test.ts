@@ -11,6 +11,8 @@ import {
   phpProjectSignals,
   pythonReadiness,
   pythonProjectSignals,
+  rustReadiness,
+  rustProjectSignals,
   runAudit,
   runDrift,
   runRules,
@@ -23,11 +25,12 @@ import { DEFAULT_CONFIG } from '@momus/core';
 const BIN = resolve(import.meta.dirname, '../../../node_modules/.bin/momus');
 
 describe('CLI workspace parser selection', () => {
-  it('claims TypeScript, PHP and Python files without executing the CLI entrypoint', () => {
+  it('claims TypeScript, PHP, Python and Rust files without executing the CLI entrypoint', () => {
     const parser = createWorkspaceParser();
     expect(parser.canParse('/workspace/tests/example.test.ts', '')).toBe(true);
     expect(parser.canParse('/workspace/tests/ExampleTest.php', '<?php')).toBe(true);
     expect(parser.canParse('/workspace/tests/test_example.py', 'def test_it(): pass')).toBe(true);
+    expect(parser.canParse('/workspace/tests/repo.rs', 'pub fn f() {}')).toBe(true);
   });
 
   it('dispatches PHP source to the PHP parser', () => {
@@ -709,6 +712,59 @@ describe('doctor Python readiness', () => {
         languages: { typescript: true, php: false, python: true },
       });
       expect(readiness).toMatch(/^enabled — 1 \.py file but no pyproject\.toml/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('doctor Rust readiness', () => {
+  it('reports Rust off when the language gate is disabled', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-doctor-rust-off-'));
+    try {
+      writeFileSync(join(dir, 'Cargo.toml'), '[package]\n');
+      writeFileSync(join(dir, 'lib.rs'), 'pub fn f() {}\n');
+      const readiness = rustReadiness(dir, {
+        ...DEFAULT_CONFIG,
+        languages: { typescript: true, php: false, python: false, rust: false },
+      });
+      expect(readiness).toMatch(/^off /);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports Rust ready when enabled with a Cargo.toml and .rs files', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-doctor-rust-ready-'));
+    try {
+      writeFileSync(join(dir, 'Cargo.toml'), '[package]\n');
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      mkdirSync(join(dir, 'tests'), { recursive: true });
+      writeFileSync(join(dir, 'src', 'repo.rs'), 'pub trait Repo {}\n');
+      writeFileSync(join(dir, 'tests', 'repo_test.rs'), '#[test] fn t() {}\n');
+      const signals = rustProjectSignals(dir);
+      expect(signals.cargoToml).toBe(true);
+      expect(signals.rsFiles).toBe(2);
+      const readiness = rustReadiness(dir, {
+        ...DEFAULT_CONFIG,
+        languages: { typescript: true, php: false, python: false, rust: true },
+      });
+      expect(readiness).toMatch(/^ready — Cargo\.toml present, 2 \.rs files$/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports Rust enabled-but-loose without a Cargo.toml', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-doctor-rust-loose-'));
+    try {
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      writeFileSync(join(dir, 'src', 'legacy.rs'), 'pub fn f() {}\n');
+      const readiness = rustReadiness(dir, {
+        ...DEFAULT_CONFIG,
+        languages: { typescript: true, php: false, python: false, rust: true },
+      });
+      expect(readiness).toMatch(/^enabled — 1 \.rs file but no Cargo\.toml/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

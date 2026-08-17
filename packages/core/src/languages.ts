@@ -20,6 +20,12 @@ export const LANGUAGES = {
     testFilePatterns: ['**/test_*.py', '**/*_test.py'],
     defaultEnabled: false,
   },
+  rust: {
+    extensions: ['rs'],
+    // Rust tests are structural (#[test] / #[cfg(test)]), not filename-derived.
+    testFilePatterns: [],
+    defaultEnabled: false,
+  },
 } as const;
 
 export type Language = keyof typeof LANGUAGES;

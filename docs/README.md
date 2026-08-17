@@ -42,6 +42,7 @@ interface, rule, schema, and phase below is normative unless explicitly marked *
 - **Package manager:** `npm` workspaces (confirmed in this environment; pnpm unconfirmed — swap is drop-in). **Test runner:** `vitest`. **License:** MIT.
 - **Phase-1 languages/frameworks:** TypeScript/JavaScript with Vitest and Jest.
   **Phase-2:** PHP with PHPUnit and Pest.
+  **Later language families:** Python (pytest/unittest) and Rust (`mockall`/`mockito`/`wiremock`).
 - **The four primary MCP tools:** `audit_test_fidelity`, `detect_tautological_assertions`,
   `verify_mock_drift`, `synthesize_mock_contract` — plus the supporting tool `list_rules`.
 - **Rule IDs:** `TAUT-00x` (tautological assertions), `DRIFT-00x` (mock contract drift),
@@ -74,7 +75,8 @@ interface, rule, schema, and phase below is normative unless explicitly marked *
 - [x] **v0.1 packaging** (Step 1 of `10-build-plan.md`) — README, npm pack dry-run, `npx momus` verification
 - [x] Phase 2 (PHP support) — complete: PHPUnit/Mockery/Pest mocks (incl. closure-form, `getMockForAbstractClass`, `setUp` property mocks, docblock typing, DRIFT-003/004, Composer PSR-4 + classmap resolution); see `10-build-plan.md` Step 3
 - [x] Phase 3 (git-diff hooks + CLI companion) — `precommit`, `audit|drift --git-diff`, DRIFT-006, MCP git-diff scope, `hook`, `serve --transport http`, `serve --watch` (chokidar), `annotate` (JSONL), and `audit --fix` (DRIFT-001 rename fix; TAUT-* are semantic and intentionally descriptive-only).
-- [x] **Python support** (third language family) — single language registry (`languages.ts`), `@momus/parser-python` (tree-sitter-python + PEP 484/526 annotations), pytest/unittest mock + assertion catalog, annotated DRIFT-002/003, `momus doctor` Python-readiness. Rust remains the next language candidate; pyright type inference deferred. See `docs/superpowers/specs/2026-08-17-python-language-support-design.md`.
+- [x] **Python support** (third language family) — single language registry (`languages.ts`), `@momus/parser-python` (tree-sitter-python + PEP 484/526 annotations), pytest/unittest mock + assertion catalog, annotated DRIFT-002/003, `momus doctor` Python-readiness. pyright type inference deferred. See `docs/superpowers/specs/2026-08-17-python-language-support-design.md`.
+- [x] **Rust support** (fourth language family) — `@momus/parser-rust` (`syn` → wasm32 + crate-wide index, semantic-from-day-one), `mockall`/`mockito`/`wiremock` mock catalog, `assert!`/`assert_eq!`/`assert_ne!`/`assert_matches!` assertions, `rustReturnAssignable` DRIFT-002/003, `momus doctor` Rust-readiness. See `docs/superpowers/specs/2026-08-17-rust-language-support-design.md`.
 - [x] Test-coverage tooling — `npm run test:coverage` (v8) with floors 80% statements/lines, 75% branches, 90% functions; currently ~84% statements / ~82% branches across library modules.
 - [x] Persistent IR cache — `better-sqlite3` at `.momus/cache/`, keyed by file content hash + workspace digest (advisory, deterministic); ESLint + Prettier authoring gates (`lint`/`format` scripts) shipped.
 - [ ] Phase 4 (CI action + registry publishing + docs) — action + `annotate-pr` + `release-please` shipped in-repo; MCP registry drafted (`12-registry-listing.md`); `docs/` rendered via VitePress; npm/MCP publishing pending credentials

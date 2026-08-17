@@ -78,6 +78,10 @@ momus-mcp/
 │  ├─ parser-python/                # @momus/parser-python — tree-sitter-python → IR
 │  │  ├─ src/index.ts
 │  │  └─ test/
+│  ├─ parser-rust/                  # @momus/parser-rust — syn (wasm32) → IR
+│  │  ├─ src/index.ts
+│  │  ├─ wasm/                      # syn → JSON AST FFI (committed .wasm artifact)
+│  │  └─ test/
 │  ├─ server/                       # @momus/mcp-server — the MCP daemon
 │  │  ├─ src/
 │  │  │  ├─ index.ts                # McpServer wiring, capabilities, tool registry
@@ -112,11 +116,12 @@ momus-mcp/
 
 ```
 cli ──▶ core · server
-server ──▶ core, parser-typescript, parser-php, parser-python, @modelcontextprotocol/sdk
+server ──▶ core, parser-typescript, parser-php, parser-python, parser-rust, @modelcontextprotocol/sdk
 core ──▶ (no package deps; parsers injected)
 parser-typescript ──▶ core (types only)
 parser-php ──▶ core (types only)
 parser-python ──▶ core (types only)
+parser-rust ──▶ core (types only)
 action ──▶ (wraps cli via npx)
 ```
 
@@ -126,8 +131,8 @@ Rules:
    root (server/cli). This keeps rules language-agnostic (IR-only, invariant §2.3.3.3).
 2. `server` holds all MCP-specific code; `core` knows nothing about MCP. The same
    `AuditEngine` serves CLI and MCP — guaranteed identical output (P2).
-3. `parser-typescript`/`parser-php` depend on `core` **types only** (`import type`), so the
-   engine can't accidentally leak parser-specific behavior.
+3. `parser-typescript`/`parser-php`/`parser-rust` depend on `core` **types only** (`import type`),
+   so the engine can't accidentally leak parser-specific behavior.
 
 ## 6.4 Build & dev scripts
 
@@ -300,7 +305,8 @@ Byte-exact snapshot tests run on linux CI (line endings normalized on Windows/ma
    `feat`/`fix`/`!` cut a release).
 2. `release-please.yml` on `main`: release-please bumps the lockstep version → `CHANGELOG.md`
    → tag `vX.Y.Z` + GitHub Release → the workflow publishes `@momus/core`,
-   `@momus/parser-typescript`, `@momus/parser-php`, `@momus/mcp-server`, `@momus/cli`
+   `@momus/parser-typescript`, `@momus/parser-php`, `@momus/parser-python`, `@momus/parser-rust`,
+   `@momus/mcp-server`, `@momus/cli`
    (all at the same version) via `npm run publish` — **manual-only, not in CI** (by project
    decision; run it deliberately when publishing is sanctioned).
 3. `@momus/cli` is the only package with a `bin` (`momus`).

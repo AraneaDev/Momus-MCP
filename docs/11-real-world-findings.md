@@ -15,6 +15,7 @@
 | `/root/Knossos-MCP` | PHP ≥ 8.3 | 154 src + 221 test files | PHPUnit 12, Infection | `.momusrc` → `{languages:{php:true}}` (temp) |
 | `Momus-MCP` (self) | TypeScript + PHP | 59 audited files | Vitest | `.momusrc` (fixtures excluded) |
 | `psf/requests` (dogfood clone at `/tmp/requests-dogfood`) | Python | 35 files, 13 test files | pytest + unittest.mock (live test server) | temp `.momusrc` → `{languages:{python:true}}` |
+| `asomers/mockall` (dogfood clone at `/tmp/mockall-dogfood`) | Rust | 188 `.rs` files, 172 under `tests/` | mockall's own `#[automock]`/`mock!` + `#[test]`/`#[cfg(test)]` | temp `.momusrc` → `{languages:{rust:true}}` |
 
 ## 2. Bugs found in Momus (and fixed)
 
@@ -71,6 +72,9 @@
 | 49 | *(dogfood, Chaos `--max-issues 0`)* | the markdown header printed the **shown** (post-truncation) counts while `CLEAN:` used the totals — so `momus audit . --max-issues 0` on a repo with findings printed `0 issues … CLEAN:false … more issues omitted`, a self-contradictory headline that masks findings for a human reader | header now prints the pre-truncation **totals** (`totalIssues`/`totalErrors`/`totalWarnings`/`totalInfos`), consistent with `CLEAN:` and the exit code; regression test pins `4 issues … CLEAN:false` for a fully-truncated run |
 | 50 | *(mutation testing, glob)* | `matchGlob` normalized backslashes in the **pattern** only, never the **path** — the old "normalizes windows separators" test passed by accident (backslashes are just non-slash chars, so `**` swallowed them whole), so `matchGlob('src/a.ts', 'src\\a.ts')` returned `false` | `matchGlob` now normalizes both sides; regression tests cover path + pattern normalization (found by a Stryker `StringLiteral` survivor on the `pattern.replace(/\\/g, '/')` line) |
 | 51 | *(dogfood, requests)* | Python assertion extraction was **quadratic**: `enclosingFunctionStart` walked the whole tree on every operand lookup (every assertion operand and call argument re-walked the tree) | `test_requests.py` (3,094 lines, 353 assertions) parsed in 12.2s — SYS-004 over the 2s budget; whole-workspace audit 15.4s. A line→scope map is now precomputed once per file (one walk → O(1) lookups): single-file parse 146ms, cold workspace audit 0.9s; regression test pins a 300-fn/600-assert suite under 5s |
+| 52 | *(dogfood, mockall)* | Rust mock `invocationSites` were **never populated**, so every `expect_*().returning()` config read as zero-reach (TAUT-005) | `MockFoo::new()` now binds to its variable (incl. `Box`/`Arc`/`Rc`/`Pin` wrappers) and records a call site on any non-`expect_*` method invocation; field/deref/paren wrappers recurse (`*m.foo().0`). 100+ false TAUT-005 → 0 |
+| 53 | *(dogfood, mockall)* | a `mock!` macro **and** `MockFoo::new()` both emitted a `MockIR`, and bare names resolved through the wrong-file global fallback | one mock per `MockFoo::new()`; `mock! { impl Trait for Foo }` maps to trait `Trait`, inherent-only `mock! { Foo { .. } }` to no target; the audit engine resolves the bare `exportName` against production (TS/PHP precedent). False DRIFT-001 → 0 |
+| 54 | *(dogfood, mockall)* | `tests/` integration tests (incl. compile-only, no `#[test]`) were indexed as **production**, polluting the symbol graph | paths under `tests/` are now classified as test files. 17 false errors → 0 |
 
 ## 3. Findings about `/root/Chaos-MCP` (TypeScript)
 
@@ -148,6 +152,33 @@ tests mock sparingly (5 `@patch`/`mock.patch`, 3 `Mock`/`MagicMock` — most tes
 a live test server), so DRIFT/TAUT had little to fire on: **no false positives**, and the one
 planted perf bug (row 51) was caught and fixed here. The Python drift rules get a stronger
 real-world workout in the next dogfood (a mock-heavy pytest repo — e.g. httpx/flask).
+
+## 4d. Findings about `asomers/mockall` (Rust — first Rust dogfood)
+
+Cloned to `/tmp/mockall-dogfood` (temp `.momusrc` → `{languages:{rust:true}}`, cache off),
+full audit of mockall's **own test suite** (188 `.rs` files, 172 under `tests/`).
+
+- **Fixed (rows 52–54):** three real bugs — `invocationSites` never populated (100+ false
+  TAUT-005), double-`MockIR` emission for `mock!` + `MockFoo::new()` (false DRIFT-001), and
+  `tests/` integration tests indexed as production (17 false errors). Result: **265 issues
+  (17 errors) → 16 warnings, 0 errors.**
+- **Remaining 16 TAUT-005 warnings — all on mockall's codegen edge cases, none are errors,**
+  and none are false DRIFT/TAUT-001 positives. They fall into three documented static-analysis
+  boundaries:
+  1. **Receiver-wrapper re-bindings** (`automock_auto_impl.rs:28`
+     `let boxed: Box<dyn Foo> = Box::new(mock); assert_eq!(5, boxed.foo(4))`;
+     `mock_box_self.rs` `Arc::new(mock).bean()` / `Rc::new(mock).blez()` /
+     `Pin::new(Box::new(mock)).booz()`) — the method is invoked on a re-cast/wrapper value, not
+     the bound variable, so the invocation isn't traced to the stub.
+  2. **By-value consumption** (`automock_generic_future.rs` `block_on(mock)` — `poll()` is
+     driven inside the future executor, not called on the variable directly).
+  3. **cfg-gated compile-only tests** (`mock_cfg.rs` `#[cfg(feature = "nightly")]` variants
+     configure `expect_foo()`/`expect_beez()` but never invoke them — the test only checks the
+     proc-macro codegen compiles). These are arguably *true* zero-reach (the stub genuinely is
+     never called) but are compile-checks, not behavior assertions.
+- **`mock!` DSL:** mockall's `mock!`/`#[automock]` are proc-macros, so `syn` sees the invocation,
+  not the generated mock — the parser hand-models the `mock!` token stream and resolves the
+  target trait from the crate index (see spec §4). Verified against the full `tests/` corpus.
 
 ## 5. Open / candidate improvements
 

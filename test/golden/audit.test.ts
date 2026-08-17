@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { AuditEngine, CompositeParser, DEFAULT_CONFIG } from '@momus/core';
 import { TypeScriptParser } from '@momus/parser-typescript';
 import { PythonParser } from '@momus/parser-python';
+import { RustParser } from '@momus/parser-rust';
 
 const FIXTURES = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -104,6 +105,41 @@ describe('golden audit — python drift fixtures', () => {
   it('keeps the healthy annotated twin quiet on drift rules', () => {
     const healthyDrift = result.issues.filter(
       (i) => i.span.file.includes('healthy_test.py') && i.rule.startsWith('DRIFT'),
+    );
+    expect(healthyDrift).toEqual([]);
+  });
+});
+
+describe('golden audit — rust drift fixtures', () => {
+  const RUST = join(
+    dirname(fileURLToPath(import.meta.url)),
+    '..',
+    '..',
+    'packages',
+    'parser-rust',
+    'test',
+    'fixtures',
+    'drift',
+  );
+  const result = new AuditEngine({
+    root: RUST,
+    parser: new CompositeParser([new RustParser()]),
+    config: { ...DEFAULT_CONFIG, languages: { typescript: false, php: false, python: false, rust: true } },
+  }).run();
+
+  it('fires exactly the planted rust drift + reachability findings', () => {
+    const found = result.issues.map((i) => `${i.rule}@${i.span.file.split('/').pop()}:${i.span.startLine}`).sort();
+    expect(found).toEqual([
+      'DRIFT-001@drift_test.rs:10', // expect_save2() — member does not exist on Repo
+      'DRIFT-003@drift_test.rs:11', // return_const("nope") not assignable to u32
+      'TAUT-005@drift_test.rs:9', // zero-reach stub
+      'TAUT-005@healthy_test.rs:9', // zero-reach stub (healthy twin is drift-clean)
+    ]);
+  });
+
+  it('keeps the healthy twin quiet on drift rules', () => {
+    const healthyDrift = result.issues.filter(
+      (i) => i.span.file.includes('healthy_test.rs') && i.rule.startsWith('DRIFT'),
     );
     expect(healthyDrift).toEqual([]);
   });

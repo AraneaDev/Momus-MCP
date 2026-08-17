@@ -27,7 +27,7 @@ describe('release-please config', () => {
     expect(out).toContain('package.json files at v');
   });
 
-  it('all six packages are version-locked with ~ internal deps admitting the version', () => {
+  it('all seven packages are version-locked with ~ internal deps admitting the version', () => {
     const manifest = JSON.parse(readFileSync(join(ROOT, '.release-please-manifest.json'), 'utf8'));
     const version = manifest['.'];
     expect(version).toMatch(/^\d+\.\d+\.\d+$/);
@@ -58,7 +58,15 @@ describe('release-please config', () => {
         expect(ePat).toBeGreaterThanOrEqual(rPat);
       }
     }
-    expect(checked).toEqual(['cli', 'core', 'parser-php', 'parser-python', 'parser-typescript', 'server']);
+    expect(checked).toEqual([
+      'cli',
+      'core',
+      'parser-php',
+      'parser-python',
+      'parser-rust',
+      'parser-typescript',
+      'server',
+    ]);
   });
 
   it('root version + changelog-path + tag shape match the manifest', () => {

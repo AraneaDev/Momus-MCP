@@ -96,7 +96,7 @@ Each failure mode produces the same observable symptom: **green suite, unproven 
 | 1 | TypeScript / JavaScript | Vitest, Jest | `vi.mock`, `vi.spyOn`, `vi.fn`, `jest.mock`, `jest.spyOn`, `jest.fn`, `jest.requireMock`, `vi.mocked`, manual object-literal and `Proxy`-based doubles |
 | 2 | PHP | PHPUnit, Pest | `createMock`, `createStub`, `createConfiguredMock`, `createPartialMock`, `getMockBuilder`, `getMockForAbstractClass`, Mockery (`Mockery::mock`/`spy`, `shouldReceive`), Pest `mock()`/`spy()` helpers, anonymous-class stubs |
 | 3 | Python | pytest, unittest | `patch`, `patch.object`, `Mock`/`MagicMock(spec=)`/`create_autospec`, `mocker` (pytest-mock), `monkeypatch` |
-| 3+ (extensible) | Rust (candidate, via a new `LanguageParser` plugin) | — | — |
+| 4 | Rust | `#[test]`/`#[cfg(test)]` (structural test detection), built-in `assert!`/`assert_eq!`/`assert_ne!`/`assert_matches!` | `mockall` (`#[automock]`/`mock!`/`expect_*().returning()`), `mockito` (`mock(…).create()`), `wiremock` (`Mock::given(…)`) |
 
 **Framework detection:** per-file, by import surface (`vitest`, `@jest/globals`, `PHPUnit\Framework\TestCase`, Pest functions). A file may declare multiple frameworks; rules apply per-detected framework.
 
@@ -138,7 +138,7 @@ satisfied: all tools are read-only. In the CLI, `apply`/`--fix` is gated as abov
 ## 1.7 License & distribution
 
 - MIT license, source-available from day one.
-- Distribution: npm packages (`@momus/core`, `@momus/mcp-server`, `@momus/cli`, `@momus/parser-typescript`, `@momus/parser-php`, `@momus/parser-python`), GitHub Action (`momus-mcp/action`), and public MCP registry listings (Phase 4).
+- Distribution: npm packages (`@momus/core`, `@momus/mcp-server`, `@momus/cli`, `@momus/parser-typescript`, `@momus/parser-php`, `@momus/parser-python`, `@momus/parser-rust`), GitHub Action (`momus-mcp/action`), and public MCP registry listings (Phase 4).
 
 ---
 
