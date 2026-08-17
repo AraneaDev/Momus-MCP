@@ -16,7 +16,7 @@ vi.mock('node:fs', async (importOriginal) => {
     statSync: (path: import('node:fs').PathLike, options?: any) => {
       if (throwFsError && typeof path === 'string' && path.endsWith('bad-file.ts')) throw new Error('EACCES');
       return orig.statSync(path, options as any);
-    }
+    },
   };
 });
 
@@ -121,7 +121,7 @@ describe('discoverFiles', () => {
       const badDir = join(root, 'bad-dir');
       const badFile = join(root, 'bad-file.ts');
       const goodFile = join(root, 'good-file.ts');
-      
+
       mkdirSync(badDir);
       writeFileSync(badFile, 'export {}');
       writeFileSync(goodFile, 'export {}');
@@ -129,7 +129,7 @@ describe('discoverFiles', () => {
       throwFsError = true;
       const { files, skipped } = discoverFiles(opts(root));
       throwFsError = false;
-      
+
       expect(files.map((f) => f.path.slice(root.length + 1))).toEqual(['good-file.ts']);
       expect(skipped).toEqual([]);
     } finally {

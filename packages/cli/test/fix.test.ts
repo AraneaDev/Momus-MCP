@@ -30,8 +30,12 @@ describe('collectFixable / editsByFile', () => {
     const fix1 = { kind: 'replace', span: sp('/x/a.ts', 2), code: 'x' } as FixSuggestion;
     const fix2 = { kind: 'replace', span: sp('/x/a.ts', 3), code: 'y' } as FixSuggestion;
     const fix3 = { kind: 'replace', span: sp('/y/b.ts', 2), code: 'z' } as FixSuggestion;
-    const fixable = [{ issue: issue(fix1), fix: fix1 }, { issue: issue(fix2), fix: fix2 }, { issue: issue(fix3), fix: fix3 }];
-    
+    const fixable = [
+      { issue: issue(fix1), fix: fix1 },
+      { issue: issue(fix2), fix: fix2 },
+      { issue: issue(fix3), fix: fix3 },
+    ];
+
     const map = editsByFile(fixable);
     expect(map.get('/x/a.ts')).toEqual([fix1, fix2]);
     expect(map.get('/y/b.ts')).toEqual([fix3]);

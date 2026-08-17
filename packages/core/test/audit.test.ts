@@ -30,7 +30,7 @@ describe('AuditEngine error handling', () => {
       mkdirSync(join(root, 'tests'));
       // A file over the size limit (will be skipped by discoverFiles)
       writeFileSync(join(root, 'tests', 'huge.test.ts'), 'export const x = 1;');
-      
+
       const engine = new AuditEngine({
         root,
         parser: dummyParser,
@@ -41,7 +41,7 @@ describe('AuditEngine error handling', () => {
           maxIndexedLines: 1000,
           tokenBudget: { maxIssuesPerReport: 10 },
           languages: { typescript: true, php: true },
-        }
+        },
       });
 
       const res = engine.run();
@@ -58,7 +58,7 @@ describe('AuditEngine error handling', () => {
     try {
       mkdirSync(join(root, 'tests'));
       writeFileSync(join(root, 'tests', 'bad.test.ts'), 'const a =;');
-      
+
       const engine = new AuditEngine({
         root,
         parser: {
@@ -71,7 +71,7 @@ describe('AuditEngine error handling', () => {
       });
 
       const res = engine.run();
-      const errDiag = res.diagnostics.find(d => d.severity === 'error' && d.message.includes('SYS-001'));
+      const errDiag = res.diagnostics.find((d) => d.severity === 'error' && d.message.includes('SYS-001'));
       expect(errDiag).toBeDefined();
       expect(errDiag!.message).toContain('Syntax failed deeply');
     } finally {
