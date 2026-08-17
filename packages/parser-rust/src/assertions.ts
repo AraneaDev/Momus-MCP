@@ -35,6 +35,7 @@ function collect(expr: RustExpr, path: string, fnId: string, out: AssertionIR[])
   for (const a of expr.args ?? []) collect(a, path, fnId, out);
   if (expr.left) collect(expr.left, path, fnId, out);
   if (expr.right) collect(expr.right, path, fnId, out);
+  for (const s of expr.stmts ?? []) collect(s, path, fnId, out);
 }
 
 /** `assert!(a == b)` -> operands of the comparison; otherwise the expression itself. */
@@ -72,6 +73,7 @@ export function extractTestFunctions(file: RustFile, path: string): TestFnIR[] {
           hasProductionCalls: false,
           productionCallCount: 0,
           assertionCount: countAssertions(item.body),
+          shouldPanic: item.attrs.some((a) => a.path === 'should_panic'),
         });
       } else if (item.kind === 'mod') {
         walkItems(item.items);
@@ -90,6 +92,7 @@ function countAssertions(body: RustExpr[]): number {
     for (const a of e.args ?? []) walk(a);
     if (e.left) walk(e.left);
     if (e.right) walk(e.right);
+    for (const s of e.stmts ?? []) walk(s);
   };
   for (const e of body) walk(e);
   return n;

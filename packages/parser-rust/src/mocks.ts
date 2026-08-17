@@ -52,8 +52,9 @@ function collect(items: RustItem[], mocks: MockIR[], path: string, mockStructs: 
     if (item.kind === 'fn' && item.attrs.some((a) => a.path === 'test')) {
       // variable name -> mock, so `m.foo()` invocations attach to the right mock
       const bindings = new Map<string, MockIR>();
+      const fnId = `${path}#fn:${item.span.line}`;
       for (const expr of item.body) {
-        walkExpr(expr, mocks, path, bindings, mockStructs);
+        walkExpr(expr, mocks, path, bindings, mockStructs, undefined, fnId);
         scanWiremock(expr, mocks, path);
       }
     } else if (item.kind === 'mod') {
@@ -68,6 +69,9 @@ const WRAPPER_CONSTRUCTORS = new Set(['Box::new', 'Arc::new', 'Rc::new', 'Pin::n
 function resolveMockRef(e: RustExpr | undefined, bindings: Map<string, MockIR>): MockIR | undefined {
   if (!e) return undefined;
   if (e.kind === 'path') return bindings.get(e.text);
+  // Unwrap `&mock`, `&mut mock`, `(mock)`, `*mock` — any wrapper that serializes its inner
+  // expression as `receiver` — so references work as receivers/args.
+  if (e.kind === 'other' && e.receiver) return resolveMockRef(e.receiver, bindings);
   if (e.kind === 'call' && e.callee?.text && WRAPPER_CONSTRUCTORS.has(e.callee.text)) {
     return resolveMockRef(e.args?.[0], bindings);
   }
@@ -87,6 +91,7 @@ function walkExpr(
   bindings: Map<string, MockIR>,
   mockStructs: Map<string, string | null>,
   pendingBinding?: string,
+  fnId?: string,
 ): void {
   // A `let NAME = <expr>;` binding applies to a `MockFoo::new()` anywhere in the initializer
   // (e.g. `let m = Box::new(MockFoo::new())`), so thread it down the expression tree.
@@ -97,6 +102,7 @@ function walkExpr(
     const declared = mockStructs.get(typeName); // string (trait) | null (self-defined) | undefined (automock)
     const exportName = declared === undefined ? typeName : declared;
     const mock = mockOf(path, e.span, declared === undefined ? 'automock' : 'mock-macro', exportName);
+    mock.fnId = fnId;
     mocks.push(mock);
     if (boundName) bindings.set(boundName, mock);
   }
@@ -172,10 +178,24 @@ function walkExpr(
     }
   }
 
-  if (e.receiver) walkExpr(e.receiver, mocks, path, bindings, mockStructs, boundName);
-  for (const a of e.args ?? []) walkExpr(a, mocks, path, bindings, mockStructs, boundName);
-  if (e.left) walkExpr(e.left, mocks, path, bindings, mockStructs, boundName);
-  if (e.right) walkExpr(e.right, mocks, path, bindings, mockStructs, boundName);
+  // Trait-qualified / UFCS invocation: `Foo::foo(&mock)` or `<Mock as Foo>::foo(&mock, 4)` —
+  // the mock is the receiver passed as the first argument. `MockX::new()` (creation) and
+  // arg-less static calls (`MockManyArgs::bean(...)`) don't resolve, so they stay unmarked.
+  if (
+    e.kind === 'call' &&
+    e.callee?.kind === 'path' &&
+    e.callee.text.includes('::') &&
+    !e.callee.text.endsWith('::new')
+  ) {
+    const recv = resolveMockRef(e.args?.[0], bindings);
+    if (recv) markReached(recv, path, e.span);
+  }
+
+  if (e.receiver) walkExpr(e.receiver, mocks, path, bindings, mockStructs, boundName, fnId);
+  for (const a of e.args ?? []) walkExpr(a, mocks, path, bindings, mockStructs, boundName, fnId);
+  if (e.left) walkExpr(e.left, mocks, path, bindings, mockStructs, boundName, fnId);
+  if (e.right) walkExpr(e.right, mocks, path, bindings, mockStructs, boundName, fnId);
+  for (const s of e.stmts ?? []) walkExpr(s, mocks, path, bindings, mockStructs, boundName, fnId);
 }
 
 /** A `Mock::given(...).and(path("/x")).respond_with(...)` statement -> one wiremock mock. */

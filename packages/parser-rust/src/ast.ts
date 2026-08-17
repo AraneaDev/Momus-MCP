@@ -40,7 +40,7 @@ export interface RustLiteral {
 }
 
 export interface RustExpr {
-  kind: 'macro' | 'call' | 'method-call' | 'binary' | 'literal' | 'path' | 'other';
+  kind: 'macro' | 'call' | 'method-call' | 'binary' | 'literal' | 'path' | 'block' | 'other';
   text: string;
   macroPath?: string;
   args?: RustExpr[];
@@ -50,6 +50,8 @@ export interface RustExpr {
   callee?: RustExpr;
   method?: string;
   receiver?: RustExpr;
+  /** Block/unsafe-block statements; `unsafe { mock.foo() }` executes at runtime. */
+  stmts?: RustExpr[];
   literal?: RustLiteral;
   /** Set on the initializer of a `let NAME = <expr>;` so mocks can be tied to their variable. */
   binding?: string;

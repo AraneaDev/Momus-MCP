@@ -147,4 +147,41 @@ fn t() {
     const mocks = extractMocks(file, '/c/src/t.rs');
     expect(mocks[0]!.invocationSites.length).toBeGreaterThan(0);
   });
+
+  it('records an invocation for a trait-qualified call (`Foo::foo(&mock)`)', () => {
+    const file = parseRust(
+      `#[test]\nfn t() {\n  let mut mock = MockSomeStruct::new();\n  mock.expect_foo().returning(42);\n  assert_eq!(5, Foo::foo(&mock, 4));\n}\n`,
+    );
+    const mocks = extractMocks(file, '/c/src/t.rs');
+    expect(mocks[0]!.invocationSites.length).toBeGreaterThan(0);
+  });
+
+  it('records an invocation for a UFCS call (`<Mock as Foo>::foo(&mock, …)`)', () => {
+    const file = parseRust(
+      `#[test]\nfn t() {\n  let mut mock = MockSomeStruct::<u32>::new();\n  mock.expect_foo().returning(|t| t);\n  assert_eq!(4, <MockSomeStruct<u32> as Foo<u32>>::foo(&mock, 4));\n}\n`,
+    );
+    const mocks = extractMocks(file, '/c/src/t.rs');
+    expect(mocks[0]!.invocationSites.length).toBeGreaterThan(0);
+  });
+
+  it('descends into unsafe blocks so `unsafe { mock.bar(…) }` counts as an invocation', () => {
+    const file = parseRust(
+      `#[test]\nfn t() {\n  let mut mock = MockFoo::new();\n  mock.expect_bar().returning(|x| {*x = 42;});\n  unsafe { mock.bar(&mut x); }\n}\n`,
+    );
+    const mocks = extractMocks(file, '/c/src/t.rs');
+    expect(mocks[0]!.invocationSites.length).toBeGreaterThan(0);
+  });
+
+  it('links a mock to its enclosing test fn id', () => {
+    const file = parseRust(`
+#[test]
+fn t() {
+    let mut m = MockRepo::new();
+    m.expect_find().returning(|id| id + 1);
+    let got = m.find(1);
+}
+`);
+    const mocks = extractMocks(file, '/c/src/test.rs');
+    expect(mocks[0]!.fnId).toBe('/c/src/test.rs#fn:3');
+  });
 });

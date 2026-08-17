@@ -1,10 +1,34 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-17 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; **four language families at parity — TypeScript/PHP/Python/Rust** (shared 14-rule catalog, pyright `--createstub` inference for unannotated Python DRIFT-002/003, cross-language MOCK-002/DRIFT-005/TAUT-006, 4-language `synthesize_mock_contract`), 7 packages lockstep at 0.0.6 — release-please, persistent IR cache, ESLint+Prettier, coverage tooling — full gate green (491 tests), typecheck/lint/format clean, self-audit clean.
+**Date:** 2026-08-18 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; **four language families at parity — TypeScript/PHP/Python/Rust** (shared 14-rule catalog, pyright `--createstub` inference for unannotated Python DRIFT-002/003, cross-language MOCK-002/DRIFT-005/TAUT-006, 4-language `synthesize_mock_contract`), 7 packages lockstep at 0.0.6 — release-please, persistent IR cache, ESLint+Prettier, coverage tooling — full gate green (501 tests), typecheck/lint/format clean, self-audit clean. Rust reachability follow-up (mockall 11 → 5 genuine TAUT-005 warnings) + flask dogfood (0 issues, src-layout DRIFT-005 fix) landed; agent-tool-surface spec (`docs/superpowers/specs/2026-08-18-agent-tool-surface-design.md`) written, awaiting plan+implementation.
 **Next session: Phase 4 distribution stays pending credentials; optional hardening (CI lint/format wiring, perf-budget asserts, incremental `ts.createWatchProgram`).**
 
-## Current checkpoint — 2026-08-17
+## Current checkpoint — 2026-08-18
 
+- **Last verified (follow-ups round — in flight, branch `feat/agent-tool-surface`):** from the
+  parity release, three follow-ups are underway. (1) **Agent tool surface spec written and
+  committed** (`docs/superpowers/specs/2026-08-18-agent-tool-surface-design.md` on
+  `feat/agent-tool-surface`): six new MCP tools (`explain_issue`, `preview_issue_fix`,
+  `apply_issue_fix` — the only writer, two-phase one-issue-at-a-time with a stale-span guard —
+  `audit_workspace` with dedupe, `get_ir`, `doctor_status`), three resources
+  (`momus://rules`, `momus://config`, `momus://issues/latest`), and watcher-driven
+  `notifications/resources/updated` (degrade-gated on SDK support). Design approved by user;
+  **decision recorded: two-phase fix, not single-shot**; awaiting user spec review before
+  writing-plans. (2) **Rust TAUT-005 third pass — implemented, gate green** (rows 55, §4d in
+  docs/11): the syn-wasm serializer now renders `&`-reference referents, block/`unsafe`
+  statements, and qualified-path callees (`<Ty as Trait>::foo`), the TS walker resolves
+  trait-qualified/UFCS first-arg receivers and descends into blocks, and
+  `TestFnIR.shouldPanic` + `MockIR.fnId` (IR schema 8) suppress TAUT-005 inside
+  `#[should_panic]` tests (the drop-panic is the assertion). **mockall dogfood: 11 → 5
+  warnings, 0 errors** — the 6 cleared were false positives (UFCS ×4, unsafe-block ×1,
+  should-panic ×1); the 5 remaining are the genuine cfg-gated compile-only set ×4 + one
+  configured-but-unused mock (`mock_struct.rs:125`). (3) **flask dogfood — implemented,
+  verified green** (docs/11 §4e, row 56): 83 files, 0 issues / 0 false positives; planted
+  probes fired DRIFT-005/TAUT-004/005/006 end-to-end and exposed a real gap —
+  `resolvePythonImport` never probed `src/` (src-layout), so `patch('flask.sessions.X')`
+  silently degraded DRIFT-005. Fixed with a per-ancestor `src/` fallback + fixtures;
+  flask + httpx re-audit at 0. Full gate green: **501 tests**, typecheck/lint/format clean,
+  self-audit CLEAN (107 files).
 - **Last verified (0.0.6 released):** PR #14 (`feat: four-language parity`) merged to main (all 4
   gates green), release-please opened PR #15 (`chore(main): release 0.0.6`) which merged and cut
   **v0.0.6** tag + GitHub Release (2026-08-17) — 7 packages lockstep. The release-PR CI dispatch hit
