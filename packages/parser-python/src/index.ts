@@ -9,6 +9,7 @@ import type {
 import { parsePython, childField, textOf, walk, type SyntaxNode } from './tree.ts';
 import { extractSymbols } from './symbols.ts';
 import { extractMocks } from './mocks.ts';
+import { extractAssertions, extractTestFunctions } from './assertions.ts';
 import { resolvePythonImport } from './resolve.ts';
 
 export class PythonParser implements LanguageParser {
@@ -27,6 +28,8 @@ export class PythonParser implements LanguageParser {
       const { root, hasError } = parsePython(source);
       const symbols = extractSymbols(root, path);
       const mockState = extractMocks(root, path, symbols);
+      const assertions = extractAssertions(root, path, mockState);
+      const functions = extractTestFunctions(root, path);
       const isTest = isTestFile(path);
       return {
         path,
@@ -37,8 +40,8 @@ export class PythonParser implements LanguageParser {
         symbols,
         exports: symbols.map((s) => s.name),
         mocks: mockState.mocks,
-        assertions: [],
-        functions: [],
+        assertions,
+        functions,
         comments: [],
         diagnostics: hasError
           ? [

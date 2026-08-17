@@ -187,7 +187,7 @@ function ensureStub(mock: MockIR, name: string, file: string, node: SyntaxNode):
 // ---------------------------------------------------------------- helpers
 
 /** The identifier path of an expression: `mocker.patch.object` -> ['mocker','patch','object']. */
-function dottedPath(node: SyntaxNode | null): string[] {
+export function dottedPath(node: SyntaxNode | null): string[] {
   if (!node) return [];
   if (node.type === 'identifier') return [textOf(node)];
   if (node.type === 'attribute') {
@@ -232,7 +232,7 @@ function stringArg(args: SyntaxNode | null, index: number): string | null {
   return stringValue(argAt(args, index));
 }
 
-function stringValue(node: SyntaxNode | null): string | null {
+export function stringValue(node: SyntaxNode | null): string | null {
   if (!node) return null;
   if (node.type === 'string') {
     const content = node.namedChildren.find((c) => c.type === 'string_content');
@@ -241,7 +241,7 @@ function stringValue(node: SyntaxNode | null): string | null {
   return null;
 }
 
-function valueIR(node: SyntaxNode): TypeIR | undefined {
+export function valueIR(node: SyntaxNode): TypeIR | undefined {
   switch (node.type) {
     case 'integer':
     case 'float':
@@ -257,6 +257,13 @@ function valueIR(node: SyntaxNode): TypeIR | undefined {
     default:
       return undefined;
   }
+}
+
+/** Resolve a local variable name to the nearest mock bound at/above `node`'s line (scope-aware). */
+export function resolveMockName(state: PythonMockState, root: SyntaxNode, name: string, node: SyntaxNode): MockIR | undefined {
+  const line = nodeLine(node);
+  const scope = enclosingFunctionStart(root, line);
+  return resolveBinding(state.bindings, scope, name, line);
 }
 
 function resolveBinding(
