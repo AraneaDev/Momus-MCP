@@ -4,7 +4,7 @@
 // Requires NODE_AUTH_TOKEN (or npm auth) to be configured in the environment.
 import { execFileSync } from 'node:child_process';
 
-const ORDER = ['@momus/core', '@momus/parser-typescript', '@momus/parser-php', '@momus/mcp-server', '@momus/cli'];
+const ORDER = ['@momus/core', '@momus/parser-typescript', '@momus/parser-php', '@momus/parser-python', '@momus/mcp-server', '@momus/cli'];
 
 for (const pkg of ORDER) {
   const args = ['publish', '-w', pkg, '--no-audit', '--no-fund'];

@@ -72,6 +72,7 @@ try {
     core: 'core',
     'parser-typescript': 'parser-typescript',
     'parser-php': 'parser-php',
+    'parser-python': 'parser-python',
     'mcp-server': 'server',
     cli: 'cli',
   };

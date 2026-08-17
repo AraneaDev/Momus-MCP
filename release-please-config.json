@@ -24,6 +24,11 @@
         },
         {
           "type": "json",
+          "path": "packages/parser-python/package.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
           "path": "packages/server/package.json",
           "jsonpath": "$.version"
         },
