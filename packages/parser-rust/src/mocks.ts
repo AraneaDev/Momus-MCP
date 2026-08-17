@@ -62,6 +62,24 @@ function collect(items: RustItem[], mocks: MockIR[], path: string, mockStructs: 
   }
 }
 
+const WRAPPER_CONSTRUCTORS = new Set(['Box::new', 'Arc::new', 'Rc::new', 'Pin::new']);
+
+/** The mock a path or wrapper constructor flows from, or undefined. */
+function resolveMockRef(e: RustExpr | undefined, bindings: Map<string, MockIR>): MockIR | undefined {
+  if (!e) return undefined;
+  if (e.kind === 'path') return bindings.get(e.text);
+  if (e.kind === 'call' && e.callee?.text && WRAPPER_CONSTRUCTORS.has(e.callee.text)) {
+    return resolveMockRef(e.args?.[0], bindings);
+  }
+  return undefined;
+}
+
+function markReached(mock: MockIR, path: string, span: RustSpan): void {
+  if (!mock.invocationSites.some((s) => s.startLine === span.line && s.startCol === span.column)) {
+    mock.invocationSites.push(spanOf(path, span));
+  }
+}
+
 function walkExpr(
   e: RustExpr,
   mocks: MockIR[],
@@ -131,6 +149,26 @@ function walkExpr(
       if (bound && !bound.invocationSites.some((s) => s.startLine === e.span.line && s.startCol === e.span.column)) {
         bound.invocationSites.push(spanOf(path, e.span));
       }
+    }
+  }
+
+  // Wrapper re-binding: `let boxed = Box::new(mock)` (or Arc/Rc/Pin, possibly nested) registers
+  // the new variable as an alias of the mock so a later `boxed.method()` counts as an invocation.
+  if (e.kind === 'call' && e.callee?.text && WRAPPER_CONSTRUCTORS.has(e.callee.text) && boundName) {
+    const inner = resolveMockRef(e.args?.[0], bindings);
+    if (inner) bindings.set(boundName, inner);
+  }
+
+  // By-value consumption: passing the mock/alias into any call (`block_on(mock)`) or calling a
+  // method on a wrapper receiver (`Arc::new(mock).bean()`) means the mock is exercised.
+  if (e.kind === 'call' || e.kind === 'method-call') {
+    for (const a of e.args ?? []) {
+      const inner = resolveMockRef(a, bindings);
+      if (inner) markReached(inner, path, e.span);
+    }
+    if (e.kind === 'method-call' && e.receiver?.kind === 'call') {
+      const inner = resolveMockRef(e.receiver, bindings);
+      if (inner) markReached(inner, path, e.span);
     }
   }
 

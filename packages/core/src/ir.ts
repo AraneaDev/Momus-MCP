@@ -10,7 +10,7 @@ import type { Language } from './languages.ts';
  * invalidates cached modules even when the audited workspace is unchanged. Bump whenever the
  * ModuleIR shape or any parser's extraction changes in a way that would make cached IR stale.
  */
-export const IR_SCHEMA_VERSION = '5'; // 5: rust language (MockFramework/MockPattern members)
+export const IR_SCHEMA_VERSION = '6'; // 6: rust reachability (wrapper re-bindings + by-value consumption)
 
 export type { Language };
 export type Severity = 'error' | 'warning' | 'info';
