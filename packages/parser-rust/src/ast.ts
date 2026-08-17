@@ -51,6 +51,8 @@ export interface RustExpr {
   method?: string;
   receiver?: RustExpr;
   literal?: RustLiteral;
+  /** Set on the initializer of a `let NAME = <expr>;` so mocks can be tied to their variable. */
+  binding?: string;
   span: RustSpan;
 }
 

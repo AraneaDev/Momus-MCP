@@ -241,9 +241,16 @@ fn block_exprs(block: &syn::Block) -> Vec<Value> {
                 "span": span_of(&m.mac),
             })),
             syn::Stmt::Local(l) => {
-                // `let mut m = MockFoo::new();` — surface the initializer expression.
+                // `let mut m = MockFoo::new();` — surface the initializer expression, tagged
+                // with the binding name so TS can associate later `m.method()` invocations.
                 if let Some(init) = &l.init {
-                    out.push(expr(&init.expr));
+                    let mut e = expr(&init.expr);
+                    if let syn::Pat::Ident(pi) = &l.pat {
+                        if let Some(obj) = e.as_object_mut() {
+                            obj.insert("binding".to_string(), json!(pi.ident.to_string()));
+                        }
+                    }
+                    out.push(e);
                 }
             }
             _ => {}
@@ -294,6 +301,25 @@ fn expr(e: &syn::Expr) -> Value {
         syn::Expr::Path(p) => json!({
             "kind": "path",
             "text": path_text(&p.path),
+            "span": span_of(e),
+        }),
+        syn::Expr::Field(f) => json!({
+            "kind": "other",
+            "text": text,
+            // preserve the base so a nested `mock.foo()` invocation is still walkable
+            "receiver": expr(f.base.as_ref()),
+            "span": span_of(e),
+        }),
+        syn::Expr::Unary(u) => json!({
+            "kind": "other",
+            "text": text,
+            "receiver": expr(u.expr.as_ref()),
+            "span": span_of(e),
+        }),
+        syn::Expr::Paren(p) => json!({
+            "kind": "other",
+            "text": text,
+            "receiver": expr(p.expr.as_ref()),
             "span": span_of(e),
         }),
         syn::Expr::Reference(_r) => json!({

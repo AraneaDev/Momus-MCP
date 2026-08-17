@@ -6,7 +6,7 @@ import { extractSymbols } from './symbols.ts';
 import { extractImports } from './imports.ts';
 import { extractMocks } from './mocks.ts';
 import { extractAssertions, extractTestFunctions } from './assertions.ts';
-import { getCrateIndex, resolveRustImport } from './resolve.ts';
+import { resolveRustImport } from './resolve.ts';
 
 export class RustParser implements LanguageParser {
   readonly language = 'rust' as const;
@@ -24,8 +24,8 @@ export class RustParser implements LanguageParser {
       const file = parseRust(source);
       if (file.error) throw new Error(file.error);
       const symbols = extractSymbols(file, path);
-      const isTest = isTestSource(file);
-      const mocks = extractMocks(file, path, getCrateIndex(path));
+      const isTest = isTestSource(file) || isIntegrationTestPath(path);
+      const mocks = extractMocks(file, path);
       return {
         path,
         language: 'rust',
@@ -72,6 +72,15 @@ function isTestSource(file: RustFile): boolean {
   const check = (items: RustItem[]): boolean =>
     items.some((i) => attrsOf(i).some((a) => a.path === 'test') || (i.kind === 'mod' && check(i.items)));
   return check(file.items);
+}
+
+/**
+ * Rust integration tests live in a `tests/` directory and are compiled as separate test
+ * crates — some are compile-only (no #[test] fn), so structural detection alone misclassifies
+ * them as production and pollutes the symbol index. A path under `tests/` is a test file.
+ */
+function isIntegrationTestPath(path: string): boolean {
+  return /(?:^|[\\/])tests[\\/]/.test(path);
 }
 
 function attrsOf(item: RustItem): { path: string; args: string | null }[] {

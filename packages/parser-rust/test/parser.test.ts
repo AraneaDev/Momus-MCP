@@ -16,6 +16,16 @@ describe('RustParser', () => {
     expect(m.symbols.map((s) => s.name)).toContain('add');
   });
 
+  it('marks a compile-only integration test under tests/ as a test module', () => {
+    // Rust integration tests live in tests/ and need no #[test] fn (compile-only checks).
+    const m = new RustParser().parseModule(
+      '/c/tests/automock_compile.rs',
+      '#[automock]\ntrait A { fn bar() -> u32; }\n',
+      ctx,
+    );
+    expect(m.kind).toBe('test');
+  });
+
   it('emits a SYS-001 diagnostic for bad syntax', () => {
     const m = new RustParser().parseModule('/c/src/broken.rs', 'fn broken( {', ctx);
     expect(m.diagnostics[0]?.message).toContain('SYS-001');

@@ -1,37 +1,63 @@
 import type { MockIR, SourceSpan, TypeIR } from '@momus/core';
 import type { RustExpr, RustFile, RustItem, RustMacroCall, RustSpan } from './ast.ts';
-import { extractImports } from './imports.ts';
-import type { RustCrateIndex } from './crateIndex.ts';
 
-export function extractMocks(file: RustFile, path: string, index: RustCrateIndex): MockIR[] {
-  // local name -> use specifier, so MockRepo::new() resolves "Repo" to its trait path.
-  const imports = new Map<string, string>();
-  for (const imp of extractImports(file)) {
-    const local = imp.names[0] ?? imp.specifier.split('::').pop() ?? imp.specifier;
-    imports.set(local, imp.specifier);
-  }
+/**
+ * Extract Rust mocks into MockIR. A mockall mock is a single entity: `mock! { … }` (or
+ * `#[automock]`) *declares* the mock type and `MockFoo::new()` *instantiates* it, so we emit one
+ * MockIR per `MockFoo::new()` — never one for the `mock!` macro itself. The mock's target is a
+ * bare `exportName` (`kind: 'class'`) that the audit engine resolves against the production
+ * SymbolIndex (file-local first) exactly like the TS/PHP parsers:
+ *
+ * - `#[automock]` on a trait/struct → target is that type (`MockRepo::new()` → `Repo`).
+ * - `mock! { pub Foo { … } impl Trait for Foo { … } }` → target is the implemented `Trait`.
+ * - `mock! { pub Foo { … } }` with no trait impl → self-defined mock struct, no production
+ *   target (exportName unset), so no drift check fires.
+ *
+ * `invocationSites` are recorded when a mock variable's non-`expect_*` method is called, so a
+ * used mock is not a zero-reach stub (TAUT-005).
+ */
+export function extractMocks(file: RustFile, path: string): MockIR[] {
   const mocks: MockIR[] = [];
-  collect(file.items, mocks, path, index, imports);
+  // mock! struct name -> implemented trait name (null = inherent methods only)
+  const mockStructs = new Map<string, string | null>();
+  collectMockStructs(file.items, mockStructs);
+  collect(file.items, mocks, path, mockStructs);
   return mocks;
 }
 
-function collect(
-  items: RustItem[],
-  mocks: MockIR[],
-  path: string,
-  index: RustCrateIndex,
-  imports: Map<string, string>,
-): void {
+/** First pass: record the struct→trait mapping declared by every `mock! { … }` macro. */
+function collectMockStructs(items: RustItem[], mockStructs: Map<string, string | null>): void {
   for (const item of items) {
     if (item.kind === 'macro' && (item.path === 'mock' || item.path === 'Mock')) {
-      mocks.push(fromMockMacro(item, path, index));
-    } else if (item.kind === 'fn' && item.attrs.some((a) => a.path === 'test')) {
+      recordMockMacro(item, mockStructs);
+    } else if (item.kind === 'mod') {
+      collectMockStructs(item.items, mockStructs);
+    }
+  }
+}
+
+function recordMockMacro(m: RustMacroCall, mockStructs: Map<string, string | null>): void {
+  const traitMatch = /impl\s+([A-Za-z_][\w:]*)\s+for\s+([A-Za-z_]\w*)/.exec(m.tokens);
+  if (traitMatch) {
+    const traitName = traitMatch[1]!.split('::').pop() ?? null;
+    mockStructs.set(traitMatch[2]!, traitName);
+    return;
+  }
+  const structMatch = /(?:pub\s+)?([A-Za-z_]\w*)\s*(?:<[^>]*>)?\s*\{/.exec(m.tokens);
+  if (structMatch) mockStructs.set(structMatch[1]!, null);
+}
+
+function collect(items: RustItem[], mocks: MockIR[], path: string, mockStructs: Map<string, string | null>): void {
+  for (const item of items) {
+    if (item.kind === 'fn' && item.attrs.some((a) => a.path === 'test')) {
+      // variable name -> mock, so `m.foo()` invocations attach to the right mock
+      const bindings = new Map<string, MockIR>();
       for (const expr of item.body) {
-        walkExpr(expr, mocks, path, index, imports);
+        walkExpr(expr, mocks, path, bindings, mockStructs);
         scanWiremock(expr, mocks, path);
       }
     } else if (item.kind === 'mod') {
-      collect(item.items, mocks, path, index, imports);
+      collect(item.items, mocks, path, mockStructs);
     }
   }
 }
@@ -40,14 +66,21 @@ function walkExpr(
   e: RustExpr,
   mocks: MockIR[],
   path: string,
-  index: RustCrateIndex,
-  imports: Map<string, string>,
+  bindings: Map<string, MockIR>,
+  mockStructs: Map<string, string | null>,
+  pendingBinding?: string,
 ): void {
-  if (e.kind === 'call' && e.callee?.text?.endsWith('::new') && e.callee.text.startsWith('Mock')) {
-    const typeName = e.callee.text.replace(/^Mock/, '').replace(/::new$/, '');
-    const spec = imports.get(typeName);
-    const symbolId = spec ? index.resolveSymbolId(spec) : null;
-    mocks.push(mockOf(path, e.span, 'automock', symbolId));
+  // A `let NAME = <expr>;` binding applies to a `MockFoo::new()` anywhere in the initializer
+  // (e.g. `let m = Box::new(MockFoo::new())`), so thread it down the expression tree.
+  const boundName = e.binding ?? pendingBinding;
+  if (e.kind === 'call' && e.callee?.text?.startsWith('Mock') && e.callee.text.endsWith('::new')) {
+    // `MockRepo::new()` — strip the `Mock` prefix to recover the mocked type name.
+    const typeName = e.callee.text.replace(/^Mock/, '').split('::')[0]!;
+    const declared = mockStructs.get(typeName); // string (trait) | null (self-defined) | undefined (automock)
+    const exportName = declared === undefined ? typeName : declared;
+    const mock = mockOf(path, e.span, declared === undefined ? 'automock' : 'mock-macro', exportName);
+    mocks.push(mock);
+    if (boundName) bindings.set(boundName, mock);
   }
 
   if (e.kind === 'call' && e.callee?.text === 'mock') {
@@ -91,12 +124,20 @@ function walkExpr(
         }
       }
     }
+    // An actual call on a mock variable (`m.foo()`) marks the mock as invoked; `expect_*`
+    // is stub configuration, not invocation.
+    if (e.receiver?.kind === 'path' && e.method && !e.method.startsWith('expect_')) {
+      const bound = bindings.get(e.receiver.text);
+      if (bound && !bound.invocationSites.some((s) => s.startLine === e.span.line && s.startCol === e.span.column)) {
+        bound.invocationSites.push(spanOf(path, e.span));
+      }
+    }
   }
 
-  if (e.receiver) walkExpr(e.receiver, mocks, path, index, imports);
-  for (const a of e.args ?? []) walkExpr(a, mocks, path, index, imports);
-  if (e.left) walkExpr(e.left, mocks, path, index, imports);
-  if (e.right) walkExpr(e.right, mocks, path, index, imports);
+  if (e.receiver) walkExpr(e.receiver, mocks, path, bindings, mockStructs, boundName);
+  for (const a of e.args ?? []) walkExpr(a, mocks, path, bindings, mockStructs, boundName);
+  if (e.left) walkExpr(e.left, mocks, path, bindings, mockStructs, boundName);
+  if (e.right) walkExpr(e.right, mocks, path, bindings, mockStructs, boundName);
 }
 
 /** A `Mock::given(...).and(path("/x")).respond_with(...)` statement -> one wiremock mock. */
@@ -136,29 +177,16 @@ function findRoute(e: RustExpr): string | undefined {
   return undefined;
 }
 
-function fromMockMacro(m: RustMacroCall, path: string, index: RustCrateIndex): MockIR {
-  const traitMatch = /impl\s+([A-Za-z0-9_:]+)\s+for\s+([A-Za-z0-9_]+)/.exec(m.tokens);
-  const members = [...m.tokens.matchAll(/fn\s+(\w+)\s*\(/g)].map((x) => x[1]!);
-  const symbolId = traitMatch ? index.resolveSymbolId(traitMatch[1]!) : null;
-  return mockOf(path, m.span, 'mock-macro', symbolId, members);
-}
-
-function mockOf(
-  path: string,
-  span: RustSpan,
-  pattern: 'automock' | 'mock-macro',
-  symbolId: string | null,
-  members: string[] = [],
-): MockIR {
+function mockOf(path: string, span: RustSpan, pattern: 'automock' | 'mock-macro', exportName: string | null): MockIR {
   return {
     id: `${path}#mock:${span.line}:${span.column}`,
     span: spanOf(path, span),
     framework: 'mockall',
     pattern,
-    target: symbolId
-      ? { kind: 'class', symbolId, span: spanOf(path, span) }
+    target: exportName
+      ? { kind: 'class', exportName, span: spanOf(path, span) }
       : { kind: 'unknown', span: spanOf(path, span) },
-    stubbedMembers: members.map((name) => ({ name, span: spanOf(path, span), returnValues: [], api: 'unknown' })),
+    stubbedMembers: [],
     configuredValues: [],
     invocationSites: [],
     isAutomock: pattern === 'automock',
