@@ -5,6 +5,7 @@ import type { RustFile, RustItem } from './ast.ts';
 import { extractSymbols } from './symbols.ts';
 import { extractImports } from './imports.ts';
 import { extractMocks } from './mocks.ts';
+import { extractAssertions, extractTestFunctions } from './assertions.ts';
 import { getCrateIndex, resolveRustImport } from './resolve.ts';
 
 export class RustParser implements LanguageParser {
@@ -34,8 +35,8 @@ export class RustParser implements LanguageParser {
         symbols,
         exports: symbols.map((s) => s.name),
         mocks,
-        assertions: [],
-        functions: [],
+        assertions: extractAssertions(file, path),
+        functions: extractTestFunctions(file, path),
         comments: [],
         diagnostics: [],
         hash: '',
