@@ -185,7 +185,7 @@ registry now drives `Language`/config/test-patterns/discovery, and `@momus/parse
 parses `pytest`/`unittest` suites via `tree-sitter-python` + textual PEP 484/526/585/604
 annotations into the same `ModuleIR` — rules stay IR-only. `DRIFT-002`/`DRIFT-003` fire only on
 annotated signatures (unannotated degrades with `SYS-003`); `DRIFT-004` stays PHP-only. pyright
-type inference remains a follow-up.
+type inference shipped (see four-language parity below).
 
 ---
 
@@ -199,6 +199,29 @@ all extraction (symbols, imports, structural `#[test]`/`#[cfg(test)]` detection,
 `SymbolIndex` and `ModuleIR` seam. A crate-wide index resolves `use`/`mod` paths and trait method
 signatures so drift rules are semantic-from-day-one (external-crate traits degrade with `SYS-003`).
 `DRIFT-004` stays PHP-only; `momus doctor` reports Rust-readiness (`Cargo.toml` + `.rs` count).
+
+---
+
+## Four-language parity (shipped) — one rule surface, equal depth
+
+Brings all four language families to the same level (design in
+`docs/superpowers/specs/2026-08-17-four-language-parity-design.md`). Five phases:
+
+- **Consistency** — one shared rule catalog (`RUST_CATALOG` → 14 rules) drives both the CLI
+  `momus rules` and MCP `list_rules`; the watcher watches `.rs` and the default ignores cover
+  `.venv`/`__pycache__`/`target`.
+- **Rust reachability** — bounded TAUT-005 fix: wrapper re-bindings and by-value consumption
+  count as reachable, so mockall's receiver-wrapper/by-value warnings drop (11 → documented
+  genuine boundaries).
+- **Cross-language rules** — MOCK-002 mock-of-self generalized to a per-language subject
+  derivation; Python DRIFT-005 (missing patched attribute) and Python/PHP TAUT-006
+  (unconfigured `assert_called*`/Mockery `spy()`) shipped; `DRIFT-004` stays PHP-only
+  (constructors are compiler-checked elsewhere).
+- **Python depth** — `pyright` CLI `--createstub` inference (the in-process `pyright-internal`
+  API is unpublished) resolves unannotated return types into `SignatureIR`, so DRIFT-002/003
+  fire on unannotated code like TS/Rust; degrades to annotations-only on any failure.
+- **Synthesis** — `synthesize_mock_contract` gained `pytest`/`unittest` (Python) and
+  `mockall`/`mockito`/`wiremock` (Rust) templates, completing the four-language framework enum.
 
 ---
 

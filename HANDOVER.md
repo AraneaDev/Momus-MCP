@@ -1,10 +1,23 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-17 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; **four language families shipped — TypeScript/PHP/Python/Rust** (single language registry + `@momus/parser-rust` via a `syn`→WASM parser + crate-wide index, mockall/mockito/wiremock), 7 packages lockstep at 0.0.5 — release-please, persistent IR cache, ESLint+Prettier, coverage tooling — full gate green, typecheck clean, lint clean, format clean, self-audit clean.
-**Next session: pyright type inference for Python + Rust receiver-wrapper/by-value TAUT-005 refinements; Phase 4 distribution stays pending credentials.**
+**Date:** 2026-08-17 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; **four language families at parity — TypeScript/PHP/Python/Rust** (shared 14-rule catalog, pyright `--createstub` inference for unannotated Python DRIFT-002/003, cross-language MOCK-002/DRIFT-005/TAUT-006, 4-language `synthesize_mock_contract`), 7 packages lockstep at 0.0.5 — release-please, persistent IR cache, ESLint+Prettier, coverage tooling — full gate green (491 tests), typecheck/lint/format clean, self-audit clean.
+**Next session: Phase 4 distribution stays pending credentials; optional hardening (CI lint/format wiring, perf-budget asserts, incremental `ts.createWatchProgram`).**
 
 ## Current checkpoint — 2026-08-17
 
+- **Last verified (four-language parity):** `feat/language-parity` implements the
+  `docs/superpowers/specs/2026-08-17-four-language-parity-design.md` plan (11 TDD tasks): a single
+  shared 14-rule catalog (`@momus/core` `RULES_CATALOG`) drives both `momus rules` and MCP
+  `list_rules`; the watcher watches `.rs` and default ignores cover `.venv`/`__pycache__`/`target`;
+  Rust TAUT-005 gained wrapper re-bindings + by-value consumption (mockall warnings 16→11);
+  MOCK-002 subject derivation is per-language, and Python DRIFT-005 + Python/PHP TAUT-006
+  (`assert_called*`/Mockery `spy()` → new `mockery-spy` pattern, IR schema v7) shipped;
+  **pyright `--createstub` inference** (the in-process `pyright-internal` API is unpublished on
+  npm) resolves unannotated Python return types into `SignatureIR` so DRIFT-002/003 fire on
+  unannotated code (degrades to annotations-only on failure); and `synthesize_mock_contract` gained
+  `pytest`/`unittest`/`mockall`/`mockito`/`wiremock` templates. Full gate green (491 tests),
+  typecheck/lint/format clean, self-audit clean. Dogfood: httpx 0 issues (first-file pyright cold
+  start logged as a `SYS-004` note — documented cost, not a regression).
 - **Last verified (Rust support):** Rust shipped as a fourth language family (spec + plan under
   `docs/superpowers/…`, 10 TDD tasks). `@momus/parser-rust` parses `mockall` (`#[automock]`,
   `mock!`, `expect_*().returning()`), `mockito`/`wiremock` HTTP mocks, and built-in
@@ -929,10 +942,10 @@ in `audit.ts` — only inline comments are. (Verify before relying on it.)
 
 ## 9. Next session — recommended sequence
 
-1. **Python dogfood → Rust follow-up** — dogfood the Python parser against a real pytest-heavy
-   repo (record findings + false-positive fixes in `docs/11-real-world-findings.md`), then spec
-   and build **Rust** (`syn` via WASM) reusing the single language registry; optionally wire
-   pyright type inference behind the parser-internal seam.
+1. **Four-language parity is shipped** — pyright `--createstub` inference, Rust reachability
+   refinements, cross-language MOCK-002/DRIFT-005/TAUT-006, and the four-language
+   `synthesize_mock_contract` are all done and dogfooded (httpx 0 issues; mockall warnings
+   16→11). Remaining follow-ups are optional hardening only.
 2. **Continue the hardening loop** — dogfood the audit + `synthesize_mock_contract` on Momus
    itself and against `Chaos-MCP`/`Knossos-MCP`, fixing every false-positive/perf gap they
    expose; keep `docs/11-real-world-findings.md` + this handover current.
