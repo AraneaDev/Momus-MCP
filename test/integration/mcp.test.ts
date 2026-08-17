@@ -497,6 +497,20 @@ describe('Momus MCP server (Python language selection)', () => {
     expect(sc.result.issues.every((issue) => issue.rule.startsWith('TAUT'))).toBe(true);
     expect(sc.result.issues.some((issue) => issue.rule === 'TAUT-005')).toBe(true);
   });
+
+  it('synthesizes a pytest mock from a Python class', async () => {
+    const res = await client.callTool({
+      name: 'synthesize_mock_contract',
+      arguments: { targetPath: 'repo.py', symbolName: 'Repo', framework: 'pytest' },
+    });
+    expect(res.isError).toBeFalsy();
+    const text = res.content[0]!.text;
+    expect(text).toContain('```python');
+    expect(text).toContain("patch.object(Repo, 'save'");
+    expect(text).toContain('return_value');
+    const sc = res.structuredContent as { result: { summary: { members: number } } };
+    expect(sc.result.summary.members).toBe(3);
+  });
 });
 
 describe('Momus MCP server (Rust language selection)', () => {
@@ -545,5 +559,30 @@ describe('Momus MCP server (Rust language selection)', () => {
     const sc = res.structuredContent as { result: { issues: Array<{ rule: string }> } };
     expect(sc.result.issues.every((issue) => issue.rule.startsWith('TAUT'))).toBe(true);
     expect(sc.result.issues.some((issue) => issue.rule === 'TAUT-005')).toBe(true);
+  });
+
+  it('synthesizes a mockall mock from a Rust trait', async () => {
+    const res = await client.callTool({
+      name: 'synthesize_mock_contract',
+      arguments: { targetPath: 'repo.rs', symbolName: 'Repo', framework: 'mockall' },
+    });
+    expect(res.isError).toBeFalsy();
+    const text = res.content[0]!.text;
+    expect(text).toContain('```rust');
+    expect(text).toContain('mock!');
+    expect(text).toContain('expect_find');
+    const sc = res.structuredContent as { result: { summary: { members: number } } };
+    expect(sc.result.summary.members).toBe(2);
+  });
+
+  it('synthesizes a mockito scaffold from a Rust trait', async () => {
+    const res = await client.callTool({
+      name: 'synthesize_mock_contract',
+      arguments: { targetPath: 'repo.rs', symbolName: 'Repo', framework: 'mockito' },
+    });
+    expect(res.isError).toBeFalsy();
+    const text = res.content[0]!.text;
+    expect(text).toContain('```rust');
+    expect(text).toContain('mockito::Server');
   });
 });

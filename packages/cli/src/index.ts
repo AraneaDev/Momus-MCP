@@ -38,7 +38,7 @@ Usage:
   momus annotate-pr [--base REF] (GitHub Actions: post check annotations from the diff audit)
   momus annotate [paths...] [--git-diff --base REF]  (machine-readable JSONL for editor plugins)
   momus hook [--install|--uninstall] [--yes]  (install/run the staged-files pre-commit drift gate)
-  momus contract <targetPath> [--framework vitest|jest|phpunit|pest] [--symbol NAME]
+  momus contract <targetPath> [--framework vitest|jest|phpunit|pest|pytest|unittest|mockall|mockito|wiremock] [--symbol NAME]
   momus rules
   momus serve [--root DIR] [--transport stdio|http] [--port N] [--watch]
   momus init [--force]
