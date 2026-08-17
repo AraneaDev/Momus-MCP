@@ -1,0 +1,7 @@
+#!/bin/sh
+# Keep every package.json `version` field in lockstep with .release-please-manifest.json.
+# Runs before each commit and re-stages any package.json it corrects, so a stale version
+# can never be committed (a stale version blocks the release-config gate on main).
+node scripts/sync-versions.mjs || exit 1
+git add -u package.json packages 2>/dev/null || true
+exit 0

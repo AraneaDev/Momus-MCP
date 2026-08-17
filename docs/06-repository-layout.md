@@ -214,10 +214,14 @@ it creates the `vX.Y.Z` tag + GitHub Release, then the workflow's `release_creat
 the same CI gate (typecheck + test). **npm publishing is NOT part of CI** — by project
 decision, publishing `@momus/*` to npm is a deliberate manual action
 (`npm run publish` → `scripts/publish.mjs`, dependency order, `access: public` from each
-package's `publishConfig`). All five
+package's `publishConfig`). All six
 packages share **one lockstep version** (`release-please-config.json` bumps every workspace
 `package.json` via `json` extra-files; internal `@momus/*` deps use `~0.0.1` ranges so they
-track in lockstep). npm provenance is pre-wired (`id-token: write`); enable it per package via
+track in lockstep). `scripts/sync-versions.mjs` (`npm run version:sync`, and `version:check`
+for CI parity) aligns every `package.json` version to `.release-please-manifest.json`, so a
+**new** package starts at the current version instead of a hardcoded one — a
+`.githooks/pre-commit` hook runs it on every commit. npm provenance is pre-wired
+(`id-token: write`); enable it per package via
 `publishConfig.provenance`. Publishing is blocked until an `NPM_TOKEN` secret exists. The
 action (`momus-mcp/action`) is published as a separate release artifact pointing at
 `@momus/cli@<tag>`. Versioned from **0.0.1** (`.release-please-manifest.json`).

@@ -322,7 +322,7 @@ Create `packages/parser-python/package.json` (copy parser-php, swap name/descrip
 ```json
 {
   "name": "@momus/parser-python",
-  "version": "0.0.2",
+  "version": "0.0.0",
   "publishConfig": { "access": "public" },
   "type": "module",
   "description": "Python parser plugin for Momus using tree-sitter-python",
@@ -341,7 +341,7 @@ Create `packages/parser-python/tsconfig.json`:
 ```json
 { "extends": "../../tsconfig.base.json", "include": ["src"] }
 ```
-Run `npm install` at the repo root to link the new workspace. (Pin the exact tree-sitter versions npm resolves, not the guesses above.)
+Then run `npm run version:sync` to set `version` to the current lockstep version — **never hardcode it** (a stale version blocks the release-config gate). Finally `npm install` at the repo root to link the new workspace. (Pin the exact tree-sitter versions npm resolves, not the guesses above.)
 
 - [ ] **Step 2: Write the failing annotation-parser test**
 
