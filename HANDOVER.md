@@ -1,10 +1,15 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-17 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; **four language families at parity — TypeScript/PHP/Python/Rust** (shared 14-rule catalog, pyright `--createstub` inference for unannotated Python DRIFT-002/003, cross-language MOCK-002/DRIFT-005/TAUT-006, 4-language `synthesize_mock_contract`), 7 packages lockstep at 0.0.5 — release-please, persistent IR cache, ESLint+Prettier, coverage tooling — full gate green (491 tests), typecheck/lint/format clean, self-audit clean.
+**Date:** 2026-08-17 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; **four language families at parity — TypeScript/PHP/Python/Rust** (shared 14-rule catalog, pyright `--createstub` inference for unannotated Python DRIFT-002/003, cross-language MOCK-002/DRIFT-005/TAUT-006, 4-language `synthesize_mock_contract`), 7 packages lockstep at 0.0.6 — release-please, persistent IR cache, ESLint+Prettier, coverage tooling — full gate green (491 tests), typecheck/lint/format clean, self-audit clean.
 **Next session: Phase 4 distribution stays pending credentials; optional hardening (CI lint/format wiring, perf-budget asserts, incremental `ts.createWatchProgram`).**
 
 ## Current checkpoint — 2026-08-17
 
+- **Last verified (0.0.6 released):** PR #14 (`feat: four-language parity`) merged to main (all 4
+  gates green), release-please opened PR #15 (`chore(main): release 0.0.6`) which merged and cut
+  **v0.0.6** tag + GitHub Release (2026-08-17) — 7 packages lockstep. The release-PR CI dispatch hit
+  the known `action_required`-with-0-jobs quirk (GITHUB_TOKEN-opened PRs don't fire runs); recovered
+  via `gh run rerun` — no config change needed.
 - **Last verified (four-language parity):** `feat/language-parity` implements the
   `docs/superpowers/specs/2026-08-17-four-language-parity-design.md` plan (11 TDD tasks): a single
   shared 14-rule catalog (`@momus/core` `RULES_CATALOG`) drives both `momus rules` and MCP
