@@ -1,6 +1,8 @@
 /** .momusrc loading + validation (spec docs/02 §2.6). */
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { defaultEnabledLanguages, defaultTestFilePatterns } from './languages.ts';
+import type { Language } from './languages.ts';
 
 export interface RuleSeverityConfig {
   severity?: 'error' | 'warning' | 'info' | 'off';
@@ -8,7 +10,7 @@ export interface RuleSeverityConfig {
 }
 
 export interface MomusConfig {
-  languages: { typescript: boolean; php: boolean };
+  languages: Record<Language, boolean>;
   testFilePatterns: string[];
   rules: Record<string, RuleSeverityConfig>;
   mockSaturationThreshold: number;
@@ -21,8 +23,8 @@ export interface MomusConfig {
 }
 
 export const DEFAULT_CONFIG: MomusConfig = {
-  languages: { typescript: true, php: false },
-  testFilePatterns: ['**/*.{test,spec}.{ts,tsx,js,jsx,mjs}', '**/__tests__/**'],
+  languages: defaultEnabledLanguages(),
+  testFilePatterns: defaultTestFilePatterns(),
   rules: {},
   mockSaturationThreshold: 0.7,
   ignorePatterns: ['**/node_modules/**', '**/vendor/**', '**/dist/**', '**/.git/**'],

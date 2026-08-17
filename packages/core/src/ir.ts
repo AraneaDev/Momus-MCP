@@ -3,6 +3,8 @@
  * All spans are 1-based lines / 1-based columns; endCol exclusive.
  */
 
+import type { Language } from './languages.ts';
+
 /**
  * IR cache schema version. Folded into the workspace cache digest so that a parser/IR change
  * invalidates cached modules even when the audited workspace is unchanged. Bump whenever the
@@ -10,7 +12,7 @@
  */
 export const IR_SCHEMA_VERSION = '3'; // 3: SignatureIR.throws (PHP @throws docblocks)
 
-export type Language = 'typescript' | 'php';
+export type { Language };
 export type Severity = 'error' | 'warning' | 'info';
 
 export type RuleId =
