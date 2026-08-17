@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.0.5](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.4...v0.0.5) (2026-08-17)
+
+
+### Features
+
+* **core:** register rust language + mockall/mockito/wiremock IR members ([882f8db](https://github.com/AraneaDev/Momus-MCP/commit/882f8dbde6799d8fb6e1b747295d7d185f74b2a2))
+* **parser-rust:** assertions + provenance ([415e382](https://github.com/AraneaDev/Momus-MCP/commit/415e38210dab787cd97c9accadcf220112296610))
+* **parser-rust:** crate-wide use/mod path resolution ([7dd1211](https://github.com/AraneaDev/Momus-MCP/commit/7dd1211d26e7075f31765393a14d58a9159b6c68))
+* **parser-rust:** mockall automock/mock! detection with expect_ configs ([5340fb8](https://github.com/AraneaDev/Momus-MCP/commit/5340fb80cbe19a008cb45b17a6181c80bf44e723))
+* **parser-rust:** mockito/wiremock HTTP mock detection ([91f66bd](https://github.com/AraneaDev/Momus-MCP/commit/91f66bdc83b03c5c6ce9a90b8fa61a8c194b5f45))
+* **parser-rust:** rustReturnAssignable + DRIFT-001/003 wiring ([f85738d](https://github.com/AraneaDev/Momus-MCP/commit/f85738dc598020ade059e52e6403909e741a96c4))
+* **parser-rust:** symbols, imports, and structural test detection ([dd2e8e5](https://github.com/AraneaDev/Momus-MCP/commit/dd2e8e56eb79a095087e1529c049ed0c08170798))
+* **parser-rust:** syn-&gt;wasm32 wrapper and synchronous loader ([d5c5372](https://github.com/AraneaDev/Momus-MCP/commit/d5c53723aedd71cad042cdabc3479f3c4cf72d04))
+* Rust language support (syn → WASM) ([4722773](https://github.com/AraneaDev/Momus-MCP/commit/4722773a092d2668cb843b28f7063545a8522ee4))
+* wire Rust parser into CLI/server/doctor + golden/MCP tests ([17649c5](https://github.com/AraneaDev/Momus-MCP/commit/17649c569b070999cde1102ecc53050c3eb4287b))
+
+
+### Bug Fixes
+
+* **parser-rust:** eliminate mockall dogfood false positives ([c4867e3](https://github.com/AraneaDev/Momus-MCP/commit/c4867e3b094fcb1956f48c7c7116cd3c3870dd77))
+
 ## [0.0.4](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.3...v0.0.4) (2026-08-17)
 
 
