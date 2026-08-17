@@ -18,5 +18,8 @@
   "dependencies": {
     "@momus/core": "~0.0.1",
     "php-parser": "^3.7.0"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1"
   }
 }
