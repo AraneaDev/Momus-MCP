@@ -317,6 +317,26 @@ describe('Momus MCP server (watch mode)', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('watchWorkspace watches .rs files but ignores venv/build dirs', { timeout: 15_000 }, async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-watch-rs-'));
+    mkdirSync(join(dir, '.venv'), { recursive: true });
+    const changed: string[] = [];
+    const watcher = watchWorkspace(dir, { onChange: (path) => changed.push(path) });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      writeFileSync(join(dir, 'lib.rs'), 'fn main() {}\n');
+      await waitFor(() => changed.some((p) => p.endsWith('lib.rs')), 5_000);
+      expect(changed.some((p) => p.endsWith('lib.rs'))).toBe(true);
+      // a file under an ignored venv dir must not fire onChange
+      writeFileSync(join(dir, '.venv', 'x.py'), 'x = 1\n');
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(changed.some((p) => p.includes('.venv'))).toBe(false);
+    } finally {
+      await watcher.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<void> {

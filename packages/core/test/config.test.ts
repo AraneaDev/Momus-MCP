@@ -72,6 +72,14 @@ describe('loadConfig', () => {
   });
 });
 
+describe('DEFAULT_CONFIG.ignorePatterns', () => {
+  it('excludes Python/Rust build and venv dirs', () => {
+    for (const p of ['**/__pycache__/**', '**/.venv/**', '**/target/**']) {
+      expect(DEFAULT_CONFIG.ignorePatterns).toContain(p);
+    }
+  });
+});
+
 describe('effectiveSeverity', () => {
   it('falls back to the rule default', () => {
     expect(effectiveSeverity(DEFAULT_CONFIG, 'TAUT-001', 'error')).toBe('error');

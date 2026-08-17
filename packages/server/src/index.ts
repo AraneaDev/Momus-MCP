@@ -237,7 +237,7 @@ export async function serve(opts: MomusServerOptions): Promise<void> {
   await server.connect(new StdioServerTransport());
 }
 
-const SOURCE_RE = /\.(ts|tsx|js|jsx|mts|cts|mjs|php|py)$/i;
+const SOURCE_RE = /\.(ts|tsx|js|jsx|mts|cts|mjs|php|py|rs)$/i;
 
 /**
  * Watch the workspace for source-file changes (spec docs/06 §6.5, Phase 3): every add/change/
@@ -257,6 +257,10 @@ export function watchWorkspace(
       /(^|[\\/])vendor[\\/]/,
       /(^|[\\/])coverage[\\/]/,
       /(^|[\\/])\.momus[\\/]/,
+      /(^|[\\/])\.venv[\\/]/,
+      /(^|[\\/])venv[\\/]/,
+      /(^|[\\/])__pycache__[\\/]/,
+      /(^|[\\/])target[\\/]/,
     ],
     ignoreInitial: true,
     persistent: true,
