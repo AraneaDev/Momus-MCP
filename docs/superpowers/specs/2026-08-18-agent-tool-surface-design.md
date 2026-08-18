@@ -9,6 +9,22 @@
 > documentation defect it surfaced is recorded (§2). Everything else was checked and still
 > holds: the server registers exactly the five tools listed, and every fixer function named
 > in §1.2/§1.3 exists as described.
+>
+> **Phase-1 implementation notes (2026-08-19).** Two further gaps surfaced while building
+> `explain_issue` and `get_ir`, both recorded inline: the `tools/list` size budget could not
+> hold the planned surface (§1.0), and `issueId` is not reachable over MCP (§1.1).
+
+### 1.0 The `tools/list` budget had to move first **[revised]**
+
+`docs/02` §2.7 capped the serialized `tools/list` payload at **< 4 KB**. The five pre-existing
+tools measured **4080 B** — 99.6% of it — so any sixth tool broke the budget no matter how lean
+it was, and six new tools could not fit at any plausible density (the five range 437–972 B
+each). A narrow-tool design and a 4 KB cap are not compatible.
+
+The cap is now **< 12 KB total and < 1 KB per tool**. The per-tool half carries the intent the
+original figure was protecting — no single tool may bloat — and unlike a total it does not need
+revisiting every time a tool is added. Both are asserted in `test/integration/mcp.test.ts`.
+After phase 1 the surface is seven tools / 5600 B.
 
 Momus's MCP server exposes five read-only tools (`audit_test_fidelity`,
 `detect_tautological_assertions`, `verify_mock_drift`, `synthesize_mock_contract`,
@@ -45,9 +61,17 @@ does not begin until the written spec is user-reviewed.
 
 ### 1.1 `explain_issue` (read-only)
 
+> **[revised] `issueId` is not reachable over MCP, so the tuple is the primary key.**
+> `Issue.id` exists in core (`rule:file:line:col:message-slice`) but `buildJsonEnvelope` never
+> projects it — every MCP result carries `rule`, `file`, `line`, `column`, `message`, never
+> `id`. An agent therefore cannot obtain an `issueId` to pass back. The shipped input is
+> `{path, rule, line?}`: `line` disambiguates a rule that fired more than once (Argos-MCP had
+> 15 `TAUT-006` in one file), and it is no less stable than the id, which embeds line and
+> column anyway. Exposing `id` in the envelope stays open as a separate change — it would
+> re-golden every tool's output — and is not needed for phases 1–3.
+
 Resolve one issue to a root-cause chain. Input: `path` (workspace-relative test
-file) + `issueId` (stable dedupe id from a prior audit result), or the
-`{path, rule}` tuple when the id is unavailable. The server re-runs a narrow
+file) + `rule` + optional `line`. The server re-runs a narrow
 single-file audit (parse cache makes this fast), matches the issue, and returns:
 
 - the rule atom that fired, its severity, and the canonical one-line message;
@@ -109,7 +133,8 @@ full list is still present for line-level work. Summary counts stay truthful
 ### 1.5 `get_ir`
 
 Debug surface for false positives. Input: `path`, optional `kind` filter
-(`mocks`, `symbols`, `assertions`, `invocations`). Returns the parser IR for the
+(`mocks`, `symbols`, `assertions`, `all`; **[revised]** `invocations` is not a separate slice —
+`invocationSites` ship inside each mock, which is where the reachability question is asked). Returns the parser IR for the
 file — the same shapes the rules consume (`MockIR`, `SymbolIR`, `AssertionIR`,
 `invocationSites`) as structured content — plus parse diagnostics when the file
 failed. This is the "why didn't this fire / why did this fire" tool; it is
@@ -187,7 +212,9 @@ workspace root, cleared by watcher events and on server close.
 Four independently-shippable phases, each a reviewable PR with a green gate
 (typecheck, lint, format, tests, self-audit):
 
-1. **Sight** — `explain_issue`, `get_ir` (read-only; no write surface).
+1. **Sight** — `explain_issue`, `get_ir` (read-only; no write surface). **Shipped** —
+   the `DRIFT-*` real-dependency snippet moved to phase 2, where the symbol index is already
+   loaded for `audit_workspace`.
 2. **Sweep** — `audit_workspace` + dedupe, `doctor_status`.
 3. **Fix** — the `fix.ts` move to `@momus/core` (§1.2, first commit, no behaviour
    change), then `preview_issue_fix` / `apply_issue_fix` (the only write surface) +
