@@ -105,7 +105,8 @@ describe('mock detection (fixture test file)', () => {
 
   it('detects vi.spyOn with resolved instance-member targets', () => {
     const spies = test.mocks.filter((x) => x.pattern === 'vi.spyOn');
-    expect(spies).toHaveLength(2);
+    // service.totalForX (planted DRIFT-001), service.totalFor (healthy), stub.totalFor (TAUT-006)
+    expect(spies).toHaveLength(3);
     const bad = spies.find((s) => s.target?.memberName === 'totalForX');
     expect(bad?.target?.symbolId).toContain('LedgerService');
   });
@@ -253,6 +254,22 @@ describe('mock hand-off reachability (TAUT-005 scope isolation)', () => {
     const spy = handoff.mocks.find((m) => m.pattern === 'vi.spyOn');
     expect(spy?.stubbedMembers[0]?.name).toBe('removeEventListener');
     expect(spy?.invocationSites.map((s) => s.startLine)).toEqual([39]);
+  });
+
+  it('marks a mock installed onto another object as reachable', () => {
+    // `host.load = vi.fn().mockResolvedValue(7)` is never invoked by name: the subject reaches
+    // it through `host`. Installation is hand-off (Argos-MCP dogfood, docs/11).
+    const installed = handoff.mocks.find((m) => m.pattern === 'vi.fn' && m.span.startLine === 49);
+    expect(installed?.configuredValues).toHaveLength(1);
+    expect(installed?.invocationSites.map((s) => s.startLine)).toEqual([49]);
+  });
+
+  it('marks a spy reachable when its object is handed off by a value-configuring call', () => {
+    // `vi.spyOn(factory, 'make').mockReturnValue(double)` installs `double` as what the subject
+    // gets back, so the spy on `double.fetch` is reachable from that line even though the call
+    // chain starts at the `vi` framework root.
+    const spy = handoff.mocks.find((m) => m.pattern === 'vi.spyOn' && m.target?.memberName === 'fetch');
+    expect(spy?.invocationSites.map((s) => s.startLine)).toEqual([57]);
   });
 });
 

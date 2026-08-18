@@ -41,3 +41,20 @@ describe('handoff scope isolation', () => {
     expect(removeListener).toHaveBeenCalled();
   });
 });
+
+describe('hand-off through installation, not invocation', () => {
+  it('installs a configured mock onto a collaborator the subject owns', async () => {
+    // The stub is never called by name here; the subject reaches it through `host`.
+    const host: { load: () => Promise<number> } = { load: async () => 0 };
+    host.load = vi.fn().mockResolvedValue(7);
+    expect(host).toBeDefined();
+  });
+
+  it('hands a spied-on double to the subject as a configured return value', async () => {
+    const double = { fetch: async () => 1 };
+    const fetchSpy = vi.spyOn(double, 'fetch').mockResolvedValue(2);
+    const factory = { make: () => double };
+    vi.spyOn(factory, 'make').mockReturnValue(double);
+    expect(fetchSpy).toBeDefined();
+  });
+});

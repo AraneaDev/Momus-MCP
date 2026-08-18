@@ -141,7 +141,7 @@ export class AuditEngine {
           !target ||
           target.symbolId ||
           !target.exportName ||
-          (target.kind !== 'class' && target.kind !== 'instance-member')
+          (target.kind !== 'class' && target.kind !== 'instance-member' && target.kind !== 'global')
         )
           continue;
         // Same-file symbols win (a test defining its own `trait Foo` mocks that Foo, not an

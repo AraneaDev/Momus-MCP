@@ -614,7 +614,16 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
         );
       const calleeRoot = rootOfCall(n.expression);
       const isHelperCall = calleeRoot !== undefined && CALLER_HELPER.test(calleeRoot);
-      if (!isConfigCall && !isHelperCall) {
+      // A value-configuring call hands its argument to production even when the chain starts at
+      // a framework root: `jest.spyOn(cm, 'createAdapter').mockReturnValue(adapter)` installs
+      // `adapter` as what the SUT gets back, so every spy on `adapter` is reachable from there.
+      // `isConfigCall` above cannot answer this — its text regex never matches a callee with a
+      // parenthesised receiver (Argos-MCP dogfood, docs/11).
+      const configuredMember = ts.isPropertyAccessExpression(n.expression) ? n.expression.name.text : undefined;
+      const isValueConfigCall =
+        configuredMember !== undefined &&
+        /^mock(ReturnValue|ResolvedValue|RejectedValue|Implementation)(Once)?$/.test(configuredMember);
+      if (!isHelperCall || isValueConfigCall) {
         for (const arg of n.arguments) markReachable(arg);
       }
       if (!isConfigCall) {
@@ -651,6 +660,18 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
     }
     if (ts.isNewExpression(n)) {
       for (const arg of n.arguments ?? []) markReachable(arg);
+    }
+    // Installing a mock onto another object's property hands it to whoever calls that object:
+    // `pm.findAvailablePort = jest.fn().mockRejectedValue(err)` puts the stub inside the SUT's
+    // own port manager, and `tunnelManager.getTunnel = jest.fn().mockReturnValue(t)` puts it on
+    // a collaborator the SUT was constructed with. Neither is ever invoked by name in the test,
+    // so without this they read as zero-reach stubs (Argos-MCP dogfood, docs/11).
+    if (
+      ts.isBinaryExpression(n) &&
+      n.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      (ts.isPropertyAccessExpression(n.left) || ts.isElementAccessExpression(n.left))
+    ) {
+      markReachable(n.right);
     }
     // A mock embedded as an object-literal value / array element is handed off to the SUT
     // (`{ run: mockRun }`, `{ deadline }`, `{ run: vi.fn().mockResolvedValue(x) }`). Treat it

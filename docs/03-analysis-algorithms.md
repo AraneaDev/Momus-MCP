@@ -89,8 +89,8 @@ implements a small, conservative, **intra-procedural** value-flow pass per test 
 | TAUT-002 | `mock-echo` | error | One operand's provenance is `mock-config` **and** the other operand is the exact configured value (`literal` equality, or same identifier bound to the configured value), **and** no production symbol appears in either operand. |
 | TAUT-003 | `constant-tautology` | error | Both operands are `constant` with no mock and no production involvement (`expect(true).toBe(true)`, `expect(2+2).toBe(4)`). Excluded: `expect(null).toBeNull()` style matcher APIs that are themselves meaningful (see API allowlist). |
 | TAUT-004 | `mock-only-assertion` | warning | **Every** operand of the assertion has provenance exclusively in `mock-config`/`mock-call`, **and** the test function contains **zero** calls resolving to production symbols. I.e., the test exercises nothing real. |
-| TAUT-005 | `zero-reach-stub` | warning | A `MockIR` is configured (`configuredValues.length > 0`) or asserted upon, but `invocationSites` is empty **and** no assertion operand references it. The stub is decorative. |
-| TAUT-006 | `unconfigured-spy-assert` | warning | Assertion uses `toHaveBeenCalled*`/`assertCalled` on a spy with **no** `ConfiguredValueIR` and **no** production call path: the only thing the assertion can prove is that the spy exists. |
+| TAUT-005 | `zero-reach-stub` | warning | A `MockIR` is configured (`configuredValues.length > 0`) or asserted upon, but `invocationSites` is empty **and** no assertion operand references it. The stub is decorative. Hand-off counts as reach: a mock passed as a call/constructor argument, embedded in an object literal or array, **installed onto another object** (`pm.findPort = jest.fn()…`), or handed to production as a configured return value (`spyOn(cm, 'createAdapter').mockReturnValue(double)`, which also reaches every spy on that double) all record an invocation site. |
+| TAUT-006 | `unconfigured-spy-assert` | warning | Assertion uses `toHaveBeenCalled*`/`assertCalled` on a spy with **no** `ConfiguredValueIR`, empty `invocationSites`, **and** an enclosing test that calls no production code. The last clause is language-neutral: `invocationSites` proves a spy *was* reached, never that it was not — `jest.spyOn(mgr, 'emit')` followed by `mgr.initialize(cfg)` reaches the spy without naming it, and a double installed through a factory is called only from inside the SUT. Once the test exercises production the call path is unobservable, so only a test that runs no production code can prove the assertion vacuous. |
 
 **Assertion API allowlist for TAUT-003** (matcher calls that *can* be meaningful with constant
 operands, excluded from `constant-tautology`): `toBeNull`, `toBeUndefined`, `toBeTruthy`,
@@ -179,12 +179,13 @@ diagnostics (SYS-*). Forms, in precedence order (highest first):
 | `// @momus-ignore:TAUT-002,DRIFT-003` | next line, multiple rules | — |
 | `/** @momus-ignore */` (docblock) | the enclosing test function/class | — |
 | `// @momus-ignore-file` | entire file | must appear in the first 10 lines |
+| `// @momus-ignore-file:MOCK-001` | entire file, rule-scoped | the only form that can suppress a **file-scoped** finding: MOCK-001 is reported at 1:1, so no line comment can precede it |
 
 **Syntax (strict regex):**
 ```
 ^//\s*@momus-ignore(?::(?<rules>[A-Z0-9-]+(?:,[A-Z0-9-]+)*))?$      // line comment
 ^/\*\*\s*@momus-ignore\s*\*/$                                        // docblock
-^//\s*@momus-ignore-file$                                            // file banner
+^//\s*@momus-ignore-file(?::(?<rules>[A-Z0-9-]+(?:,[A-Z0-9-]+)*))?$  // file banner
 ```
 
 - Unknown rule ids in scoped forms are **configuration errors** (`SYS-005`), reported loudly —

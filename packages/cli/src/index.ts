@@ -662,7 +662,7 @@ export async function runRules(root: string, _argv: string[]): Promise<number> {
     process.stdout.write(`${r.id} ${r.name} (${sev ?? r.severity}) — ${r.description}\n`);
   }
   process.stdout.write(
-    '\nSuppression: // @momus-ignore | // @momus-ignore:RULE | /** @momus-ignore */ | // @momus-ignore-file\n',
+    '\nSuppression: // @momus-ignore | // @momus-ignore:RULE | /** @momus-ignore */ | // @momus-ignore-file[:RULE]\n',
   );
   return 0;
 }

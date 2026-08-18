@@ -290,7 +290,7 @@ Response `result` (abbreviated):
     { "id": "TAUT-002", "name": "mock-echo", "severity": "error", "phase": 1, "description": "assertion compares against the stub's own configured return", "enabled": true },
     { "id": "MOCK-001", "name": "mock-saturation", "severity": "warning", "phase": 1, "description": "over-mocking heuristic: ≥70% deps mocked with no production-provenance assertions", "enabled": true }
   ],
-  "suppressionSyntax": "// @momus-ignore · // @momus-ignore:RULE-ID · /** @momus-ignore */ · // @momus-ignore-file (see docs/03 §3.5)",
+  "suppressionSyntax": "// @momus-ignore · // @momus-ignore:RULE-ID · /** @momus-ignore */ · // @momus-ignore-file[:RULE-ID] (see docs/03 §3.5)",
   "configFile": ".momusrc"
 }
 ```

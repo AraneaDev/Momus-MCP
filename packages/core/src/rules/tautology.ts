@@ -242,14 +242,18 @@ export class Taut006UnconfiguredSpyAssert extends BaseRule {
         mock.pattern === 'patch' ||
         mock.pattern === 'patch-object';
       const configured = mock.configuredValues.length > 0 || mock.stubbedMembers.some((s) => s.returnValues.length > 0);
-      // Python's `markReachableMocks` only tracks direct calls and positional-arg hand-off; a spy
-      // invoked indirectly through the SUT (e.g. `mock_source_db` injected via a `return_value=`
-      // kwarg and then called by `setup_worker_connection`) has an unobservable call path. When the
-      // enclosing test exercises production, that spy *may* have been reached — suppress. TS/PHP/Rust
-      // track reachability precisely through `invocationSites`, so they keep the strict signal.
+      // A spy the SUT reaches *indirectly* has no syntactic invocation site in ANY language:
+      // `jest.spyOn(manager, 'emit')` followed by `manager.initialize(cfg)` records a call to
+      // `initialize`, never to `emit`, and a double installed through a factory
+      // (`spyOn(cm, 'createAdapter').mockReturnValue(adapter)`) is called only from inside the
+      // SUT. `invocationSites` therefore proves a spy was reached, never that it was not. When
+      // the enclosing test exercises production the call path is unobservable, so the strict
+      // signal is unsound — Argos-MCP dogfood: 15/15 TypeScript findings were false positives
+      // (docs/11 §Argos). The rule keeps its real target: a spy asserted by a test that runs no
+      // production code at all, where nothing could ever have called it.
       const fn = fns.get(a.fnId);
-      const unobservablePythonPath = module.language === 'python' && fn?.hasProductionCalls;
-      if (isSpy && !configured && mock.invocationSites.length === 0 && !unobservablePythonPath) {
+      const unobservableIndirectPath = fn?.hasProductionCalls === true;
+      if (isSpy && !configured && mock.invocationSites.length === 0 && !unobservableIndirectPath) {
         out.push(
           issue(
             { module } as RuleContext,

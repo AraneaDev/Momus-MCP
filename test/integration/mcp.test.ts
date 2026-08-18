@@ -78,7 +78,7 @@ describe('Momus MCP server (in-memory transport)', () => {
     expect(res.isError).toBeFalsy();
     const sc = res.structuredContent as { result: { issues: Array<{ rule: string; line: number }> } };
     const rules = sc.result.issues.map((i) => `${i.rule}@${i.line}`).sort();
-    expect(rules).toEqual(['DRIFT-001@16', 'TAUT-002@11', 'TAUT-006@18']);
+    expect(rules).toEqual(['DRIFT-001@16', 'TAUT-002@11', 'TAUT-004@39', 'TAUT-006@39']);
     // markdown text present and token-budgeted
     const text = res.content[0]!.text;
     expect(text).toContain('TAUT-002');

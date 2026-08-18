@@ -258,7 +258,7 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
           tool: 'list_rules',
           result: {
             rules,
-            suppressionSyntax: '// @momus-ignore[:RULE] · /** @momus-ignore */ · // @momus-ignore-file',
+            suppressionSyntax: '// @momus-ignore[:RULE] · /** @momus-ignore */ · // @momus-ignore-file[:RULE]',
             configFile: '.momusrc',
           },
         },

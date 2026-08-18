@@ -1089,11 +1089,13 @@ fn t() {
     expect(mocks).toHaveLength(1);
     expect(mocks[0]!.framework).toBe('mocktopus');
     expect(mocks[0]!.pattern).toBe('mocktopus');
-    expect(mocks[0]!.target?.kind).toBe('unknown');
+    expect(mocks[0]!.target?.kind).toBe('global');
     expect(mocks[0]!.target?.exportName).toBe('world');
-    // a function mock has no member drift surface, and the invocation is indirect (through the
-    // SUT) — so no stubs / return values are recorded (no TAUT-005 churn)
-    expect(mocks[0]!.stubbedMembers).toHaveLength(0);
+    expect(mocks[0]!.stubbedMembers).toHaveLength(1);
+    expect(mocks[0]!.stubbedMembers[0]!.name).toBe('<mocktopus>');
+    // TypeIR literal shape (the one `closureLiteralType` and DRIFT-003 both speak), with the
+    // Rust string delimiters stripped — not a `{ kind: 'string' }` node, which no rule reads.
+    expect(mocks[0]!.stubbedMembers[0]!.returnValues[0]!.value).toEqual({ kind: 'literal', value: 'mocking' });
   });
 
   it('detects a module-qualified fn and a static method via mock_raw', () => {

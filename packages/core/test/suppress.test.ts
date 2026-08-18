@@ -182,3 +182,52 @@ describe('buildSuppressionState / isSuppressed', () => {
     expect(isSuppressed(issue('TAUT-002', 9), state)).toBe(false);
   });
 });
+
+describe('file-scoped rule suppression', () => {
+  const FILE = '/ws/t.ts';
+  const banner = (text: string, line = 1): RawComment => ({ kind: 'line', text, line, trailing: false });
+
+  it('suppresses only the listed rules', () => {
+    const state = buildSuppressionState([banner('// @momus-ignore-file:MOCK-001')], FILE);
+    expect(isSuppressed(issue('MOCK-001', 1), state)).toBe(true);
+    expect(isSuppressed(issue('TAUT-002', 5), state)).toBe(false);
+  });
+
+  it('suppresses a finding reported at file scope, which no line comment can precede', () => {
+    const state = buildSuppressionState([banner('// @momus-ignore-file:MOCK-001,MOCK-002')], FILE);
+    expect(isSuppressed(issue('MOCK-002', 1), state)).toBe(true);
+  });
+
+  it('keeps the bare banner suppressing everything', () => {
+    const state = buildSuppressionState([banner('// @momus-ignore-file')], FILE);
+    expect(isSuppressed(issue('TAUT-002', 5), state)).toBe(true);
+  });
+
+  it('lets a bare banner outrank a rule-scoped one in either order', () => {
+    const scopedFirst = buildSuppressionState(
+      [banner('// @momus-ignore-file:MOCK-001'), banner('// @momus-ignore-file', 2)],
+      FILE,
+    );
+    const bareFirst = buildSuppressionState(
+      [banner('// @momus-ignore-file'), banner('// @momus-ignore-file:MOCK-001', 2)],
+      FILE,
+    );
+    expect(isSuppressed(issue('TAUT-002', 5), scopedFirst)).toBe(true);
+    expect(isSuppressed(issue('TAUT-002', 5), bareFirst)).toBe(true);
+  });
+
+  it('unions two rule-scoped banners', () => {
+    const state = buildSuppressionState(
+      [banner('// @momus-ignore-file:MOCK-001'), banner('// @momus-ignore-file:TAUT-002', 2)],
+      FILE,
+    );
+    expect(isSuppressed(issue('MOCK-001', 1), state)).toBe(true);
+    expect(isSuppressed(issue('TAUT-002', 5), state)).toBe(true);
+    expect(isSuppressed(issue('DRIFT-001', 5), state)).toBe(false);
+  });
+
+  it('ignores a rule-scoped banner below the 10-line window', () => {
+    const state = buildSuppressionState([banner('// @momus-ignore-file:MOCK-001', 11)], FILE);
+    expect(isSuppressed(issue('MOCK-001', 1), state)).toBe(false);
+  });
+});

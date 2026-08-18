@@ -55,6 +55,30 @@ export function analyzeAssertions(
   const FRAMEWORK_SPECIFIERS = /^(vitest|@vitest\/.*|jest|@jest\/.*)$/;
   const importedNames = new Set(imports.filter((i) => !FRAMEWORK_SPECIFIERS.test(i.specifier)).flatMap((i) => i.names));
 
+  // A test that must register `vi.mock` factories before the subject loads imports the subject
+  // dynamically (`const { resolveTargets } = await import('../triage/discover-targets.js')`).
+  // Those names are production roots exactly like a static import's — without them the SUT's
+  // return value reads as `unknown` and MOCK-001 reports "0 production-provenance assertions"
+  // for a test that asserts nothing else (Chaos-MCP dogfood, docs/11).
+  const collectDynamicImportNames = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) && n.initializer) {
+      const init = stripAwait(n.initializer);
+      if (
+        ts.isCallExpression(init) &&
+        init.expression.kind === ts.SyntaxKind.ImportKeyword &&
+        ts.isStringLiteral(init.arguments[0] ?? ({} as ts.Node)) &&
+        !FRAMEWORK_SPECIFIERS.test((init.arguments[0] as ts.StringLiteral).text)
+      ) {
+        if (ts.isIdentifier(n.name)) importedNames.add(n.name.text);
+        else if (ts.isObjectBindingPattern(n.name)) {
+          for (const el of n.name.elements) if (ts.isIdentifier(el.name)) importedNames.add(el.name.text);
+        }
+      }
+    }
+    ts.forEachChild(n, collectDynamicImportNames);
+  };
+  collectDynamicImportNames(sf);
+
   const isProductionRoot = (name: string): boolean => importedNames.has(name);
 
   interface SetupBlock {
@@ -184,10 +208,14 @@ export function analyzeAssertions(
     );
   };
 
+  /** Guards against a local helper that (directly or mutually) calls itself. */
+  const seenLocalFns = new Set<string>();
+
   function provenance(
     expr: ts.Expression,
     scope: Scope,
   ): { kind: SourceKind; mockRefs: string[]; configuredValue?: string; constant: boolean } {
+    if (ts.isAwaitExpression(expr)) return provenance(expr.expression, scope);
     if (
       ts.isNumericLiteral(expr) ||
       ts.isStringLiteral(expr) ||
@@ -234,6 +262,30 @@ export function analyzeAssertions(
           return { kind: 'production', mockRefs: [], constant: false };
         }
       }
+      // A local helper that wraps the SUT (`const run = (over) => resolveTargets({...})`) is what
+      // the assertion's value actually came from, so provenance has to look through it the same way
+      // `productionCalls` already does — otherwise every assertion on the helper's result reads as
+      // `unknown` and the test looks mock-only (Chaos-MCP dogfood, docs/11).
+      //
+      // Only the source *kind* carries through, never `constant`/`literal`: a helper whose single
+      // return is `null` (`const firstError = (a) => { …; return null; }`) hands back a literal
+      // from ONE path, and inheriting its constant-ness made every `expect(firstError(x)).toContain(
+      // 'msg')` read as a constant tautology. Constant-ness is a property of the expression at the
+      // assertion site, not of a value some branch of a helper can return.
+      if (root && !seenLocalFns.has(root)) {
+        const returned = returnExpression(localFns.get(root));
+        if (returned) {
+          seenLocalFns.add(root);
+          try {
+            const inner = provenance(returned, scope);
+            if (inner.kind !== 'literal' && inner.kind !== 'unknown') {
+              return { kind: inner.kind, mockRefs: inner.mockRefs, constant: false };
+            }
+          } finally {
+            seenLocalFns.delete(root);
+          }
+        }
+      }
       return { kind: 'unknown', mockRefs: [], constant: false };
     }
     if (ts.isPropertyAccessExpression(expr)) {
@@ -258,8 +310,8 @@ export function analyzeAssertions(
   // production instead of misreporting it as mock-only (TAUT-004).
   const localFns = new Map<string, ts.Node>();
   const collectLocalFns = (n: ts.Node) => {
-    if (ts.isFunctionDeclaration(n) && n.name) {
-      localFns.set(n.name.text, n.body ?? n);
+    if (ts.isFunctionDeclaration(n) && n.name && n.body) {
+      localFns.set(n.name.text, n.body);
     } else if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
       const init = stripCast(n.initializer);
       if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) localFns.set(n.name.text, init.body);
@@ -299,6 +351,11 @@ export function analyzeAssertions(
         } else {
           const local = localFns.get(root);
           if (local) visit(local);
+        }
+      } else if (ts.isNewExpression(n)) {
+        const root = rootOf(n.expression);
+        if (root && isProductionRoot(root)) {
+          count++;
         }
       }
       ts.forEachChild(n, visit);
@@ -427,6 +484,26 @@ function enclosingBlock(n: ts.Node): ts.Block | undefined {
 
 function stripAwait(e: ts.Expression): ts.Expression {
   return ts.isAwaitExpression(e) ? e.expression : e;
+}
+
+/**
+ * The single expression a collected local helper hands back: a concise arrow IS its return
+ * expression; a block body qualifies only when exactly one `return` in it carries a value.
+ * A helper with several value-returning paths has no single provenance — returning one of them
+ * would attribute the assertion to whichever branch happened to be written last.
+ */
+function returnExpression(body: ts.Node | undefined): ts.Expression | undefined {
+  if (!body) return undefined;
+  if (!ts.isBlock(body)) return body as ts.Expression;
+  const returns: ts.Expression[] = [];
+  const walk = (n: ts.Node): void => {
+    // A nested function's `return` belongs to that function, not to this helper.
+    if (ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isArrowFunction(n)) return;
+    if (ts.isReturnStatement(n) && n.expression) returns.push(n.expression);
+    ts.forEachChild(n, walk);
+  };
+  walk(body);
+  return returns.length === 1 ? returns[0] : undefined;
 }
 
 const stripCast = (e: ts.Expression): ts.Expression =>

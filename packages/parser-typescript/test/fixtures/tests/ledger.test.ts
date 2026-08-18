@@ -27,3 +27,15 @@ describe('LedgerService', () => {
     expect(invoice.totalCents).toBe(4200);
   });
 });
+
+describe('assertions that run no production code', () => {
+  // planted: the spy is unconfigured, nothing in this test calls production, so nothing
+  // could ever have reached it — `toHaveBeenCalled` can only fail (TAUT-006), and every
+  // operand is mock-derived (TAUT-004). A spy in a test that DOES exercise production is
+  // a different case: the SUT can reach it without ever naming it.
+  it('asserts an unconfigured spy without exercising the subject', () => {
+    const stub = { totalFor: (id: string) => id };
+    const spy = vi.spyOn(stub, 'totalFor');
+    expect(spy).toHaveBeenCalled();
+  });
+});

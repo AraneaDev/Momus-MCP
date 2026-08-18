@@ -1311,10 +1311,7 @@ function mocktopusMockOf(path: string, span: RustSpan, target: string, fnId: str
     span: spanOf(path, span),
     framework: 'mocktopus',
     pattern: 'mocktopus',
-    // A mocked *function* has no member drift surface and no class target — the exportName is
-    // informational only (the invocation is indirect through the SUT, so no return values are
-    // recorded and TAUT-005 stays quiet).
-    target: { kind: 'unknown', exportName: target, span: spanOf(path, span) },
+    target: { kind: 'global', exportName: target, span: spanOf(path, span) },
     stubbedMembers: [],
     configuredValues: [],
     invocationSites: [],
@@ -1343,13 +1340,56 @@ function scanMocktopus(items: RustItem[], mocks: MockIR[], path: string): void {
 function scanMocktopusExpr(e: RustExpr, mocks: MockIR[], path: string, fnId: string): void {
   if (e.kind === 'method-call' && (e.method === 'mock_safe' || e.method === 'mock_raw')) {
     const name = mocktopusFnName(e.receiver);
-    if (name) mocks.push(mocktopusMockOf(path, e.span, name, fnId));
+    if (name) {
+      const mock = mocktopusMockOf(path, e.span, name, fnId);
+      if (e.args && e.args[0]) extractMocktopusReturns(e.args[0], mock, path);
+      mocks.push(mock);
+    }
   }
   if (e.receiver) scanMocktopusExpr(e.receiver, mocks, path, fnId);
   for (const a of e.args ?? []) scanMocktopusExpr(a, mocks, path, fnId);
   if (e.left) scanMocktopusExpr(e.left, mocks, path, fnId);
   if (e.right) scanMocktopusExpr(e.right, mocks, path, fnId);
   for (const s of e.stmts ?? []) scanMocktopusExpr(s, mocks, path, fnId);
+}
+
+function extractMocktopusReturns(e: RustExpr, mock: MockIR, path: string): void {
+  if (e.text) {
+    const match = e.text.match(/MockResult\s*::\s*Return\s*\(\s*(.+?)\s*\)/);
+    const valText = match?.[1];
+    if (valText !== undefined) {
+      // Same literal shape the rest of the Rust parser produces (`closureLiteralType`): a
+      // `{ kind: 'boolean' | 'number' | 'string' }` node is not a TypeIR and would never
+      // reach DRIFT-003's assignability check.
+      const val: TypeIR | undefined =
+        valText === 'true' || valText === 'false'
+          ? { kind: 'literal', value: valText === 'true' }
+          : /^-?\d[\d_]*(?:\.\d[\d_]*)?$/.test(valText)
+            ? { kind: 'literal', value: Number(valText.replace(/_/g, '')) }
+            : valText.startsWith('"')
+              ? { kind: 'literal', value: valText.slice(1, -1) }
+              : undefined;
+      if (val) {
+        if (mock.stubbedMembers.length === 0) {
+          mock.stubbedMembers.push({ name: '<mocktopus>', span: mock.span, returnValues: [], api: 'unknown' });
+        }
+        const member = mock.stubbedMembers[0]!;
+        member.returnValues.push({
+          span: spanOf(path, e.span),
+          api: 'mocktopus',
+          once: false,
+          assignable: 'unknown',
+          value: val,
+        });
+        return;
+      }
+    }
+  }
+  if (e.receiver) extractMocktopusReturns(e.receiver, mock, path);
+  for (const a of e.args ?? []) extractMocktopusReturns(a, mock, path);
+  if (e.left) extractMocktopusReturns(e.left, mock, path);
+  if (e.right) extractMocktopusReturns(e.right, mock, path);
+  for (const s of e.stmts ?? []) extractMocktopusReturns(s, mock, path);
 }
 
 // ---------------------------------------------------------------- mock_derive

@@ -5,7 +5,7 @@ export type { RawComment };
 
 const LINE_RE = /^\/\/\s*@momus-ignore(?::(?<rules>[A-Z0-9-]+(?:,[A-Z0-9-]+)*))?$/;
 const DOCBLOCK_RE = /^\/\*\*\s*@momus-ignore\s*\*\/$/;
-const FILE_BANNER_RE = /^\/\/\s*@momus-ignore-file$/;
+const FILE_BANNER_RE = /^\/\/\s*@momus-ignore-file(?::(?<rules>[A-Z0-9-]+(?:,[A-Z0-9-]+)*))?$/;
 /** Spec §3.5: the file banner only counts in the first 10 lines. */
 const FILE_BANNER_MAX_LINE = 10;
 /** A docblock above a test fn may be separated by up to this many blank lines. */
@@ -21,7 +21,8 @@ export interface ParsedSuppression {
 export function parseSuppression(c: RawComment): ParsedSuppression | null {
   const text = c.text.trim();
   if (c.kind === 'docblock') return DOCBLOCK_RE.test(text) ? { rules: undefined, docblock: true } : null;
-  if (FILE_BANNER_RE.test(text)) return { file: true };
+  const banner = text.match(FILE_BANNER_RE);
+  if (banner) return { file: true, rules: banner.groups?.rules?.split(',') as RuleId[] | undefined };
   const m = text.match(LINE_RE);
   if (!m) return null;
   const rules = m.groups?.rules?.split(',') as RuleId[] | undefined;
@@ -30,6 +31,11 @@ export function parseSuppression(c: RawComment): ParsedSuppression | null {
 
 export interface SuppressionState {
   fileIgnored: boolean;
+  /**
+   * Rule ids the file banner suppresses; undefined = every rule (the bare banner).
+   * Only meaningful when `fileIgnored` is true.
+   */
+  fileRules?: RuleId[];
   /** target line -> rule ids; null = all rules. Absent = no suppression. */
   perLine: Map<number, RuleId[] | null>;
 }
@@ -40,7 +46,9 @@ export interface SuppressionState {
  *  - `// @momus-ignore` (trailing a statement): suppresses its own line
  *  - `/** @momus-ignore *​/` docblock: suppresses the enclosing test function
  *    (when one starts within DOCBLOCK_FN_GAP lines), else its own line
- *  - `// @momus-ignore-file`: whole file, only honored in the first 10 lines
+ *  - `// @momus-ignore-file[:RULE,RULE]`: whole file, only honored in the first 10 lines.
+ *    The rule-scoped form is the only way to suppress a finding reported at file scope
+ *    (MOCK-001 spans 1:1, so no comment can precede it).
  */
 export function buildSuppressionState(comments: RawComment[], _file: string, fns?: TestFnIR[]): SuppressionState {
   const state: SuppressionState = { fileIgnored: false, perLine: new Map() };
@@ -52,7 +60,12 @@ export function buildSuppressionState(comments: RawComment[], _file: string, fns
     const p = parseSuppression(c);
     if (!p) continue;
     if (p.file) {
-      if (c.line <= FILE_BANNER_MAX_LINE) state.fileIgnored = true;
+      if (c.line <= FILE_BANNER_MAX_LINE) {
+        // A bare banner outranks a rule-scoped one: it already covers every rule.
+        if (!state.fileIgnored || p.rules === undefined) state.fileRules = p.rules;
+        else if (state.fileRules) state.fileRules = [...state.fileRules, ...p.rules];
+        state.fileIgnored = true;
+      }
       continue;
     }
     if (p.docblock) {
@@ -72,7 +85,9 @@ export function buildSuppressionState(comments: RawComment[], _file: string, fns
 
 /** Does this issue fall under a suppression? */
 export function isSuppressed(issue: Issue, state: SuppressionState): boolean {
-  if (state.fileIgnored) return true;
+  if (state.fileIgnored && (state.fileRules === undefined || state.fileRules.includes(issue.rule as RuleId))) {
+    return true;
+  }
   const entry = state.perLine.get(issue.span.startLine);
   if (entry === undefined) return false;
   if (entry === null) return true; // all rules

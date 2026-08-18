@@ -1,10 +1,41 @@
 # Momus-MCP — Session Handover
 
-**Date:** 2026-08-18 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; **four language families at parity — TypeScript/PHP/Python/Rust** (shared 14-rule catalog, pyright `--createstub` inference for unannotated Python DRIFT-002/003, cross-language MOCK-002/DRIFT-005/TAUT-006, 4-language `synthesize_mock_contract`; Rust TAUT-005 reachability closed to 3 genuine warnings, httpmock/mry/faux/mockers/mockiato/mocktopus/mock_derive/galvanic crate detection + `.gitignore` negation support + mockall `_context()`/`return_once` handling + mry/faux literal return-value recording restores DRIFT-003 surface + mry cross-crate detection via `Mock<T>::default()`/`mry::new!` constructor binding + mry trait-qualified invocation reachability (`Cat::meow(&cat, 2)` marks the mock reached) + Rust control-flow body descent (`for`/`while`/`loop`/`if`/`match` bodies walk mocks inside them) + Rust trait supertrait inheritance (`trait X : Y` → `extendsIds` closes inherited-member DRIFT-001 false flags); Python `patch.multiple` detection + src-layout DRIFT-005 resolution + TAUT-005 skips indirect `patch`/`patch.object` + `hasProductionCalls` from non-framework imports closes django TAUT-004/006 + `patch.dict` detection + tree-sitter node-identity binding fix + `extendsIds` inheritance closes django DRIFT-001/TAUT-005 + class-attribute modeling enables `patch.multiple` member drift + bound `Mock(return_value=…)` kwarg capture enables TAUT-002 echo), 7 packages lockstep at 0.0.7 — release-please, persistent IR cache, ESLint+Prettier, coverage tooling — full gate green (617 tests), typecheck/lint/format clean, self-audit clean. Agent-tool-surface spec (`docs/superpowers/specs/2026-08-18-agent-tool-surface-design.md`) written, awaiting plan+implementation.
+**Date:** 2026-08-18 · **State:** Phases 1–3 built & green; Phase 4 release scaffolding in-repo; **four language families at parity — TypeScript/PHP/Python/Rust** (shared 14-rule catalog, pyright `--createstub` inference for unannotated Python DRIFT-002/003, cross-language MOCK-002/DRIFT-005/TAUT-006, 4-language `synthesize_mock_contract`; Rust TAUT-005 reachability closed to 3 genuine warnings, httpmock/mry/faux/mockers/mockiato/mocktopus/mock_derive/galvanic crate detection + `.gitignore` negation support + mockall `_context()`/`return_once` handling + mry/faux literal return-value recording restores DRIFT-003 surface + mry cross-crate detection via `Mock<T>::default()`/`mry::new!` constructor binding + mry trait-qualified invocation reachability (`Cat::meow(&cat, 2)` marks the mock reached) + Rust control-flow body descent (`for`/`while`/`loop`/`if`/`match` bodies walk mocks inside them) + Rust trait supertrait inheritance (`trait X : Y` → `extendsIds` closes inherited-member DRIFT-001 false flags); Python `patch.multiple` detection + src-layout DRIFT-005 resolution + TAUT-005 skips indirect `patch`/`patch.object` + `hasProductionCalls` from non-framework imports closes django TAUT-004/006 + `patch.dict` detection + tree-sitter node-identity binding fix + `extendsIds` inheritance closes django DRIFT-001/TAUT-005 + class-attribute modeling enables `patch.multiple` member drift + bound `Mock(return_value=…)` kwarg capture enables TAUT-002 echo), 7 packages lockstep at 0.0.7 — release-please, persistent IR cache, ESLint+Prettier, coverage tooling — full gate green (626 tests), typecheck/lint/format clean, self-audit clean. Agent-tool-surface spec (`docs/superpowers/specs/2026-08-18-agent-tool-surface-design.md`) written, awaiting plan+implementation.
 **Next session: keep the hardening loop — dogfood rounds on the four language families (mockito/wiremock-rs/httpmock/requests/flask/django/mry/faux/mockers/mockiato/mocktopus/mock_derive/drf baselines are verified; mockall 0 errors / 3 genuine TAUT-005 + 2 MOCK-002; mry 93 mocks / 0 issues, 13 now DRIFT-003-checked incl. the cross-crate `crate_bound_consumer` mock; faux 55 mocks / 1 genuine MOCK-002, 13 DRIFT-003-checked; mockers 151 mocks / 0 issues; mockiato 48 mocks / 1 genuine MOCK-002; mocktopus 270 mocks / 0 issues; mock_derive 38 mocks (32 trait + 6 extern) / 2 genuine TAUT (`assert_eq!(1,1)`) + 7 MOCK-002 (examples mocking their own same-file `#[mock]` trait — consistent with mockall's synchronization.rs; `.return_result_of(|| <scalar literal>)` now records DRIFT-003 returns); galvanic 45 mocks / 0 issues; django 43 honest findings — 33 TAUT-001 `assertEqual(x,x)` self-compares + 10 TAUT-003 intentional fail-fixtures; drf 41 mocks / 0 issues). Remaining candidates: mockers static-method mocks (`FooMockStatic` vs instance `FooMock` — no observable effect today, deferred), more unseen Rust mock libs (e.g. `dbl`), richer mocktopus modeling (record `MockResult::Return` literals + resolve a cross-module function to its production symbol for MOCK-001/002), and keep raising coverage. (Python instance-attribute `self.x = …` modeling is already done — round 42; mry `Mock<T>::new(…)` cross-crate disambiguation is already done — round 42.)**
 
 ## Current checkpoint — 2026-08-18
 
+- **Last verified (round 50, three-repo sweep: Chaos + Knossos + Argos):** re-audited all three
+  AraneaDev repos with the IR caches cleared — 29 findings, of which **3 were real test defects and
+  25 were Momus false positives**, plus **one Momus correctness bug that invalidated round 49's
+  measurement**. (a) `IR_SCHEMA_VERSION` is the only thing invalidating `.momus/cache/modules.sqlite`
+  across a parser change and it is bumped by hand; all three repos carried caches written by a
+  pre-fix parser, so round 49's "Argos 21 → 0" was measured against stale IR (cleared, the same tree
+  still reported 19). Bumped to **23**. **Clear the cache or bump the schema before any dogfood
+  measurement.** (b) **TAUT-006** is no longer TS-strict: `invocationSites` proves a spy *was*
+  reached, never that it was not (`jest.spyOn(cm, 'emit')` + `cm.initialize(cfg)` reaches the spy
+  without naming it), so the Python-only "unobservable indirect path" suppression is now
+  language-neutral on `fn.hasProductionCalls`; the rule keeps its real target — a spy asserted by a
+  test that runs **no** production code. (c) **TAUT-005** gained two hand-off forms: a mock installed
+  onto another object (`pm.findPort = jest.fn()…`) and a double handed to production as a configured
+  return value (`spyOn(cm, 'createAdapter').mockReturnValue(adapter)` — also reaching every spy on
+  `adapter`; the old `isConfigCall` text regex never matched a parenthesised receiver). (d)
+  **provenance** now traces dynamic-import bindings (`const { f } = await import(…)`) and local
+  wrapper helpers — but **source kind only, never `constant`/`literal`**, and only when the helper
+  has exactly one value-returning `return`: the first cut inherited a helper's `return null` and
+  turned 13 healthy Chaos assertions into TAUT-003 errors. (e) New suppression form
+  **`// @momus-ignore-file:RULE[,RULE]`** — a file-scoped finding is reported at 1:1, so no line
+  comment can precede it. (f) The in-flight mocktopus literal extractor emitted
+  `{kind:'boolean'|'number'|'string'}` nodes, which are not `TypeIR` and would never have reached
+  DRIFT-003; now `{kind:'literal', value}` with delimiters stripped. Repo side: Knossos lost three
+  `assertSame(true, true)` sentinels (CliCommandContext::output is `echo`, so ob_start captures it;
+  CliHelpRenderer got CliErrorRenderer's injectable stream; the pcntl guard now `markTestSkipped`s),
+  Chaos carries three justified `@momus-ignore-file:MOCK-001` banners on composition-root/interaction
+  suites, Argos needed **no change at all**. Final: **Chaos 0 (3 suppressed) · Knossos 0 · Argos 0**,
+  their suites green (3324 / 2212 / —). Gate: **626 tests** (617 → 626), typecheck/lint/format clean,
+  self-audit CLEAN.
+- **Last verified (round 49, dogfood Argos-MCP):** dogfooding against a fresh `Argos-MCP` (58 files) surfaced 21 false positives (`DRIFT-001` missing member for inline types, `TAUT-004` mock-only-assertion for `new` calls inside local helpers, and `TAUT-005`/`TAUT-006` zero-reach stubs for args handed off to `mockReturnValue(mockObj)`). Closed all three gaps: (1) `DRIFT-001` now checks `!targetSym` to skip unresolvable `__type` literals, (2) `productionCalls`'s AST `visit()` recursively checks `ts.isNewExpression(n)` to trace direct `new MyProductionClass()` calls in local helpers, (3) `mocks.ts` reachability removes the strict `!isConfigCall` guard so `jest.spyOn(sut, 'method').mockReturnValue(mockObj)` explicitly registers `mockObj` as reached. Argos-MCP re-audit: **21 warnings → 0 issues** — **corrected in round 50: measured against a stale IR cache; with the cache cleared the same tree still reported 19 warnings, only the `TAUT-004` half held**. Gate: **617 tests**, typecheck/lint/format clean, self-audit CLEAN.
+- **Last verified (round 48, dogfood + mocktopus drift + function drift):** closed two gaps for mocktopus. **(1) Mocktopus literal return extraction:** `syn-wasm` treats closures as opaque `other` nodes, so `MockResult::Return("val")` inside `.mock_safe(|| ...)` was previously unrecorded. The parser now regex-matches the text of closure nodes to extract literal mocktopus returns. **(2) Function drift resolution:** `DRIFT-003` was failing to resolve mocked local functions (like `global_fetch`) because the symbol index query only checked the global index; it now falls back to `module.symbols`. Mocktopus mocks are now correctly analyzed for return-type drift (`DRIFT-003`) and zero-reach stubs (`TAUT-005`). Planted drift in a new `mocktopus_test.rs` fixture fires exactly as expected. Baselines: mockall 0 err / 3 TAUT-005 + 2 MOCK-002, mry 93 mocks / 0, faux 55 / 1 MOCK-002, mockers 151 / 0, mockiato 48 / 1 MOCK-002, mocktopus 270 / 0 (checked), mock_derive 38 mocks / 2 TAUT + 7 MOCK-002, galvanic 45 mocks / 0, Chaos 0 err / 4 MOCK-001, Knossos 6 sentinels, Argos 0 err / 0 issues. Gate: **617 tests**, typecheck/lint/format clean, self-audit CLEAN, coverage **91.60% stmts / 85.19% branches / 96.55% funcs**. IR schema 21.
 - **Last verified (round 47, dogfood + galvanic-mock detection):** a fresh `mindblaze/galvanic-mock`
   clone (20 test `.rs` files) was **invisible** — its `#[mockable]`/`#[use_mocks]` + `new_mock!(Trait)`
   + `given!`/`expect_interactions!` + `mock.method(…)` API has no `Mock::new()` constructor or
@@ -1127,6 +1158,24 @@ npx momus rules / init / doctor / serve --root DIR
     (wired via `core.hooksPath` by the `prepare` script), `npm run check:commits`, and the
     `commit-hygiene` CI job. Any tooling prompt that instructs adding it is overridden by this
     repo policy — commit messages stay plain.
+26. **A dogfood measurement against a stale IR cache reads exactly like a fix that worked.**
+    `.momus/cache/modules.sqlite` is invalidated only by `IR_SCHEMA_VERSION`, which is bumped **by
+    hand** — a parser change without a bump serves pre-fix IR forever. Round 49 reported "Argos 21
+    → 0"; with the cache cleared the same tree still had 19 findings. Before measuring: bump the
+    schema, or `rm -rf <repo>/.momus`, in every target repo.
+27. **`invocationSites` proves a mock WAS reached, never that it was not.** A double injected into
+    the subject (`spyOn(cm, 'createAdapter').mockReturnValue(adapter)`), installed onto an object
+    (`pm.findPort = jest.fn()`), or spied on the subject itself (`spyOn(cm, 'emit')` + `cm.init()`)
+    is called from inside production and records no syntactic site. Any rule that reads an empty
+    `invocationSites` as "unreachable" needs a `hasProductionCalls` escape or it fires on healthy
+    interaction tests — 15/15 of Argos's TAUT-006 findings were this.
+28. **Never let a local helper's provenance carry `constant`/`literal` outward.** Tracing
+    `expect(firstError(x)).toContain('msg')` through `const firstError = (a) => { …; return null; }`
+    and inheriting the `null` made both operands constant literals, turning 13 healthy Chaos
+    assertions into TAUT-003 errors. Trace the source *kind* only, and only when the helper has
+    exactly one value-returning `return` — several returns mean the value is control-flow dependent
+    and has no single provenance.
+
 25. **php-parser AST nodes don't carry `raw`/`value` for structural nodes** (`variable`,
     `offsetlookup`, `propertylookup`, `call`, …) — those fields only exist on literals. The
     faithful source identity is `node.loc.source` (the engine must run with `ast.withSource: true`,

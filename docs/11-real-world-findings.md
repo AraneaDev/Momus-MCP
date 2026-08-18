@@ -5,14 +5,15 @@
 > reports about those codebases and (b) the bugs we found in Momus while doing so.
 > Non-normative (see `docs/README`).
 
-**Last updated:** 2026-08-18
+**Last updated:** 2026-08-18 (round 50)
 
 ## 1. Targets
 
 | Repo | Language | Scale | Test stack | Momus config used |
 |---|---|---|---|---|
-| `/root/Chaos-MCP` | TypeScript (ESM, NodeNext) | 320 files, 97 test files | Vitest (`vi.*`), Stryker mutation testing | default TS |
-| `/root/Knossos-MCP` | PHP ≥ 8.3 | 154 src + 221 test files | PHPUnit 12, Infection | `.momusrc` → `{languages:{php:true}}` (temp) |
+| `/root/Chaos-MCP` | TypeScript (ESM, NodeNext) | 202 audited files, 97 test files | Vitest (`vi.*`), Stryker mutation testing | default TS |
+| `/root/Knossos-MCP` | PHP ≥ 8.3 | 455 audited files (683 `.php` + 324 `.ts` + 17 `.py` in tree) | PHPUnit 12, Infection | `.momusrc` → `{languages:{typescript,php,python}}` |
+| `/root/Argos-MCP` | TypeScript | 78 audited files | Jest | default TS |
 | `Momus-MCP` (self) | TypeScript + PHP | 59 audited files | Vitest | `.momusrc` (fixtures excluded) |
 | `psf/requests` (dogfood clone at `/tmp/requests-dogfood`) | Python | 35 files, 13 test files | pytest + unittest.mock (live test server) | temp `.momusrc` → `{languages:{python:true}}` |
 | `asomers/mockall` (dogfood clone at `/tmp/mockall-dogfood`) | Rust | 188 `.rs` files, 172 under `tests/` | mockall's own `#[automock]`/`mock!` + `#[test]`/`#[cfg(test)]` | temp `.momusrc` → `{languages:{rust:true}}` |
@@ -643,3 +644,67 @@ flask's own repo (**83 files, 3,000+ LOC of pytest tests**, src-layout package u
     TAUT + 7 MOCK-002, Chaos 0 err / 4 MOCK-001, Knossos 6 sentinels. Gate: **617 tests** (610 →
     617), typecheck/lint/format clean, self-audit CLEAN, coverage 91.62% stmts / 85.21% branches /
     96.57% funcs.
+
+48. **mocktopus literal and function drift resolution (dogfood + mocktopus):** two gaps were closed for mocktopus modeling. (1) **Mocktopus literal return extraction:** `syn-wasm` treats closures as opaque `other` nodes, so `MockResult::Return("val")` inside `.mock_safe(|| ...)` was previously unrecorded. The parser now regex-matches the text of closure nodes to extract literal mocktopus returns. (2) **Function drift resolution:** `DRIFT-003` was failing to resolve mocked local functions (like `global_fetch`) because the symbol index query only checked the global index; it now falls back to `module.symbols` when `index.getSymbol` fails. Mocktopus mocks are now correctly analyzed for return-type drift (`DRIFT-003`) and zero-reach stubs (`TAUT-005`). Planted drift in a new `mocktopus_test.rs` fixture fires exactly as expected. Baselines: mockall 0 err / 3 TAUT-005 + 2 MOCK-002, mry 93 mocks / 0, faux 55 / 1 MOCK-002, mockers 151 / 0, mockiato 48 / 1 MOCK-002, mocktopus 270 / 0 (checked), mock_derive 38 mocks / 2 TAUT + 7 MOCK-002, galvanic 45 mocks / 0, Chaos 0 err / 4 MOCK-001, Knossos 6 sentinels. Gate: **617 tests**, typecheck/lint/format clean, self-audit CLEAN, coverage 91.60% stmts / 85.19% branches / 96.55% funcs.
+
+49. **Argos-MCP dogfood round (21 false positives fixed):** dogfooding against a fresh `Argos-MCP` (58 audited TypeScript files) surfaced 21 false positives. Closed all three gaps: (1) `DRIFT-001` missing member for inline types (e.g. `const logger = internals.logger as { debug: jest.Mock }`) fixed by checking `!targetSym` to skip unresolvable `__type` literals, (2) `TAUT-004` mock-only-assertion for direct `new` calls inside local helpers fixed by explicitly branching on `ts.isNewExpression(n)` within `dataflow.ts`'s recursive visit, (3) `TAUT-005`/`TAUT-006` unconfigured spy and zero-reach stubs for mock objects handed off as SUT injectables (via `mockReturnValue(mockObj)`) fixed by removing the strict `!isConfigCall` guard in reachability analysis. Argos-MCP re-audit: **21 warnings → 0 issues**. Gate: **617 tests**, typecheck/lint/format clean, self-audit CLEAN.
+    **Correction (round 50):** that "0 issues" was measured against a stale `.momus/cache/modules.sqlite`
+    — `IR_SCHEMA_VERSION` was not bumped with the parser changes, so the re-audit was served the
+    pre-fix IR. With the cache cleared the same tree still reported **19 warnings**; only the
+    `TAUT-004` half of the claim held. See round 50 for what the remaining 19 actually were.
+
+
+50. **Chaos + Knossos + Argos sweep (29 findings → 0, on a fresh branch each):** a full re-audit of
+    all three AraneaDev repos with the IR caches cleared. Baseline: Argos 19 warnings, Knossos 6
+    errors, Chaos 4 warnings. **Three real test defects, 25 Momus false positives, one Momus
+    correctness bug.**
+    - **Knossos (3 real defects, fixed in the repo):** `tests/phpunit/Cli/CliHelpersTest.php` held
+      three `assertSame(true, true)` sentinels that TAUT-001 + TAUT-003 both flagged. Two claimed
+      the SUT's output "cannot be captured": `CliCommandContext::output()` in fact `echo`s, so
+      `ob_start()` captures it (both the text and the JSON branch are now asserted), and
+      `CliHelpRenderer::render()` `fwrite`s to STDOUT, so it got the same injectable-stream
+      treatment `CliErrorRenderer` already had and its help text is now asserted. The third was a
+      `pcntl`-missing guard that asserted a sentinel instead of skipping; it now calls
+      `markTestSkipped`. Knossos re-audit: **6 errors → 0**, suite green (2212 tests).
+    - **Argos (19/19 false positives, no repo change):** 15 × TAUT-006 and 3 × TAUT-005 came from
+      one root cause — `invocationSites` proves a spy *was* reached but never that it was not, and
+      Argos injects doubles into the SUT rather than calling them by name. The clearest case is
+      `jest.spyOn(connectionManager, 'emit')` followed by `connectionManager.initialize(cfg)`: the
+      spy is on the real subject and the real subject is invoked, yet no site records `emit`.
+      TAUT-006's Python-only "unobservable indirect path" suppression is now language-neutral
+      (`fn.hasProductionCalls`), keeping the rule's real target — a spy asserted by a test that
+      runs no production code at all. TAUT-005 gained two hand-off forms: a mock **installed onto
+      another object** (`pm.findAvailablePort = jest.fn().mockRejectedValue(e)`) and a double
+      handed to production as a configured return value (`spyOn(cm, 'createAdapter')
+      .mockReturnValue(adapter)`, which also reaches every spy on `adapter` — the old
+      `isConfigCall` text regex never matched a callee with a parenthesised receiver). The
+      remaining 2 × TAUT-004 were already fixed by round 49 and only looked open because of the
+      stale cache. Argos re-audit: **19 warnings → 0**, zero changes to Argos.
+    - **Chaos (1 false positive fixed in Momus, 3 suppressed with cause):** `MOCK-001` on
+      `triage-discover-targets.test.ts` claimed "1 production-provenance assertion" for a file with
+      27 assertions on real `resolveTriageTargets` output. Two provenance gaps: the SUT arrives via
+      `const { resolveTriageTargets } = await import(…)` (a dynamic import, so not in
+      `importedNames`), and the assertions read `await run({…})`, a local wrapper. Both are now
+      traced — dynamic-import bindings are production roots, and `provenance` looks through a local
+      helper the same way `productionCalls` already did. **Only the source kind carries through,
+      never `constant`/`literal`**: the first cut inherited constant-ness and a helper whose single
+      return is `null` turned 13 healthy `expect(firstError(x)).toContain('msg')` assertions into
+      TAUT-003 constant-tautology errors. A helper now qualifies only when exactly one `return`
+      carries a value. Operands: 1 production → 29. The other three MOCK-001 findings are true by
+      the rule's own definition (composition-root and interaction tests that mock every
+      collaborator on purpose) and carry `// @momus-ignore-file:MOCK-001` with the reason; the
+      audit reports them as `suppressed: 3`, not as clean. Chaos re-audit: **4 warnings → 0 (3
+      suppressed)**, suite green (3324 tests).
+    - **New suppression form:** `// @momus-ignore-file:RULE[,RULE]`. A file-scoped finding is
+      reported at 1:1, so no line comment can precede it — before this, MOCK-001 could only be
+      silenced by the blunt bare banner or a repo-wide severity override.
+    - **Momus correctness bug (the reason round 49 over-reported):** `IR_SCHEMA_VERSION` is the only
+      thing that invalidates `.momus/cache/modules.sqlite` across a parser change, and it is bumped
+      by hand. Three repos were carrying caches written by a pre-fix parser, so every audit in this
+      session was wrong until they were cleared. Bumped to 23. **Any dogfood measurement must clear
+      the cache or bump the schema first** — a stale cache reads exactly like a fix that worked.
+    - Also fixed while running the gate: the in-flight mocktopus literal extractor emitted
+      `{ kind: 'boolean' | 'number' | 'string' }` nodes, which are not `TypeIR` and would never have
+      reached DRIFT-003's assignability check; it now emits the `{ kind: 'literal', value }` shape
+      the rest of the Rust parser produces, with the string delimiters stripped.
+    Gate: **626 tests** (617 → 626), typecheck/lint/format clean, self-audit CLEAN.

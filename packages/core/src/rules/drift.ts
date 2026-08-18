@@ -129,7 +129,9 @@ export class Drift001MissingMember extends DriftRule {
       // `_pre_setup`/`_post_teardown` inherited from `unittest.TestCase` via an unindexed
       // `django.test.SimpleTestCase`).
       const targetSym = index.getSymbol(m.target.symbolId);
-      if (targetSym?.extendsIds.some((id) => !index.getSymbol(id))) continue;
+      if (!targetSym) continue;
+      if (targetSym.kind === 'function') continue;
+      if (targetSym.extendsIds.some((id) => !index.getSymbol(id))) continue;
       const members = index.membersOf(m.target.symbolId);
       const memberNames = new Set(members.map((s) => s.name));
       for (const stub of m.stubbedMembers) {
@@ -324,9 +326,10 @@ export class Drift003ReturnTypeMismatch extends DriftRule {
       for (const m of module.mocks) {
         if (!diffRelevant(ctx, m)) continue;
         if (!m.target?.symbolId) continue;
-        const members = index.membersOf(m.target.symbolId);
+        const targetSym = index.getSymbol(m.target.symbolId) ?? module.symbols.find((s) => s.id === m.target!.symbolId);
+        const members = targetSym?.kind === 'function' ? [targetSym] : index.membersOf(m.target.symbolId);
         for (const stub of m.stubbedMembers) {
-          const prod = members.find((s) => s.name === stub.name);
+          const prod = targetSym?.kind === 'function' ? targetSym : members.find((s) => s.name === stub.name);
           if (!prod?.signature?.returnType) continue;
           for (const v of stub.returnValues) {
             if (!v.value) continue;
