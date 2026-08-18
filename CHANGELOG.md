@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.0.8](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.7...v0.0.8) (2026-08-18)
+
+
+### Features
+
+* add mock_derive, mocktopus, galvanic detection and python hardening ([6ed6392](https://github.com/AraneaDev/Momus-MCP/commit/6ed6392747822333335706f2fd8f42cbd1a81ee6))
+
+
+### Bug Fixes
+
+* close 25 dogfood false positives across Chaos, Knossos and Argos ([1e2c682](https://github.com/AraneaDev/Momus-MCP/commit/1e2c682cb9f0d90d4e675b8b340ef4be3ccf6eac))
+* close 25 dogfood false positives across Chaos, Knossos and Argos ([1770ec5](https://github.com/AraneaDev/Momus-MCP/commit/1770ec5f723dd80d0629bee4864e9fbf21f5bc2e))
+
 ## [0.0.7](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.6...v0.0.7) (2026-08-17)
 
 
