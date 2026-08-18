@@ -1,6 +1,14 @@
 # Agent tool surface — design
 
-**Date:** 2026-08-18 · **Status:** approved for planning · **Branch:** `feat/agent-tool-surface`
+**Date:** 2026-08-18 · **Revised:** 2026-08-19 · **Status:** approved for planning ·
+**Branch:** `feat/agent-tool-surface`
+
+> **Revision note (2026-08-19).** The spec was written against the tree at v0.0.7 and
+> re-verified against v0.0.8 before implementation. Three corrections, marked **[revised]**
+> below: phase 3 gains a prerequisite (§1.2), phase 4's SDK risk is resolved (§2), and a
+> documentation defect it surfaced is recorded (§2). Everything else was checked and still
+> holds: the server registers exactly the five tools listed, and every fixer function named
+> in §1.2/§1.3 exists as described.
 
 Momus's MCP server exposes five read-only tools (`audit_test_fidelity`,
 `detect_tautological_assertions`, `verify_mock_drift`, `synthesize_mock_contract`,
@@ -53,9 +61,21 @@ single-file audit (parse cache makes this fast), matches the issue, and returns:
 
 ### 1.2 `preview_issue_fix` (read-only)
 
+> **[revised] Prerequisite: the fixer must move to `@momus/core` first.** The pipeline lives
+> in `packages/cli/src/fix.ts`, and `@momus/cli` already depends on `@momus/mcp-server`
+> (it imports `serve`). Having the server import the CLI closes a package-level cycle —
+> tolerable under npm workspaces' symlinks and tsx resolution, but a cycle in the published
+> dependency graph, which this repo cannot ship. `collectFixable`, `editsByFile`,
+> `applyFixes`, `buildFixDiff`, `unifiedDiff` and `applyFixToFiles` therefore move to
+> `@momus/core` (which both packages already depend on) with `packages/cli/src/fix.ts`
+> re-exporting them, so the CLI's imports and tests are untouched. This is a pure move, not a
+> rewrite, and it is the first commit of phase 3 — it does **not** widen §7's "no engine
+> changes" (no rule, parser, or engine behaviour changes), but it does mean phase 3 touches
+> `@momus/core`.
+
 Input: `path` + `issueId`. Re-runs the narrow audit, resolves the issue's
-`FixSuggestion` via the CLI `collectFixable`/`editsByFile`/`buildFixDiff` pipeline
-(unchanged — the CLI and MCP share the same fixer), and returns the unified diff
+`FixSuggestion` via the shared `collectFixable`/`editsByFile`/`buildFixDiff` pipeline
+(one fixer, used by both the CLI and MCP), and returns the unified diff
 for **that one issue only**, plus the fix description. Returns a clear
 "not-fixable" response (with the reason: no span / no code / delete-without-span)
 instead of an error when there is nothing to apply.
@@ -115,9 +135,21 @@ Notifications: the server starts the workspace watcher (existing
 `watchWorkspace`, extended ignores from the parity work) for the session and,
 on add/change/unlink of source files, (a) invalidates the parse cache (already
 the behavior) and (b) emits `notifications/resources/updated` for
-`momus://issues/latest` if the SDK supports it (spike-gated). Agents that hold
-subscribed resources refresh on the notification; agents that don't use the
-read tool.
+`momus://issues/latest`. Agents that hold subscribed resources refresh on the
+notification; agents that don't use the read tool.
+
+> **[revised] The phase-4 spike is already answered: the SDK supports this.**
+> `@modelcontextprotocol/sdk` 1.30.0 exposes `Server.sendResourceUpdated(params)` and
+> `McpServer.registerResource`, so the degrade path (doc-noted manual refresh) is a fallback
+> for older SDKs, not the expected outcome. Phase 4 keeps the graceful-degrade wording in the
+> tool descriptions but no longer needs a spike to start.
+
+> **[revised] Capability declaration is a real gap, not just a new feature.** `docs/04` §4.1
+> documents the server as advertising `"resources": { "subscribe": false, "listChanged": false }`,
+> but `createMomusServer` declares only `{ tools: { listChanged: true } }`. The documented
+> capability set is therefore wrong *today*, independent of this spec. Phase 4 adds the real
+> declaration (with `subscribe: true`, which the notification channel requires) and corrects
+> `docs/04` in the same commit.
 
 ## 3. Write-path safety summary
 
@@ -157,26 +189,33 @@ Four independently-shippable phases, each a reviewable PR with a green gate
 
 1. **Sight** — `explain_issue`, `get_ir` (read-only; no write surface).
 2. **Sweep** — `audit_workspace` + dedupe, `doctor_status`.
-3. **Fix** — `preview_issue_fix` / `apply_issue_fix` (the only write surface) +
+3. **Fix** — the `fix.ts` move to `@momus/core` (§1.2, first commit, no behaviour
+   change), then `preview_issue_fix` / `apply_issue_fix` (the only write surface) +
    the stale-span guard tests.
-4. **Notify** — resources + watcher notifications; degrades to doc-noted
-   refresh if the SDK arithmetic fails (spike at the top of the phase).
+4. **Notify** — resources + watcher notifications + the corrected capability
+   declaration and `docs/04` fix (§2); degrades to doc-noted refresh on SDKs
+   older than 1.30.
 
 Acceptance after 3: an agent can take `audit_test_fidelity` output and
 `preview`/`apply` — and after 4: an agent react to file changes without polling.
 
-**Risks.** (1) Issue-id stability across re-runs — mitigated by the `{path,
-rule}` tuple fallback. (2) `notifications/resources/updated` SDK support —
-mitigated by the phase-4 spike and the indicate refresh degrade. (3) Write-path
-undo — mitigated by per-issue diffs surfaced to the agent (the agent's own
-file-VCS history is the undo). (4) Narrow single-file audits re-parse only the
-target file — cached, so re-resolution stays cheap.
+**Risks.** (1) Issue-id stability across re-runs — the id is
+`rule:file:line:col:message-slice`, so it moves the moment a fix shifts line numbers, which
+is exactly when `apply_issue_fix` re-audits. Mitigated by the `{path, rule}` tuple fallback,
+and `apply_issue_fix` returns the re-audited issue list so the agent re-reads ids rather than
+carrying stale ones. (2) ~~`notifications/resources/updated` SDK support~~ — **[revised]**
+resolved: SDK 1.30.0 ships `sendResourceUpdated`. (3) Write-path undo — mitigated by
+per-issue diffs surfaced to the agent (the agent's own file-VCS history is the undo).
+(4) Narrow single-file audits re-parse only the target file — cached, so re-resolution stays
+cheap. (5) **[revised]** Phase 3 now touches `@momus/core`; the mitigation is that the move
+is mechanical and the CLI's existing `fix` tests re-run against the re-export unchanged.
 
 ## 7. Out of scope (explicit)
 
 - MCP sampling, prompts, and tool results pagination.
 - Agent-initiated `.momusrc` writes (config is read-only over MCP).
-- New rules, parsers, or engine changes (this spec is purely tool surface;
-  rule work continues under the parity spec).
+- New rules, parsers, or engine behaviour changes (this spec is purely tool surface;
+  rule work continues under the parity spec). **[revised]** The phase-3 `fix.ts` move into
+  `@momus/core` is a file move plus a re-export, not a behaviour change, and is in scope.
 - The CLI stays the source of truth for fix application — MCP shares the
   engine, it does not fork it.
