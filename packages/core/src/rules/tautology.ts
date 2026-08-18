@@ -188,6 +188,17 @@ export class Taut005ZeroReachStub extends BaseRule {
       if (asserted.has(mock.id)) continue;
       // A #[should_panic] test asserts the drop-time panic — the un-invoked expectation is the point.
       if (mock.fnId ? fns.get(mock.fnId)?.shouldPanic : false) continue;
+      // `patch`/`patch-object`/`patch-multiple`/`patch-dict` inject the mock into the SUT's dependency
+      // graph for the enclosing scope; the invocation is *indirect* (the SUT calls the patched target),
+      // so the parser can never record an invocationSite for them. Reachability is unobservable at the
+      // syntactic level (django dogfood: 90 `with mock.patch.object(…, return_value=…)` false positives).
+      if (
+        mock.pattern === 'patch' ||
+        mock.pattern === 'patch-object' ||
+        mock.pattern === 'patch-multiple' ||
+        mock.pattern === 'patch-dict'
+      )
+        continue;
       out.push(
         issue(
           { module } as RuleContext,
@@ -210,6 +221,7 @@ export class Taut006UnconfiguredSpyAssert extends BaseRule {
   check({ module }: RuleContext): Issue[] {
     const out: Issue[] = [];
     const mocks = new Map(module.mocks.map((m) => [m.id, m]));
+    const fns = new Map(module.functions.map((f) => [f.id, f]));
     for (const a of module.assertions) {
       const spyApi =
         a.api.startsWith('toHaveBeenCalled') ||
@@ -230,7 +242,14 @@ export class Taut006UnconfiguredSpyAssert extends BaseRule {
         mock.pattern === 'patch' ||
         mock.pattern === 'patch-object';
       const configured = mock.configuredValues.length > 0 || mock.stubbedMembers.some((s) => s.returnValues.length > 0);
-      if (isSpy && !configured && mock.invocationSites.length === 0) {
+      // Python's `markReachableMocks` only tracks direct calls and positional-arg hand-off; a spy
+      // invoked indirectly through the SUT (e.g. `mock_source_db` injected via a `return_value=`
+      // kwarg and then called by `setup_worker_connection`) has an unobservable call path. When the
+      // enclosing test exercises production, that spy *may* have been reached — suppress. TS/PHP/Rust
+      // track reachability precisely through `invocationSites`, so they keep the strict signal.
+      const fn = fns.get(a.fnId);
+      const unobservablePythonPath = module.language === 'python' && fn?.hasProductionCalls;
+      if (isSpy && !configured && mock.invocationSites.length === 0 && !unobservablePythonPath) {
         out.push(
           issue(
             { module } as RuleContext,

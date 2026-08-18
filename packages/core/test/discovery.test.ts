@@ -70,6 +70,33 @@ describe('discoverFiles', () => {
     }
   });
 
+  it('honors gitignore negation (ignore-all + whitelist convention)', () => {
+    const root = mkdtempSync(join(tmpdir(), 'momus-discover-negate-'));
+    try {
+      // The standard Rust-workspace .gitignore: ignore everything, then whitelist directories,
+      // .rs files, and Cargo.toml. Dropping the `!` lines used to ignore the whole workspace.
+      writeFileSync(
+        join(root, '.gitignore'),
+        '*\n!*/\n\n!Cargo.toml\n!*.rs\n!.gitignore\n!README.md\n\n/target\n.vscode\nCargo.lock\n',
+      );
+      mkdirSync(join(root, 'mry', 'src'), { recursive: true });
+      mkdirSync(join(root, 'mry', 'tests'), { recursive: true });
+      mkdirSync(join(root, 'target'), { recursive: true });
+      writeFileSync(join(root, 'mry', 'src', 'lib.rs'), 'pub fn x() {}');
+      writeFileSync(join(root, 'mry', 'tests', 'a.rs'), '#[test]\nfn t() {}');
+      writeFileSync(join(root, 'target', 'build.rs'), 'fn main() {}');
+      writeFileSync(join(root, 'Cargo.toml'), '[package]');
+      writeFileSync(join(root, 'Cargo.lock'), 'ignored');
+      writeFileSync(join(root, 'notes.md'), 'ignored');
+
+      const { files } = discoverFiles(opts(root));
+      const rels = files.map((f) => f.path.slice(root.length + 1)).sort();
+      expect(rels).toEqual(['mry/src/lib.rs', 'mry/tests/a.rs']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('skips .git and node_modules directories', () => {
     const root = mkdtempSync(join(tmpdir(), 'momus-discover-vcs-'));
     try {

@@ -27,16 +27,21 @@ export class PythonParser implements LanguageParser {
       const inferred = isTest ? undefined : getInferredReturnTypes(path);
       const symbols = extractSymbols(root, path, inferred);
       const mockState = extractMocks(root, path, symbols);
+      const imports = extractImports(root, path);
       const assertions = extractAssertions(root, path, mockState);
-      const functions = extractTestFunctions(root, path);
+      const functions = extractTestFunctions(root, path, imports, mockState);
       return {
         path,
         language: 'python',
         kind: isTest ? 'test' : 'production',
         framework: isTest ? detectFramework(source) : undefined,
-        imports: extractImports(root, path),
+        imports,
         symbols,
-        exports: symbols.map((s) => s.name),
+        // Module attributes include top-level import bindings (`import idna` binds `idna`;
+        // `from x import y` binds `y`) — DRIFT-005 checks `patch('mod.attr')` against this
+        // list, so imported names must be present (requests dogfood: `requests.help.idna`
+        // and `requests.utils.proxy_bypass` were false-flagged before this).
+        exports: [...new Set([...symbols.map((s) => s.name), ...imports.flatMap((i) => i.names)])],
         mocks: mockState.mocks,
         assertions,
         functions,
@@ -94,6 +99,9 @@ function extractImports(root: SyntaxNode, file: string): ImportIR[] {
   const imports: ImportIR[] = [];
   walk(root, (node) => {
     if (!node.isNamed) return;
+    // Only module-level imports bind module attributes; function/class-local imports shadow
+    // locally and must not appear in `exports` (DRIFT-005 attribute checks) or MOCK-001 deps.
+    if (node.parent !== root) return;
     if (node.type === 'import_statement') imports.push(...importStatement(node, file));
     else if (node.type === 'import_from_statement') imports.push(importFrom(node, file));
   });
@@ -106,7 +114,8 @@ function importStatement(node: SyntaxNode, file: string): ImportIR[] {
     if (child.type === 'import') continue;
     const spec = moduleText(child);
     if (!spec) continue;
-    const local = localName(child) ?? spec.split('.').pop() ?? spec;
+    // `import a.b.c` binds the topmost name `a` (not `c`) — the module attribute is `a`.
+    const local = localName(child) ?? spec.split('.')[0] ?? spec;
     out.push({ specifier: spec, names: [local], resolvedPath: resolvePythonImport(spec, file) ?? undefined });
   }
   return out;
@@ -117,7 +126,8 @@ function importFrom(node: SyntaxNode, file: string): ImportIR {
   const mod = modNode ? textOf(modNode).replace(/^\.+/, '') : '';
   const names: string[] = [];
   for (const child of node.namedChildren) {
-    if (child.type === 'from' || child.type === 'import' || child === modNode) continue;
+    // Compare by node `id`, not `===` (tree-sitter `childForFieldName` returns fresh wrappers).
+    if (child.type === 'from' || child.type === 'import' || (modNode && child.id === modNode.id)) continue;
     const local = localName(child) ?? moduleText(child) ?? '';
     if (local) names.push(local);
   }
@@ -136,7 +146,9 @@ function moduleText(node: SyntaxNode): string | null {
 
 /** The local name a `dotted_name`/`aliased_import` binds (the alias when present). */
 function localName(node: SyntaxNode): string | null {
-  if (node.type === 'dotted_name') return textOf(node).split('.').pop() ?? null;
+  // `import a.b.c` binds the topmost name `a` (Python semantics); a single-segment
+  // dotted_name (the only valid form inside `from … import`) is unaffected.
+  if (node.type === 'dotted_name') return textOf(node).split('.')[0] ?? null;
   if (node.type === 'aliased_import') {
     const alias = childField(node, 'alias');
     return alias ? textOf(alias) : null;

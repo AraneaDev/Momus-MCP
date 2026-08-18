@@ -10,7 +10,7 @@ import type { Language } from './languages.ts';
  * invalidates cached modules even when the audited workspace is unchanged. Bump whenever the
  * ModuleIR shape or any parser's extraction changes in a way that would make cached IR stale.
  */
-export const IR_SCHEMA_VERSION = '8'; // 8: TestFnIR.shouldPanic + MockIR.fnId (Rust should-panic reach)
+export const IR_SCHEMA_VERSION = '22'; // 22: Rust double (mock_trait!/impl + field config) detection
 
 export type { Language };
 export type Severity = 'error' | 'warning' | 'info';
@@ -62,7 +62,25 @@ export interface ParseDiagnostic {
 // ---------------------------------------------------------------- module
 
 export type MockFramework =
-  'vitest' | 'jest' | 'phpunit' | 'pest' | 'unittest' | 'pytest' | 'mockall' | 'mockito' | 'wiremock' | 'manual';
+  | 'vitest'
+  | 'jest'
+  | 'phpunit'
+  | 'pest'
+  | 'unittest'
+  | 'pytest'
+  | 'mockall'
+  | 'mockito'
+  | 'wiremock'
+  | 'httpmock'
+  | 'mry'
+  | 'faux'
+  | 'mockers'
+  | 'mockiato'
+  | 'mocktopus'
+  | 'mock_derive'
+  | 'galvanic'
+  | 'double'
+  | 'manual';
 
 export interface ModuleIR {
   path: string;
@@ -179,6 +197,8 @@ export type MockPattern =
   | 'proxy'
   | 'patch'
   | 'patch-object'
+  | 'patch-multiple'
+  | 'patch-dict'
   | 'autospec'
   | 'pytest-mock'
   | 'monkeypatch'
@@ -186,6 +206,15 @@ export type MockPattern =
   | 'mock-macro'
   | 'mockito'
   | 'wiremock'
+  | 'httpmock'
+  | 'mry'
+  | 'faux'
+  | 'mockers'
+  | 'mockiato'
+  | 'mocktopus'
+  | 'mock_derive'
+  | 'galvanic'
+  | 'double'
   | 'unknown';
 
 export interface MockIR {

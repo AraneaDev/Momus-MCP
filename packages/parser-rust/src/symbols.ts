@@ -5,6 +5,18 @@ import { rustTypeToIr } from './types.ts';
 export function extractSymbols(file: RustFile, path: string): SymbolIR[] {
   const out: SymbolIR[] = [];
   for (const item of file.items) walk(item, path, '', out);
+  // Rust model: `impl` blocks emit their methods as top-level symbols keyed `<TypeId>.<method>`
+  // (the walker has no back-reference to the struct it may not have seen yet). Attach them to
+  // the owning type's `members` so `membersOf` (DRIFT-001/002/003) sees impl methods — same
+  // contract the trait/struct cases already satisfy with inline members.
+  const byId = new Map(out.map((s) => [s.id, s]));
+  for (const s of out) {
+    if (s.kind !== 'method') continue;
+    const dot = s.id.lastIndexOf('.');
+    if (dot <= 0) continue;
+    const owner = byId.get(s.id.slice(0, dot));
+    if (owner && !owner.members.some((m) => m.id === s.id)) owner.members.push(s);
+  }
   return out;
 }
 
@@ -78,13 +90,22 @@ function walk(item: RustItem, path: string, parentId: string, out: SymbolIR[]): 
         kind: 'interface',
         span: spanOf(path, item.span),
         members,
-        extendsIds: [],
+        // `trait Derived : Base` inherits `Base`'s methods. Resolve each supertrait to its
+        // same-file symbol id (`${path}#Base`) — path-qualified/external supertraits
+        // (`std::fmt::Debug`, `export::ExportTrait`) won't resolve, which DRIFT-001 treats as a
+        // conservative skip (a "missing" member may be inherited) instead of a false flag.
+        extendsIds: item.supertraits.map((name) => `${path}#${name}`),
         implementsIds: [],
       });
       break;
     }
     case 'impl': {
-      const parent = `${path}#${item.selfType.text.replace(/[<>, &]/g, '_')}`;
+      // Prefer the serializer's clean `name` (the last path segment — `foo::Foo` -> `Foo`, the
+      // referent for `&'a Foo`), falling back to the token-stream text (`Box < T >` -> `Box`).
+      // The text alone kept a path-qualified self-type (`impl foo::Foo`) unresolved, so its
+      // methods never attached to `Foo` (faux's `paths.rs` exposed this).
+      const name = item.selfType.name || (item.selfType.text.split('<')[0] ?? '').replace(/[&'\s]/g, '');
+      const parent = `${path}#${name}`;
       for (const f of item.items) walk(f, path, parent, out);
       break;
     }

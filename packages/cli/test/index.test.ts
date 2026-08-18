@@ -18,6 +18,7 @@ import {
   runRules,
   runInit,
   runDoctor,
+  runContract,
   main,
 } from '../src/index.ts';
 import { DEFAULT_CONFIG } from '@momus/core';
@@ -240,6 +241,33 @@ describe('extracted command functions (no subprocess)', () => {
       expect(runInit(dir, ['init', '--force'])).toBe(0);
       expect(existsSync(join(dir, '.momusrc'))).toBe(true);
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('runContract defaults the framework to the target language template', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-fn3-'));
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      writeFileSync(join(dir, 'svc.py'), 'class Svc:\n    def total(self) -> int:\n        return 0\n');
+      writeFileSync(join(dir, 'repo.rs'), 'pub trait Repo {\n    fn find(&self, id: u32) -> u32;\n}\n');
+      // Python target: header must say pytest (not vitest) and emit patch.object.
+      expect(await runContract(dir, ['contract', 'svc.py'])).toBe(0);
+      const pyOut = write.mock.calls.map((c) => String(c[0])).join('');
+      expect(pyOut).toContain('(pytest)');
+      expect(pyOut).toContain("patch.object(Svc, 'total'");
+      write.mockClear();
+      // Rust target: header must say mockall and emit a mock! block.
+      expect(await runContract(dir, ['contract', 'repo.rs'])).toBe(0);
+      const rsOut = write.mock.calls.map((c) => String(c[0])).join('');
+      expect(rsOut).toContain('(mockall)');
+      expect(rsOut).toContain('mock!');
+      // Explicit --framework still wins.
+      write.mockClear();
+      expect(await runContract(dir, ['contract', 'svc.py', '--framework', 'unittest'])).toBe(0);
+      expect(write.mock.calls.map((c) => String(c[0])).join('')).toContain('(unittest)');
+    } finally {
+      write.mockRestore();
       rmSync(dir, { recursive: true, force: true });
     }
   });

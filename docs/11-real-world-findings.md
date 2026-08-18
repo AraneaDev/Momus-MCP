@@ -17,6 +17,17 @@
 | `psf/requests` (dogfood clone at `/tmp/requests-dogfood`) | Python | 35 files, 13 test files | pytest + unittest.mock (live test server) | temp `.momusrc` → `{languages:{python:true}}` |
 | `asomers/mockall` (dogfood clone at `/tmp/mockall-dogfood`) | Rust | 188 `.rs` files, 172 under `tests/` | mockall's own `#[automock]`/`mock!` + `#[test]`/`#[cfg(test)]` | temp `.momusrc` → `{languages:{rust:true}}` |
 | `pallets/flask` (dogfood clone at `/tmp/flask-dogfood`) | Python (src-layout) | 83 files, 3,000+ LOC under `tests/` | pytest (fixture-based; planted `unittest.mock` probes for the rules) | temp `.momusrc` → `{languages:{python:true}}` |
+| `lipanski/mockito` (dogfood clone at `/tmp/momus-dogfood/mockito`) | Rust | 12 `.rs` files | mockito's own `mock("GET", "/x").create()` + `server.mock(...)` tests | temp `.momusrc` → `{languages:{rust:true}}` |
+| `LukeMathWalker/wiremock-rs` (dogfood clone at `/tmp/momus-dogfood/wiremock-rs`) | Rust | 21 `.rs` files | wiremock's own `Mock::given(...).mount(...).await` tests | temp `.momusrc` → `{languages:{rust:true}}` |
+| `alexliesenfeld/httpmock` (dogfood clone at `/tmp/momus-dogfood/httpmock`) | Rust | 73 `.rs` files | httpmock's own `server.mock(|when, then| {...})` + `m.assert()` tests | temp `.momusrc` → `{languages:{rust:true}}` |
+| `django/django` (sparse dogfood clone at `/tmp/momus-dogfood/django/tests`) | Python | `tests/tasks` + `tests/apps` | unittest.mock `patch.multiple` (attribute patches) | temp `.momusrc` → `{languages:{python:true}}` |
+| `ryo33/mry` (dogfood clone at `/tmp/momus-dogfood/mry`) | Rust | 52 `.rs` files (workspace `mry` + `mry_macros`) | mry's own `#[mry::mry]` + `mock_<method>(…).returns(…)` tests | temp `.momusrc` → `{languages:{rust:true}}` |
+| `nrxus/faux` (dogfood clone at `/tmp/momus-dogfood/faux`) | Rust | 38 `.rs` files | faux's own `#[faux::create]` + `Foo::faux()` + `faux::when!(…).then*(…)` tests | temp `.momusrc` → `{languages:{rust:true}}` |
+| `kriomant/mockers` (dogfood clone at `/tmp/momus-dogfood/mockers`) | Rust | 59 `.rs` files (workspace `mockers` + `mockers_derive`) | mockers' own `#[mocked]`/`mock!` + `Scenario::create_mock_for::<dyn T>()` + `scenario.expect(handle.m(…).and_return(…))` tests | temp `.momusrc` → `{languages:{rust:true}}` |
+| `mockiato/mockiato` (dogfood clone at `/tmp/momus-dogfood/mockiato`) | Rust | 103 `.rs` files (workspace `mockiato` + `mockiato-compiletest`) | mockiato's own `#[mockable]` + `XMock::new()` + `x.expect_<m>(…).returns(…)` tests | temp `.momusrc` → `{languages:{rust:true}}` |
+| `CodeSandwich/Mocktopus` (dogfood clone at `/tmp/momus-dogfood/mocktopus`) | Rust | 46 `.rs` files | mocktopus's own `#[mockable]` + `foo.mock_safe/mock_raw(…).MockResult::Return(…)` tests | temp `.momusrc` → `{languages:{rust:true}}` |
+| `DavidDeSimone/mock_derive` (dogfood clone at `/tmp/momus-dogfood/mock_derive`) | Rust | 12 `.rs` files | mock_derive's own `#[mock]` trait/extern + `MockX::new()` / `Extern<Abi>Mocks::method_<fn>()` + `method_<m>().set_result(…)` tests | temp `.momusrc` → `{languages:{rust:true}}` |
+| `mindblaze/galvanic-mock` (dogfood clone at `/tmp/momus-dogfood/galvanic-mock`) | Rust | 20 test `.rs` files | galvanic-mock's own `#[mockable]`/`#[use_mocks]` + `new_mock!(Trait)` + `given!`/`expect_interactions!` + `mock.method(…)` tests | temp `.momusrc` → `{languages:{rust:true}}` |
 
 ## 2. Bugs found in Momus (and fixed)
 
@@ -77,8 +88,31 @@
 | 54 | *(dogfood, mockall)* | `tests/` integration tests (incl. compile-only, no `#[test]`) were indexed as **production**, polluting the symbol graph | paths under `tests/` are now classified as test files. 17 false errors → 0 |
 | 55 | *(dogfood, mockall 2nd pass)* | Rust `invocationSites` still missed three real invocation shapes: `unsafe { mock.bar(…) }` blocks (execution-time code) were not descended into, `syn::Expr::Reference` (`&mock`) was serialized without its referent so `&mock` never resolved as a receiver/arg, and trait-qualified/UFCS calls (`Foo::foo(&mock)`, `<Mock as Foo>::foo(&mock, 4)`) never recorded — plus TAUT-005 fired on `#[should_panic]` tests whose drop-panic **is** the assertion | 6 false TAUT-005 warnings on mockall (`mock_refmut_arguments`, `automock_impl_trait_for`, `automock_impl_generic_trait_for`, `automock_trait_variant`, `mock_trait_variant`, `automock_many_args`). Now: blocks/unsafe serialize their statements, `Reference` renders its referent, qualified-path callees keep the `<Ty as Trait>::` prefix, first-arg receivers mark the mock reached, and `TestFnIR.shouldPanic` + `MockIR.fnId` (IR schema 8) suppress TAUT-005 inside panic tests. 11 → 5 |
 | 56 | *(dogfood, flask)* | `resolvePythonImport` never probed a `src/` ancestor (src-layout), so `patch('flask.sessions.X')` on flask/httpx/django-style repos never resolved `modulePath` and DRIFT-005 **silently degraded** (module target skipped, no issue) | `src/` is now probed at each ancestor alongside the flat layout; planted `patch('flask.sessions.NonexistentSessionAttr')` fires a DRIFT-005 error on the real flask clone, the healthy twin (`existing_attr`) stays quiet, and the clean flask/httpx baselines unchanged (0 issues) |
-
-## 3. Findings about `/root/Chaos-MCP` (TypeScript)
+| 57 | *(dogfood, mockall 3rd pass)* | `rustReturnAssignable` compared non-primitive named return types by **exact name only**, so generic-dependent returns were unprovable and always fell through to `false`: `fn myfunc<V>(&self) -> V` with `return_const(42u32)` and `fn bar<T>(&self, _t: T) -> <T as Foo>::Output` with `return_const(42u32)` | 2 false DRIFT-003 warnings on mockall (`automock_generic_future_with_where_clause.rs`, `automock_qself.rs`). `rustReturnAssignable` now resolves the production name through the symbol index like PHP's class path: unresolvable names (type params, qself projections, `impl Trait`, `Self`, cross-crate types) pass conservatively, resolvable names stay strict (a scalar literal can't construct a struct; distinct resolved symbols can't be the same). mockall re-audit: **0 errors**; the 2 DRIFT-003s gone; TAUT-005 now **3** (2 cfg-gated + 1 configured-but-unused) — all genuine. Regression fixtures `generic_test.rs` + `repo.rs::Record` + unit tests (IR schema 10) |
+| 58 | *(dogfood, requests)* | Python `module.exports` listed **symbols only**, so module-level import bindings were invisible to DRIFT-005: `import idna` (binds `idna`) and `from requests.compat import proxy_bypass` (binds `proxy_bypass`) are real module attributes but `patch('requests.help.idna')` / `patch('requests.utils.proxy_bypass')` false-flagged as missing exports (3 errors). Related: MOCK-002 fired `mock-of-self` for **attribute-level** patches inside the SUT module (`patch('requests.help.idna')` in `test_help.py`) — normal dependency patching, not mock-of-self | `exports` now unions top-level import bindings (`import a.b` binds `a`, `as` binds the alias; function-local imports are excluded so they still flag); MOCK-002's Python branch only fires when the patch targets the module itself (`patch('requests.help')` — final dotted segment == module basename). requests re-audit: **3 errors + 3 infos → 0 issues**. Regression fixtures `prod_imports.py`/`test_patch_imports.py` + rule-level tests (IR schema 10) |
+| 59 | *(dogfood, contract synthesis)* | `momus contract` defaulted `--framework` to `'vitest'` for every language, so the header label mismatched the emitted body: `momus contract x.py` printed `(vitest)` while emitting `patch.object`, and `.rs` targets fell back to a **wiremock scaffold** instead of a mockall mock | `runContract` now defaults the framework by target extension (`.rs` → `mockall`, `.py` → `pytest`, `.php` → `phpunit`, else `vitest`); explicit `--framework` still wins. Verified on `requests/src/requests/sessions.py` (pytest + `patch.object`) and the `types.rs` fixture (mockall `mock!` block); CLI regression test pins all three defaults + explicit override |
+| 60 | *(dogfood, mockall 4th pass)* | mockall's own integration tests (`mockall/tests/*.rs`) declare a fixture `trait Foo`/`struct Bar` **inside each test file** purely to exercise `#[automock]`/`mock!`, then mock it — so MOCK-001 (over-mocking) counted each same-file fixture as a mocked production dependency and MOCK-002 (mock-of-self) read it as mocking the subject-under-test. A second gap: `mock!` macros with generic `where` clauses weren't parsed by the `recordMockMacro` regexes | **60 MOCK-001 + 133 MOCK-002** on mockall (the documented baseline only listed 0 errors / 3 TAUT-005). MOCK-001/MOCK-002 now skip mocks whose target is declared in the **same test file** (a framework self-exercise, not a production dependency or subject); `recordMockMacro` now parses generics + `where` clauses in the `impl` form (2 more MOCK-001 cleared). mockall back to **0 errors / 3 TAUT-005** |
+| 61 | *(dogfood, httpmock)* | httpmock's primary API — `server.mock(|when, then| { … })` (a **closure** argument) plus `m.assert()` — was invisible to the Rust parser (only mockito/wiremock call-chains were modeled) | httpmock audit was **vacuous** (0 mocks; only 1 unrelated `#[automock]`). Added httpmock closure detection (`MockFramework`/`MockPattern` IR unions, parser match, CLI help, server enum + rust fence + contract scaffold; IR schema 11). httpmock re-audit: **43 mocks detected, 0 issues** |
+| 62 | *(dogfood, mockall)* | mockall's static/associated/constructor method context API — `MockFoo::baz_context()` + `ctx.expect().returning(...)` (plus the module form `mock_foo::bar_context()` and the constructor `MockA::new_context()`) — was invisible: the parser only emitted a mock for `MockFoo::new()`, so **83 `_context()` configs produced zero mocks** and static-only test files had no drift/TAUT surface | emit one mock per `_context()` with the static method as a stub; `ctx.expect().returning/return_const` attaches the return value; reachability covers direct calls (`MockFoo::baz(41)`), UFCS (`<MockA as A>::new()`), function-pointer references (`let p = mock_ffi::foo; p(42)`), and raw-identifier normalization (`Mockwhile::r#loop()`) (IR schema 12) |
+| 63 | *(dogfood, mockall 5th pass)* | mockall's one-shot/non-Send return variants — `return_once`, `return_once_st`, `returning_st` (391 `return_*` configs, ~16 of them these variants) — were not captured, so DRIFT-003 missed their values; and the static-context extraction false-flagged **TAUT-005 on `examples/serde.rs`**: an inherent static mock (`mock! { pub Thing { fn private_deserialize() } }`) is invoked *indirectly* through the SUT's own `impl Deserialize for MockThing`, which the parser never sees (impl bodies aren't serialized) | `isReturnMethod` now covers all five `return*` variants; and inherent/module static mocks (no resolvable drift target) skip return-value recording, so TAUT-005 treats them as unconfigured. mockall re-audit: **serde.rs TAUT-005 gone → 0 errors / 3 TAUT-005 + 2 MOCK-002** |
+| 64 | *(dogfood, django)* | Python `unittest.mock.patch.multiple(Cls, member=…)` — the one-call patch of several class members — was invisible (0 mocks); found via a fresh `django/django` sparse clone (`tests/tasks` + `tests/apps`, 3 real usages incl. the decorator form `@mock.patch.multiple(...)`) | emitted one `patch-multiple` mock per call with a class target for visibility/MOCK-001. Member-level drift (DRIFT-001/003) is deliberately deferred: `patch.multiple` most often patches class *attributes* (`supports_async_task=False`, `ready=False`), which the Python parser doesn't model (methods-only + no inheritance), so a member check would false-flag inherited attributes. django dogfood: **0 issues**, detection non-vacuous |
+| 65 | *(dogfood, mry)* | `discoverFiles` parsed `.gitignore` by dropping every `!` negation line and keeping the rest, so the standard Rust-workspace convention — ignore everything (`*`) then whitelist (`!*/`, `!*.rs`, `!Cargo.toml`) — **ignored the entire workspace** | a mry clone audited as **0 modules**. `.gitignore` is now parsed with proper semantics: negation (`!`, last match wins), directory-only (trailing `/`), anchored (`/` or a mid-pattern `/`), and ancestor-directory matching; the walker passes file-vs-directory so `!*/` re-includes directories. mry re-audit: **52 files discovered**. Regression test pins the ignore-all + whitelist convention |
+| 66 | *(dogfood, mry)* | the mry mock library (`#[mry::mry]` + `mock_<method>(…).returns(…)`) was invisible — the Rust parser only modeled mockall/mockito/wiremock/httpmock, so mry's own test suite produced **0 mocks (vacuous audit)** | added mry detection (`MockFramework`/`MockPattern` `'mry'`, IR schema 14): `#[mry::mry]` types/impls/traits map method → declaring type; `x.mock_<method>` (instance), `Type::mock_<method>` (static), `Mock<T>::mock_<method>` (constructor), and bare `mock_<fn>` (free function) each emit a mock. Free-function mocks are untargeted (no member drift surface); a mry file skips the mockall pass (its `Mock<Type>` constructor collides with `MockFoo::new()`); return values are deliberately not recorded (mry returns are almost always `.to_string()` chains, and invocations sit inside `assert_eq!` macros the parser can't see — recording them would false-flag TAUT-005; *literal returns now recorded — see row 72*). mry re-audit: **72 mocks, 0 issues** |
+| 67 | *(dogfood, faux)* | the faux mock library (`#[faux::create]` + `#[faux::methods]` + `Foo::faux()` + `faux::when!(mock.method).then(…)`) was invisible — a fresh `nrxus/faux` clone (36 `.rs` files, 55 faux mocks across 16 files) audited as a **vacuous 0-mock** | added faux detection (`MockFramework`/`MockPattern` `'faux'`, IR schema 15): `Foo::faux()` (and `foo::Foo::faux()`) instantiates a mock; `faux::when!(mock.method).then/then_return/then_unchecked` attaches the method as a stub. Return values are deliberately not recorded (faux returns are almost always closures, and invocations sit inside `assert_eq!` macros the parser can't see; *literal `then_return` values now recorded — see row 72*). faux re-audit: **55 mocks, 1 MOCK-002** (the `testable-renderer` example genuinely mocks its own `Renderer` — a true mock-of-self, INFO) |
+| 68 | *(dogfood, mry 2nd pass)* | mry's **function-style macro form** `mry::m! { … }` (1 test file) was undetected, and `symbols.ts` derived an impl's owner from `selfType.text` which kept the module path (`foo::Foo`), so `#[faux::methods(path = "crate")] impl foo::Foo { … }` mismatched the symbol name `Foo` | added `mry::m! { … }` detection; `symbols.ts` now uses `selfType.name` (the clean last segment the wasm serializer already exposes). mry re-audit: **92 mocks (72 → 92), 0 issues**; faux's `tests/paths.rs` (`impl foo::Foo`) now resolves DRIFT-001/DRIFT-003 instead of false-flagging |
+| 69 | *(dogfood, django full suite)* | a full `django/django` `tests/` clone (2005 `.py` files) surfaced **90 TAUT-005** false positives: `with mock.patch.object(X, "m", return_value=…)` / `@mock.patch(…)` inject the mock into the SUT's dependency graph, so the invocation is *indirect* (the SUT calls the patched target) and the parser can never record an `invocationSite` | TAUT-005 now skips `patch`/`patch-object`/`patch-multiple` mocks (reachability is unobservable for them). django re-audit: **90 → 1 TAUT-005** (the survivor is an `autospec` `MagicMock` injected via a patch's `return_value` — a documented boundary). Remaining django findings are honest: TAUT-001 `assertEqual(x, x)` self-comparisons (33), TAUT-003 constant comparisons in the test-runner's *intentional* fail-fixtures (10), TAUT-004/006 (25) closed by the Python `hasProductionCalls` pass (row 70), DRIFT-001 (2) blocked on inheritance resolution (`_pre_setup`/`_post_teardown` are inherited from `unittest.TestCase`) |
+| 70 | *(dogfood, django full suite)* | Python test functions never computed `hasProductionCalls` (`extractTestFunctions` hardcoded `false`), so **TAUT-004** read every mock-assertion-heavy test as "never touches production" (21) and **TAUT-006** read `mock.MagicMock()` members invoked *indirectly* through the SUT (`mock_source_db.backup` called by `setup_worker_connection`) as unconfigured spies with no call path (4) — the TS `productionCalls` dataflow pass had no Python analogue | `extractTestFunctions` now computes `hasProductionCalls` by walking each test function for calls whose root is a **module-level import from a non-framework module** (`unittest`/`mock`/`pytest*`/`django.test*` are helpers; `django.db`, `django.utils.choices`, stdlib `copy`/`datetime`/`ctypes`, … are production), with mock-binding shadowing resolved first. TAUT-006 gained a **Python-scoped** suppression: an unreached spy whose enclosing test exercises production is no longer flagged (Python reachability can't see `return_value=`/SUT-mediated invocation; TS/PHP/Rust keep the strict `invocationSites` signal — the golden fixture's planted TS TAUT-006 still fires). django re-audit: **TAUT-004/006 25 → 0**; requests (35 files) + flask (83 files) baselines unchanged (0 issues). Regression tests: 4 parser + 3 rule |
+| 71 | *(dogfood, django full suite)* | a tree-sitter **node-identity bug silently disabled mock binding**: `bindingNameFor` used `childField(parent,'right') === call`, but `childForFieldName` returns a fresh JS wrapper for the same node (same `id`, different object), so on large files the `bindings` map stayed empty and `resolveMockName`/positional hand-off reachability/`m.member.return_value = X` config capture all no-oped (same bug in `importFrom`'s `child === modNode`). This is why django's last TAUT-005 (`test_sqlcompiler.py` `cursor` injected via `return_value=cursor`) and the DRIFT-001 inherited members survived rounds 38–39 | compare nodes by `.id`, not `===`. Also: (1) a mock handed off via a patch's `return_value=`/`side_effect=` **kwarg** is now marked reached; (2) `patch.dict(os.environ, {…})` detected (`patch-dict` pattern, module target, 49 django usages — TAUT-005 skips it like `patch`); (3) Python `classToSymbol` populates `extendsIds` from `superclasses`, and **DRIFT-001 skips missing-member when the target extends an unresolvable base** (the member may be inherited — `_pre_setup`/`_post_teardown` from `unittest.TestCase`). django re-audit: **46 → 43** — only the honest set remains (33 TAUT-001 self-comparisons + 10 TAUT-003 intentional fail-fixtures). requests/flask 0; Chaos 0 err / 4 MOCK-001; Knossos 6 sentinels. IR schema 16 |
+| 72 | *(dogfood, mry/faux return-value recording)* | DRIFT-003 (return-type assignability) was **dead for mry and faux** — their return values were deliberately never recorded (the original rationale was that returns are closures/`.to_string()` chains and invocations sit in `assert_eq!` macros), so a planted `returns("nope")`/`then_return("nope")` on a `-> u32` method fired **nothing** | record a **literal** return value for the value-producing verbs — faux `then_return(42)`, mry `returns(42)`/`returns("…")`/`returns_once`/`returns_with` — and skip non-literals (`then`/`then_unchecked`/`returns_with(|…|)` closures, `.to_string()` chains → `literalType` yields `unknown`, no literal to compare). Both mry `emitMryMock`/`emitMryStatic` and the faux stub now return/reuse the mock so the verb can attach its value. Planted probes on fresh `ryo33/mry` + `nrxus/faux` clones fire DRIFT-003 end-to-end. Re-audits unchanged and now honest: faux **55 mocks / 1 MOCK-002** (13 mocks DRIFT-003-checked), mry **92 mocks / 0 issues** (12 DRIFT-003-checked), mockall 0 err / 3 TAUT-005 + 2 MOCK-002 (unchanged). Discovered boundary: mry's `mock_<method>` has no embedded type, so its `typeTargets` is populated only from **same-file** `#[mry::mry]` declarations — a `src/`-declared type mocked in `tests/` audits vacuously (mry's own tests are same-file, so the 92-mock baseline is unaffected) |
+| 73 | *(dogfood, mry cross-crate)* | mry's `mock_<method>(…)` carries **no embedded type**, and `scanMry` only ran when the test file itself declared `#[mry::mry]` — so a type declared in a production crate (`src/lib.rs`) and mocked in `tests/` via `MockFoo::default()` + `mock.mock_foo()` was **invisible** (0 mocks; mry's own `crate_bound_consumer` test exercised exactly this shape) | `scanMry` now also runs for files with no same-file `#[mry::mry]` (alongside the mockall pass), binding the receiver var to the mocked type from the unambiguous constructors `Mock<Type>::default()` and `mry::new!(Type { … })` (`::new` is excluded — it collides with mockall's `MockFoo::new()`). `emitMryMock` falls back to the constructor binding when `typeTargets` has no entry. mry re-audit: **93 mocks (92 → 93, the crate_bound_consumer mock now detected), 0 issues**. Planted cross-crate probes (`MockFoo::default()` + `mry::new!`) fire DRIFT-003 on a `-> u32` mismatch |
+| 74 | *(dogfood, django)* | `patch.multiple(Service, attr=…)` had **no member-drift surface**: the Python parser modeled methods only, so the one-call multi-member patch emitted a class-target mock with **zero stubs** (DRIFT-001 could not check the patched members) | model **class-level attributes** (`supports_async_task = True`, `ready: bool = False`) as `property` members, and emit **one stub per `patch.multiple` keyword** (the keyword values are patched attribute values, not return values — no DRIFT-003). DRIFT-001 now checks each patched member against the class's methods *and* attributes (a planted `nonexistent_attr` fires); attributes inherited from an unresolvable base stay protected by DRIFT-001's conservative `extendsIds` skip. django re-audit: **43 findings unchanged** (33 TAUT-001 + 10 TAUT-003); requests/flask 0 |
+| 75 | *(dogfood, django)* | a bound `m = Mock(return_value=42)` then `assert m() == 42` was an **invisible mock-echo** (TAUT-002): the parser captured no creation-time `return_value` and `m()` (the mock's own `__call__`) was not recognized as a mock-config operand | capture a **literal** `return_value=`/`side_effect=` kwarg on a *bound* `Mock(...)`/`MagicMock(...)`/`AsyncMock(...)` (`valueIR`-defined only — `return_value=[]`/`some_obj` are skipped); recognize `m()` as a `mock-config` operand carrying the configured value; and mark `m()` as an invocation site (so `m = Mock(return_value=42); result = m()` is not a zero-reach stub). **Inline** `Mock(return_value=…)` (e.g. a `patch`'s positional `new` arg) is left unconfigured — its invocation is unobservable. django re-audit: **43 findings unchanged**; planted echo probe fires TAUT-002 while differing-value twins stay quiet |
+| 76 | *(dogfood, mockers)* | the mockers library (`#[mocked] trait` / `mock! { Name, self, trait A { … } }` + `scenario.create_mock_for::<dyn T>()` returning `(mock, handle)` + `scenario.expect(handle.m(…).and_return(…))`) was **invisible** — a fresh `kriomant/mockers` clone (59 `.rs` files) audited as a **vacuous 0-mock** | added mockers detection (`MockFramework`/`MockPattern` `'mockers'`, IR schema 17) + tuple-pattern `bindings` serialization in the syn-wasm layer (`let (mock, handle) = …`). `create_mock_for::<dyn T>` / `create_named_mock_for::<dyn T>` / `create_mock::<XMock>` each emit a mock (target = the trait; `Mock`/`MockStatic` suffix stripped cross-crate); the tuple-destructured fake (element 0) and handle (element 1) bind the mock, `scenario.expect(handle.<m>(…).and_return(v))` attaches the stub + literal return, and `mock.<m>(…)` / pass-by-value marks it reached. Mock-specific `clone` stubs (`mock_clone!`/`derive(Clone)`) are filtered via the trait-method set, and multi-trait `mock!` mocks are untargeted (no single production type) — so the self-test fixtures stay honest. mockers re-audit: **151 mocks (23 files), 0 issues**. Also fixed a surfacing mry reachability gap: `Cat::meow(&cat, 2)` (trait-qualified/UFCS invocation) now marks the mock reached, closing a TAUT-005 on mry's `async_fn_trait_variant` (mry back to 0) |
+| 77 | *(dogfood, mockiato)* | the mockiato library (`#[mockable] trait` + `XMock::new()`/`XMock::default()` + `x.expect_<m>(…).returns(…)`) was **invisible** — a fresh `mockiato/mockiato` clone (103 `.rs` files) audited as a **vacuous 0-mock** because it uses a *suffix* `Mock` naming convention (`GreeterMock`, not mockall's `MockGreeter` prefix), so the mockall pass never saw its constructors | added mockiato detection (`MockFramework`/`MockPattern` `'mockiato'`, IR schema 18, server enum + rust fence + contract scaffold + CLI help): `XMock::new()`/`XMock::default()` emit a mock (strip the `Mock` suffix → trait target), `x.expect_<m>(…)` attaches the stub (`_calls_in_order` stripped), `.returns(v)`/`.returns_once(v)` record a literal return, and `x.<m>(…)` marks it reached. mockiato re-audit: **48 mocks (23 files), 1 MOCK-002** (the `examples/downcasting.rs` example genuinely mocks its own `ObjectBehavior` — a true mock-of-self, INFO) |
+| 78 | *(dogfood, mockiato)* | the syn-wasm serializer descended into block/unsafe bodies but **not control-flow bodies** (`for`/`while`/`loop`/`if`/`match` all fell into the catch-all `other` with no `stmts`), so a mock *invoked* inside a loop/branch was never marked reached — mockiato's `tests/sequential_calls.rs` (`for _ in 0..3 { assert!(mock.bar()); }`) false-flagged **TAUT-005 zero-reach-stub** | serialize `for`/`while`/`loop`/`if`/`match` bodies as runtime `stmts` (then+else branches, arm bodies), and make `?` transparent (`mock.foo()?` keeps its inner call). This is a general Rust-reachability fix benefiting every framework, not just mockiato. mockiato re-audit: **TAUT-005 gone → 0 warnings**; all other Rust baselines unchanged (mockall 0 err / 3 TAUT-005 + 2 MOCK-002, mry 93 mocks / 0, faux 55 / 1 MOCK-002, mockers 151 / 0) |
+| 79 | *(dogfood, mocktopus)* | the mocktopus library (`#[mockable]` on fns/methods/impls + `foo.mock_safe(…)` / `foo.mock_raw(…)` replacing the *function itself* with a `MockResult::Return` closure) was **invisible** — a fresh `CodeSandwich/Mocktopus` clone (46 `.rs` files) audited as a **vacuous 0-mock** because its API has no `Mock::new()` constructor at all (the `mock_safe`/`mock_raw` call *is* the mock) | added mocktopus detection (`MockFramework`/`MockPattern` `'mocktopus'`, IR schema 19, server enum + rust fence + contract scaffold + CLI help): `foo.mock_safe(…)`/`foo.mock_raw(…)` emit one mock per call with the receiver's function/method name as an informational `unknown` target (bare fn, module-qualified `hello_world::world`, static `S::method`, and instance `s.method`). A mocked *function* has no member-drift surface and its invocation is indirect (the SUT calls it), so no stubs/return values are recorded — no false TAUT-005/DRIFT surface. mocktopus re-audit: **270 mocks (34 files), 0 issues** |
+| 80 | *(dogfood, mock_derive)* | the mock_derive library (`#[mock]` on a trait/extern block + `MockX::new()` / `Extern<Abi>Mocks::method_<fn>()` + `method_<m>().set_result(…)`) was **detected but misattributed** — its `Mock<Name>` *prefix* collides with mockall's `MockFoo::new()`, so a fresh `DavidDeSimone/mock_derive` clone's 32 trait mocks read as `mockall`/`automock` (framework wrong, `set_result` returns unrecorded → DRIFT-003 dead) and its 6 `#[mock] extern` function mocks were **invisible** (the `extern "C" { … }` block wasn't serialized). Related: `#[mock] trait Derived : Base` exposed a **DRIFT-001 supertrait gap** — Rust trait inheritance wasn't modeled, so a mock stubbing an *inherited* method (`add` on `Derived`) false-flagged "missing member" | added mock_derive detection (`MockFramework`/`MockPattern` `'mock_derive'`, IR schema 20, server enum + rust fence + contract scaffold + CLI help): `#[mock] trait X` (incl. `#[cfg_attr(…, mock)]`) + `MockX::new()` emit a mock (the mockall pass skips `#[mock]`-declared constructors), `method_<m>()` attaches the stub, `.set_result(<literal>)` records a literal return, `mock.<m>()` marks it reached; `#[mock] extern` blocks serialize as `kind: extern` (abi + fn names) and emit one untargeted `Extern<Abi>Mocks` mock per fn. (Round 47 also records `.return_result_of(|| <scalar literal>)` — a single-scalar closure body — for DRIFT-003; a computed/block closure stays skipped.) And the Rust symbol index now populates `extendsIds` from `trait X : Y` supertraits (supertrait serialization in the wasm layer), so `membersOf` resolves inherited members (external supertraits stay a conservative DRIFT-001 skip). mock_derive re-audit: **38 mocks (32 trait + 6 extern), 2 TAUT + 7 MOCK-002** — the 2 TAUT are the example's genuine `assert_eq!(1,1)` self-comparison, and the 7 MOCK-002 are examples mocking their own same-file `#[mock]` trait (consistent with mockall's synchronization.rs, which is also flagged) |
+| 81 | *(dogfood, galvanic-mock)* | the galvanic-mock library (`#[mockable]` + `#[use_mocks]` + `new_mock!(Trait)` + `given!`/`expect_interactions!` + `mock.method(…)`) was **invisible** — a fresh `mindblaze/galvanic-mock` clone (20 test `.rs` files) audited as a **vacuous 0-mock** because its API has no `Mock::new()` constructor or `mock_*`/`expect_*` config method (the `new_mock!` macro *is* the instantiation, and the `given!`/`expect_interactions!` DSL bodies are macro token streams opaque to syn) | added galvanic detection (`MockFramework`/`MockPattern` `'galvanic'`, IR schema 21, server enum + rust fence + contract scaffold + CLI help): `let mock = new_mock!(Trait)` emits one mock per instantiation with the trait as the target (generics `Trait<i32, f64, Assoc=String>`, explicit mock type `new_mock!(Trait for MyMock)`, referred `new_mock!(::sub1::sub2::EmptyTrait)`, and trailing `#[allow(…)]` mock attributes are all normalized to the trait name); `given!`/`expect_interactions!` record the `<mock as Trait>::method` stub names for DRIFT-001; `mock.method(…)` marks the mock reached. Return values are deliberately *not* recorded (the `then_return`/`then_return_from` values are closures/matchers inside the macro token stream) — no false TAUT-005/DRIFT-003. galvanic re-audit: **45 mocks (20 files), 0 issues**; a planted `nonexistent_method` stub fires DRIFT-001 end-to-end |
 
 Verified against source after fixes; working tree at commit `a65faae`.
 
@@ -188,6 +222,16 @@ full audit of mockall's **own test suite** (188 `.rs` files, 172 under `tests/`)
 - **`mock!` DSL:** mockall's `mock!`/`#[automock]` are proc-macros, so `syn` sees the invocation,
   not the generated mock — the parser hand-models the `mock!` token stream and resolves the
   target trait from the crate graph (see crate spec). Verified against the full `tests/` corpus.
+- **Static/associated/constructor context API (row 62, IR schema 12):** `MockFoo::baz_context()` +
+  `ctx.expect().returning(...)` (83 sites across the corpus) was previously invisible — only
+  `MockFoo::new()` emitted a mock, so static-only test files produced zero mocks. It now emits one
+  mock per context with the static method as a stub, and reachability covers direct calls, UFCS,
+  function-pointer references, and raw identifiers. Two honest new findings surfaced:
+  1. **`examples/serde.rs` TAUT-005** — the inherent static mock `private_deserialize` is
+     configured then invoked *indirectly* through `serde_json::from_str` (no direct call site), a
+     static-analysis boundary (the mock is reached; momus cannot trace through library calls).
+  2. **`examples/synchronization.rs` MOCK-002 ×2** — the `mockall_double` example mocks its own
+     `Thing::one()` (declared in the same file), a true mock-of-self (INFO).
 
 ## 4e. Findings about `pallets/flask` (Python — second Python dogfood, parity round)
 
@@ -379,3 +423,223 @@ flask's own repo (**83 files, 3,000+ LOC of pytest tests**, src-layout package u
     probes verified DRIFT-005/TAUT-004/005/006 fire end-to-end — and the DRIFT-005 probe exposed a
     real gap: **src-layout resolution** (`resolvePythonImport` never probed `src/`), now fixed with
     a per-ancestor `src/` fallback + fixtures + regression tests. flask + httpx re-audited at 0.
+31. ✅ mockall fourth pass (rows 57, IR schema 10): **0 errors, TAUT-005 5 → 3** (2 cfg-gated
+    compile-only + 1 configured-but-unused — all genuine), and the **2 DRIFT-003 false positives
+    fixed** — generic-dependent return types (`V`, `<T as Foo>::Output`) now resolve through the
+    symbol index with a conservative pass for unprovable names (mirrors PHP's class path). Also
+    verified the batch's new Rust paths on fresh clones: **mockito** (137 mocks incl. the new
+    `server.mock("GET", "/x")` method-call form, 0 issues) and **wiremock-rs** (19+ mocks incl.
+    `.await` chains, 0 issues) — both healthy, no vacuous audits (mock counts verified per file).
+32. ✅ requests dogfood (row 58): **3 DRIFT-005 errors + 3 MOCK-002 infos → 0 issues** — module-level
+    import bindings (`import idna`, `from requests.compat import proxy_bypass`) are now real
+    exports for DRIFT-005, and MOCK-002 no longer fires for attribute-level patches inside the
+    SUT module. **requests (pytest, pyright inference on src-layout) is now a 0-issue baseline.**
+    Contract-synthesis probe found row 59: `momus contract` now defaults `--framework` per target
+    language (`.rs` → mockall, `.py` → pytest, `.php` → phpunit) so headers match the emitted
+    body. Chaos (0 errors / 4 MOCK-001) and Knossos (6 sentinel errors) baselines unchanged;
+    coverage 91.42 → 91.86% stmts / 83.82 → 84.13% branches / 95.96 → 96.16% funcs; **537 tests**.
+33. ✅ mockall MOCK false positives closed (row 60): the 4th-pass re-audit surfaced **60 MOCK-001 +
+    133 MOCK-002** that the documented "0 errors / 3 TAUT-005" baseline had missed. Root cause:
+    mockall's integration tests declare a fixture `trait Foo`/`struct Bar` **inside each test file**
+    just to exercise the macros, then mock it — not a production dependency, not a subject. MOCK-001/
+    MOCK-002 now skip same-file fixtures, and `recordMockMacro` parses `where`-clause generics.
+    mockall back to **0 errors / 3 TAUT-005**; mockito (0), wiremock-rs (0), requests (0) unchanged.
+34. ✅ httpmock crate dogfooded (row 61, IR schema 11): fresh clone (`alexliesenfeld/httpmock`, 73
+    `.rs` files) exposed a **vacuous audit** — its `server.mock(|when, then| { … })` closure API was
+    undetected (0 mocks). httpmock detection added across the Rust parser, IR unions, CLI help, and
+    the MCP server (enum + rust fence + contract scaffold). Re-audit: **43 mocks, 0 issues**. Gate:
+    **543 tests** (537 → 543), typecheck/lint/format clean, self-audit clean.
+35. ✅ mockall static-context detection (row 62, IR schema 12): `MockFoo::baz_context()` /
+    `mock_foo::bar_context()` / `MockA::new_context()` — **83 patterns, previously 0 mocks** — now
+    emit one mock per context with the static method as a stub and `ctx.expect().returning/return_const`
+    return values. Reachability covers direct calls, UFCS, function pointers, and raw identifiers.
+    The richer extraction surfaced two honest new findings on the re-audit: **serde.rs** TAUT-005
+    (an inherent static mock `private_deserialize` invoked indirectly through `serde_json::from_str` —
+    a documented static-analysis boundary; the mock *is* reached) and **synchronization.rs** MOCK-002
+    ×2 (the `mockall_double` example mocks its own `Thing` — a true mock-of-self, INFO). mockall
+    baseline: **0 errors / 4 TAUT-005 (3 genuine + 1 serde boundary) + 2 MOCK-002**. mockito /
+    wiremock-rs / httpmock / requests baselines unchanged; **549 tests** (543 → 549).
+37. ✅ mry crate dogfooded (rows 65–66, IR schema 14): a fresh `mitsuhiko/mry` clone (52 `.rs` files,
+    workspace `mry` + `mry_macros`) exposed two real gaps. **(1) `.gitignore` negation was dropped**
+    by `discoverFiles` — mry's workspace root uses the standard Rust "ignore all, then whitelist"
+    convention (`*` / `!*/` / `!*.rs` / `!Cargo.toml`), so the whole workspace was ignored (**0
+    modules**). `.gitignore` is now parsed with proper negation/dir-only/anchored/ancestor semantics.
+    **(2) mry's mock API was invisible** (`#[mry::mry]` + `mock_<method>(…).returns(…)`) — a vacuous
+    0-mock audit. mry detection added (instance/static/`Mock<T>`/free-function forms; mry files skip
+    the mockall pass since their generated `Mock<Type>` collides with `MockFoo::new()`). Re-audit:
+    **72 mocks, 0 issues**, non-vacuous. All other baselines unchanged (mockall 0 err / 3 TAUT-005 +
+    2 MOCK-002; mockito/wiremock-rs/httpmock/requests/flask = 0; Chaos 0 err / 4 MOCK-001; Knossos
+    6 sentinels). Gate: **558 tests** (552 → 558), typecheck/lint/format clean, coverage 91.86% stmts /
+    84.46% branches / 96.29% funcs.
+36. ✅ mockall 5th pass + django dogfood (rows 63–64): (1) captured mockall's one-shot/non-Send
+    `return_once`/`return_once_st`/`returning_st` variants (DRIFT-003 now sees them); (2) closed the
+    serde.rs TAUT-005 boundary from round 35 — inherent/module static mocks (no resolvable target)
+    skip return-value recording, so TAUT-005 no longer false-flags a mock invoked through the SUT's
+    own impl (which the parser never serializes). **mockall back to 0 errors / 3 TAUT-005 + 2
+    MOCK-002.** (3) **`patch.multiple` dogfooded on a fresh django sparse clone**: the one-call
+    multi-member patch was invisible (0 mocks); now emitted as a class-target mock, with member-level
+    drift deliberately deferred (patches class attributes, which the Python parser doesn't model).
+    django `tests/tasks` + `tests/apps` re-audit: **0 issues**, detection non-vacuous. mockito /
+    wiremock-rs / httpmock / requests / flask baselines unchanged; **552 tests** (549 → 552).
+38. ✅ faux + mry::m! + django full-suite dogfood (rows 67–69, IR schema 15): **(1)** the faux mock
+    library (`#[faux::create]` + `Foo::faux()` + `faux::when!(mock.method).then(…)`) was invisible —
+    a fresh `nrxus/faux` clone (36 `.rs` files) audited vacuous (0 mocks). faux detection added
+    (instance + `path`-qualified constructors; config verbs `then`/`then_return`/`then_unchecked`;
+    returns not recorded — closures + `assert_eq!` macro invocations). Re-audit: **55 mocks, 1
+    MOCK-002** (genuine mock-of-self in `testable-renderer`). **(2)** mry's `mry::m! { … }`
+    function-style macro form was undetected, and impl owners kept their module path
+    (`selfType.text` → `foo::Foo`) so path-qualified `#[faux::methods(path = "crate")]` impls
+    false-flagged DRIFT-001; `symbols.ts` now uses `selfType.name`. mry re-audit: **92 mocks, 0
+    issues**. **(3)** a full django `tests/` clone (2005 `.py` files) exposed **90 TAUT-005 false
+    positives** from indirect `patch`/`patch.object` invocation; TAUT-005 now skips patch-pattern
+    mocks. django re-audit: **90 → 1 TAUT-005** (autospec-via-`return_value` boundary), remaining
+    buckets honest (TAUT-001 self-compares, TAUT-003 intentional fail-fixtures, TAUT-004/006 blocked
+    on Python `hasProductionCalls`, DRIFT-001 blocked on inheritance). All Rust/Python/TS baselines
+    unchanged (mockall 0 err / 3 TAUT-005 + 2 MOCK-002; mockito/wiremock-rs/httpmock/mry/requests/
+    flask = 0; Chaos 0 err / 4 MOCK-001). Gate: **565 tests** (563 → 565), typecheck/lint/format
+    clean, coverage 91.73% stmts / 84.56% branches / 96.33% funcs.
+39. ✅ Python `hasProductionCalls` dogfooded (row 70): the django full-suite's **25 TAUT-004/006 false
+    positives** traced to `extractTestFunctions` hardcoding `hasProductionCalls: false` — the TS
+    `productionCalls` dataflow pass had no Python analogue. Now each Python test function counts calls
+    whose root is a module-level import from a non-framework module (framework = `unittest`/`mock`/
+    `pytest*`/`django.test*`; production = `django.*`, stdlib `copy`/`datetime`/`ctypes`, …), with
+    mock-binding shadowing resolved first. TAUT-006 gains a **Python-scoped** suppression for unreached
+    spies in production-exercising tests (Python reachability can't see `return_value=`/SUT-mediated
+    invocation; TS/PHP/Rust keep the strict `invocationSites` signal — the golden fixture's planted TS
+    TAUT-006 still fires). django re-audit: **TAUT-004 21 + TAUT-006 4 → 0**; remaining findings are the
+    honest set (TAUT-001 self-compares 33, TAUT-003 intentional fail-fixtures 10, DRIFT-001 inherited
+    `_pre_setup`/`_post_teardown` 2, TAUT-005 autospec-`return_value` boundary 1). requests (35 files) +
+    flask (83 files) baselines unchanged at 0 issues. Gate: **572 tests** (565 → 572), typecheck/lint/
+    format clean, self-audit CLEAN, coverage 91.77% stmts / 84.63% branches / 96.33% funcs.
+40. ✅ Python detection hardening (row 71, IR schema 16): four gaps closed, django **46 → 43 findings** —
+    only the honest set remains. **(1) tree-sitter node-identity bug** — `bindingNameFor` compared
+    `childField(parent,'right') === call`, but `childForFieldName` returns a fresh wrapper for the same
+    node, so mock binding silently no-oped on large files (empty `bindings` map → broken
+    `resolveMockName`, positional hand-off reachability, and `m.member.return_value = X` capture;
+    same bug in `importFrom`). Now compares node `.id`. **(2) `return_value=`/`side_effect=` kwarg
+    hand-off** — a mock injected via a patch's `return_value=m` is marked reached, closing the
+    last django TAUT-005 (`test_sqlcompiler.py` `cursor`). **(3) `patch.dict` detection** — new
+    `patch-dict` pattern (module target, 49 django usages; TAUT-005 skips it). **(4) inheritance** —
+    `extendsIds` populated from `superclasses` + DRIFT-001 conservative skip for unresolvable bases,
+    closing the 2 django DRIFT-001 (`_pre_setup`/`_post_teardown` inherited from `unittest.TestCase`).
+    Baselines: requests (37 files) 0, flask (83 files) 0, Chaos 0 err / 4 MOCK-001, Knossos 6 sentinels.
+    Gate: **577 tests** (572 → 577), typecheck/lint/format clean, self-audit CLEAN, coverage 91.81%
+    stmts / 84.52% branches / 96.34% funcs.
+41. ✅ mry/faux return-value recording (row 72): the deferred DRIFT-003 surface is restored for both
+    frameworks. `faux::when!(…).then_return(42)` and `mry.mock_<method>(…).returns(42)` /
+    `returns("…")` now record a **literal** return value on the stub; closure/`.to_string()` returns
+    stay unrecorded (`literalType` → `unknown`). Both mry emitters + the faux stub creation return
+    the mock so the config verb attaches its value. **Non-vacuous** (planted probes fire DRIFT-003 on
+    fresh clones). Re-audits unchanged and honest: faux **55 mocks / 1 MOCK-002** (13 DRIFT-003-checked),
+    mry **92 mocks / 0 issues** (12 DRIFT-003-checked), mockall 0 err / 3 TAUT-005 + 2 MOCK-002
+    (re-cloned, unchanged). Boundary documented: mry's `mock_<method>` carries no embedded type, so
+    cross-file (`src/` → `tests/`) mocks audit vacuously. Gate: **579 tests** (577 → 579),
+    typecheck/lint/format clean, self-audit CLEAN, coverage 91.82% stmts / 84.53% branches /
+    96.34% funcs.
+42. ✅ Three hardening follow-ups (rows 73–75): **(1) mry cross-crate detection** — `scanMry` now runs
+    for files with no same-file `#[mry::mry]` (alongside mockall), binding receiver vars from
+    `Mock<Type>::default()` / `mry::new!(Type { … })`; mry re-audit **92 → 93 mocks** (the
+    `crate_bound_consumer` cross-crate mock now detected), 0 issues, planted cross-crate probes fire
+    DRIFT-003. **(2) Python class-attribute modeling** — class-level attributes become `property`
+    members and `patch.multiple` emits one stub per keyword, so DRIFT-001 checks patched members
+    against the class (planted `nonexistent_attr` fires); django 43 unchanged. **(3) Python
+    `Mock(return_value=…)` TAUT-002** — a bound `m = Mock(return_value=42)` captures a literal kwarg,
+    `m()` is a mock-config operand, and `m()` marks the mock reached; planted echo fires TAUT-002,
+    django 43 unchanged. Baselines: mockall 0 err / 3 TAUT-005 + 2 MOCK-002, faux 55 mocks / 1
+    MOCK-002, Chaos 0 err / 4 MOCK-001, Knossos 6 sentinels, requests/flask 0. Gate: **585 tests**
+    (579 → 585), typecheck/lint/format clean, self-audit CLEAN, coverage 91.95% stmts / 84.69%
+    branches / 96.37% funcs.
+43. ✅ mockers detection + mry trait-qualified reachability (row 76, IR schema 17): a fresh
+    `kriomant/mockers` clone (59 `.rs` files, workspace `mockers` + `mockers_derive`) audited as a
+    **vacuous 0-mock** — its `Scenario::create_mock_for::<dyn T>()` → `(mock, handle)` +
+    `scenario.expect(handle.m(…).and_return(…))` API was unmodeled. Added mockers detection
+    (`MockFramework`/`MockPattern` `'mockers'`, IR schema 17, server enum + rust fence + contract
+    scaffold + CLI help) and **tuple-pattern binding serialization** in the syn-wasm layer (new
+    `bindings` field on `let (mock, handle) = …`). `create_mock_for`/`create_named_mock_for`/
+    `create_mock` emit mocks (trait target, `Mock`/`MockStatic` suffix stripped cross-crate); the
+    fake/handle tuple binds the mock; `scenario.expect(handle.<m>(…).and_return(v))` attaches stubs +
+    literal returns; `mock.<m>(…)` and pass-by-value mark it reached. Mock-specific `clone` stubs
+    (`mock_clone!`/`derive(Clone)`) filtered via the trait-method set, multi-trait `mock!` untargeted.
+    mockers re-audit: **151 mocks (23 files), 0 issues**. The re-audit also surfaced a pre-existing
+    mry reachability gap (`async_fn_trait_variant` TAUT-005): `Cat::meow(&cat, 2)` (trait-qualified
+    invocation) now marks the mock reached — mry back to **0 issues**. Baselines unchanged: mockall
+    0 err / 3 TAUT-005 + 2 MOCK-002, mry 93 mocks / 0, faux 55 mocks / 1 MOCK-002, django 43,
+    requests/flask/drf 0, Chaos 0 err / 4 MOCK-001, Knossos 6 sentinels. Gate: **595 tests**
+    (585 → 595), typecheck/lint/format clean, self-audit CLEAN, coverage 91.98% stmts / 84.64%
+    branches / 96.46% funcs.
+44. ✅ mockiato detection + control-flow reachability (rows 77–78, IR schema 18): a fresh
+    `mockiato/mockiato` clone (103 `.rs` files, workspace `mockiato` + `mockiato-compiletest`)
+    audited as a **vacuous 0-mock** — its `#[mockable]` + `XMock::new()` (suffix `Mock`, not
+    mockall's `MockX` prefix) + `x.expect_<m>(…).returns(v)` API was unmodeled. Added mockiato
+    detection (`MockFramework`/`MockPattern` `'mockiato'`, IR schema 18, server enum + rust fence +
+    contract scaffold + CLI help): `XMock::new()`/`XMock::default()` emit mocks (strip `Mock` →
+    trait), `expect_<m>` attaches stubs (`_calls_in_order` stripped), `.returns`/`.returns_once`
+    record literal returns, `x.<m>(…)` marks reached. mockiato re-audit: **48 mocks (23 files),
+    1 MOCK-002** (the downcasting example genuinely mocks its own `ObjectBehavior` — INFO). The
+    re-audit also exposed a **general Rust reachability gap**: the syn-wasm serializer only descended
+    into block/unsafe bodies, so `for`/`while`/`loop`/`if`/`match` bodies were opaque — a mock
+    invoked inside a loop (`sequential_calls.rs`) false-flagged TAUT-005. Now those bodies serialize
+    as runtime `stmts` (then+else + arm bodies) and `?` is transparent. mockiato re-audit: **TAUT-005
+    gone → 0 warnings**; all other Rust baselines unchanged (mockall 0 err / 3 TAUT-005 + 2 MOCK-002,
+    mry 93 mocks / 0, faux 55 / 1 MOCK-002, mockers 151 / 0). Also verified: Python instance
+    attributes (`self.x = …` in `__init__`) are **already modeled** as `property` members (round 42
+    added `instanceAttributes`; the `patch.object` DRIFT-001 test exists) — no work needed; and
+    mockers' static-vs-instance mock distinction (`FooMockStatic` vs `FooMock`) has **no observable
+    effect** (both resolve to the trait; static-vs-instance misuse is a compile error in mockers) —
+    deferred. Gate: **600 tests** (595 → 600), typecheck/lint/format clean, self-audit CLEAN,
+    coverage 91.89% stmts / 84.71% branches / 96.48% funcs.
+45. ✅ mocktopus detection (row 79, IR schema 19): a fresh `CodeSandwich/Mocktopus` clone
+    (46 `.rs` files) audited as a **vacuous 0-mock** — its `#[mockable]` + `foo.mock_safe(…)` /
+    `foo.mock_raw(…)` API has no `Mock::new()` constructor (the call *is* the mock), so none of the
+    existing passes saw it. Added mocktopus detection (`MockFramework`/`MockPattern` `'mocktopus'`,
+    IR schema 19, server enum + rust fence + contract scaffold + CLI help): each
+    `foo.mock_safe/mock_raw` emits a mock with the receiver's function/method name as an
+    informational `unknown` target (bare, module-qualified, static, and instance forms). A mocked
+    function has no member-drift surface and its invocation is indirect, so stubs/returns are not
+    recorded. mocktopus re-audit: **270 mocks (34 files), 0 issues** — non-vacuous. Also verified the
+    mry `Mock<T>::new(…)` cross-crate disambiguation was **already done** in round 42 (the
+    `hasMryMockCalls` signal skips the mockall pass and `mryConstructorType` claims `::new`; the
+    test exists) — removed from the candidate list. Baselines unchanged: mockall 0 err / 3 TAUT-005
+    + 2 MOCK-002, mry 93 mocks / 0, faux 55 / 1 MOCK-002, mockers 151 / 0, mockiato 48 / 1 MOCK-002,
+    drf 41 mocks / 0. Gate: **603 tests** (600 → 603), typecheck/lint/format clean, self-audit CLEAN,
+    coverage 91.75% stmts / 84.76% branches / 96.51% funcs.
+46. ✅ mock_derive detection + Rust supertrait inheritance (row 80, IR schema 20): a fresh
+    `DavidDeSimone/mock_derive` clone (12 `.rs` files) was **detected but misattributed** — its
+    `#[mock] trait X` + `MockX::new()` API collides with mockall's `MockFoo::new()` prefix, so all 32
+    trait mocks read as `mockall`/`automock` and the 6 `#[mock] extern` function mocks were
+    **invisible**. Added mock_derive detection (`MockFramework`/`MockPattern` `'mock_derive'`, IR
+    schema 20, server enum + rust fence + contract scaffold + CLI help + `#[mock] extern` ForeignMod
+    serialization in the syn-wasm layer): `#[mock] trait X` (incl. `#[cfg_attr(…, mock)]`) +
+    `MockX::new()` emit a mock (target = the trait; the mockall pass skips `#[mock]`-declared
+    constructors), `method_<m>()` attaches the stub, `.set_result(<literal>)` records a literal
+    return (DRIFT-003), and `mock.<m>()` marks it reached; `#[mock] extern` blocks emit one
+    untargeted `Extern<Abi>Mocks` mock per foreign fn. mock_derive re-audit: **38 mocks (32 trait + 6
+    extern), 2 TAUT + 7 MOCK-002** — the 2 TAUT are the example's genuine `assert_eq!(1,1)`
+    self-comparison, and the 7 MOCK-002 are examples mocking their own same-file `#[mock]` trait
+    (consistent with mockall's synchronization.rs). Also closed a surfaced **DRIFT-001 supertrait
+    gap**: `trait Derived : Base` now populates `extendsIds` in the Rust symbol index (supertrait
+    serialization in the wasm layer), so a mock stubbing an *inherited* method no longer false-flags
+    "missing member" (mock_derive's `advanced_traits.rs` `add`). Baselines unchanged: mockall 0 err /
+    3 TAUT-005 + 2 MOCK-002, mry 93 mocks / 0, faux 55 / 1 MOCK-002, mockers 151 / 0, mockiato 48 / 1
+    MOCK-002, mocktopus 270 / 0, Chaos 0 err / 4 MOCK-001, Knossos 6 sentinels. Gate: **610 tests**
+    (603 → 610), typecheck/lint/format clean, self-audit CLEAN, coverage 91.49% stmts / 84.85%
+    branches / 96.54% funcs.
+47. ✅ mock_derive `return_result_of` + galvanic-mock detection (rows 80–81, IR schema 21): (1) the
+    mock_derive `return_result_of(|| …)` form (from round 46's remaining candidates) now records a
+    literal return for DRIFT-003 when the closure body is a single scalar literal (`return_result_of(|| 10)`);
+    a computed/block closure stays skipped (no comparable literal). (2) A fresh `mindblaze/galvanic-mock` clone
+    (20 test `.rs` files) was **invisible** — its `#[mockable]`/`#[use_mocks]` + `new_mock!(Trait)` +
+    `given!`/`expect_interactions!` + `mock.method(…)` API has no `Mock::new()` constructor or
+    `mock_*`/`expect_*` config method, so it audited as a vacuous 0-mock. Added galvanic detection
+    (`MockFramework`/`MockPattern` `'galvanic'`, IR schema 21, server enum + rust fence + contract
+    scaffold + CLI help): `let mock = new_mock!(Trait)` emits one mock with the trait as the target
+    (generics, `for MyMock` explicit name, `::path` referred trait, and trailing mock `#[allow]`
+    attributes all normalized), `given!`/`expect_interactions!` record the `<mock as Trait>::method`
+    stub names for DRIFT-001, and `mock.method(…)` marks the mock reached. Return values are
+    deliberately not recorded (closure/matcher `then_return*` values in the opaque macro DSL).
+    galvanic re-audit: **45 mocks (20 files), 0 issues**; a planted `nonexistent_method` stub fires
+    DRIFT-001. Baselines unchanged: mockall 0 err / 3 TAUT-005 + 2 MOCK-002, mry 93 / 0, faux 55 / 1
+    MOCK-002, mockers 151 / 0, mockiato 48 / 1 MOCK-002, mocktopus 270 / 0, mock_derive 38 mocks / 2
+    TAUT + 7 MOCK-002, Chaos 0 err / 4 MOCK-001, Knossos 6 sentinels. Gate: **617 tests** (610 →
+    617), typecheck/lint/format clean, self-audit CLEAN, coverage 91.62% stmts / 85.21% branches /
+    96.57% funcs.

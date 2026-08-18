@@ -572,7 +572,7 @@ describe('Momus MCP server (Rust language selection)', () => {
     expect(text).toContain('mock!');
     expect(text).toContain('expect_find');
     const sc = res.structuredContent as { result: { summary: { members: number } } };
-    expect(sc.result.summary.members).toBe(2);
+    expect(sc.result.summary.members).toBe(3); // find, save, record
   });
 
   it('synthesizes a mockito scaffold from a Rust trait', async () => {
@@ -584,5 +584,21 @@ describe('Momus MCP server (Rust language selection)', () => {
     const text = res.content[0]!.text;
     expect(text).toContain('```rust');
     expect(text).toContain('mockito::Server');
+  });
+
+  it('synthesizes type-derived return examples for rich Rust signatures', async () => {
+    const res = await client.callTool({
+      name: 'synthesize_mock_contract',
+      arguments: { targetPath: 'types.rs', symbolName: 'Widget', framework: 'mockall' },
+    });
+    expect(res.isError).toBeFalsy();
+    const text = res.content[0]!.text;
+    expect(text).toContain('String::from("")');
+    expect(text).toContain('None');
+    expect(text).toContain('Ok(vec![])');
+    expect(text).toContain('false');
+    expect(text).toContain("'a'");
+    expect(text).toContain('(0, false)');
+    expect(text).toContain('panic!()'); // never-returning fn keeps an honest placeholder
   });
 });

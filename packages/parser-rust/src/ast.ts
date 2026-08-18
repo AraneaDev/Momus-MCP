@@ -55,6 +55,9 @@ export interface RustExpr {
   literal?: RustLiteral;
   /** Set on the initializer of a `let NAME = <expr>;` so mocks can be tied to their variable. */
   binding?: string;
+  /** Tuple destructuring: `let (mock, handle) = <expr>;` — ordered ident names, so mocks can
+   *  bind their fake (first) and config handle (second) variables. */
+  bindings?: string[];
   span: RustSpan;
 }
 
@@ -99,6 +102,8 @@ export interface RustTrait {
   kind: 'trait';
   name: string;
   attrs: RustAttr[];
+  /** Supertrait bound names (`trait Derived : Base` -> [`Base`]); last path segment only. */
+  supertraits: string[];
   items: RustTraitItem[];
   span: RustSpan;
 }
@@ -143,8 +148,26 @@ export interface RustMacroCall {
   span: RustSpan;
 }
 
+/** `extern "C" { … }` block (mock_derive's `#[mock]` extern form). */
+export interface RustExtern {
+  kind: 'extern';
+  name: string; // ABI name ("C", "Rust", …) — "" for a bare `extern { … }`
+  attrs: RustAttr[];
+  items: RustTraitItem[]; // foreign fn names
+  span: RustSpan;
+}
+
 export type RustItem =
-  RustFn | RustStruct | RustEnum | RustTrait | RustImpl | RustTypeAlias | RustMod | RustUse | RustMacroCall;
+  | RustFn
+  | RustStruct
+  | RustEnum
+  | RustTrait
+  | RustImpl
+  | RustTypeAlias
+  | RustMod
+  | RustUse
+  | RustMacroCall
+  | RustExtern;
 
 export interface RustFile {
   items: RustItem[];

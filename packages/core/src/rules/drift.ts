@@ -124,6 +124,12 @@ export class Drift001MissingMember extends DriftRule {
     for (const m of module.mocks) {
       if (!diffRelevant(ctx, m)) continue;
       if (!m.target?.symbolId) continue;
+      // Conservative: when the target extends a base we can't resolve (external/third-party), a
+      // "missing" member may be inherited from that base — skip rather than false-flag (django:
+      // `_pre_setup`/`_post_teardown` inherited from `unittest.TestCase` via an unindexed
+      // `django.test.SimpleTestCase`).
+      const targetSym = index.getSymbol(m.target.symbolId);
+      if (targetSym?.extendsIds.some((id) => !index.getSymbol(id))) continue;
       const members = index.membersOf(m.target.symbolId);
       const memberNames = new Set(members.map((s) => s.name));
       for (const stub of m.stubbedMembers) {
@@ -450,23 +456,29 @@ function pyReturnAssignable(value: TypeIR, production: TypeIR): boolean {
 }
 
 /** Directional check for Rust: configured value -> production return type (spec §6). */
-function rustReturnAssignable(value: TypeIR, production: TypeIR, _index: SymbolIndex, _fromModule: string): boolean {
+function rustReturnAssignable(value: TypeIR, production: TypeIR, index: SymbolIndex, fromModule: string): boolean {
   if (production.kind === 'unknown' || value.kind === 'unknown') return true; // escape hatch
   if (production.kind === 'union')
-    return production.members.some((m) => rustReturnAssignable(value, m, _index, _fromModule));
-  if (value.kind === 'union')
-    return value.members.every((m) => rustReturnAssignable(m, production, _index, _fromModule));
+    return production.members.some((m) => rustReturnAssignable(value, m, index, fromModule));
+  if (value.kind === 'union') return value.members.every((m) => rustReturnAssignable(m, production, index, fromModule));
   if (production.kind === 'void' || production.kind === 'never')
     return value.kind === 'void' || value.kind === 'never' || value.kind === 'null';
   if (production.kind === 'tuple') {
     return (
       value.kind === 'tuple' &&
       production.elements.length === value.elements.length &&
-      production.elements.every((e, i) => rustReturnAssignable(value.elements[i]!, e, _index, _fromModule))
+      production.elements.every((e, i) => rustReturnAssignable(value.elements[i]!, e, index, fromModule))
     );
   }
   if (production.kind === 'named') {
     const name = production.name;
+    // References (`&u32`, `&mut [u8]`) accept an owned literal — mockall's `return_const(5)` on
+    // `fn foo(&self) -> &u32` wraps the value internally — or a named matching the referent.
+    if (name.startsWith('&')) {
+      if (value.kind === 'literal') return true;
+      const inner = name.replace(/^&(?: mut)?\s*/, '');
+      return value.kind === 'named' && value.name === inner;
+    }
     if (name === 'str' || name === 'String') {
       return value.kind === 'literal'
         ? typeof value.value === 'string'
@@ -494,23 +506,36 @@ function rustReturnAssignable(value: TypeIR, production: TypeIR, _index: SymbolI
         : value.kind === 'named' && value.name === 'bool';
     }
     if (name === 'Option' && production.typeArgs.length === 1) {
-      return value.kind === 'null' || rustReturnAssignable(value, production.typeArgs[0]!, _index, _fromModule);
+      return value.kind === 'null' || rustReturnAssignable(value, production.typeArgs[0]!, index, fromModule);
     }
     if (name === 'Result' && production.typeArgs.length === 2) {
-      return rustReturnAssignable(value, production.typeArgs[0]!, _index, _fromModule);
+      return rustReturnAssignable(value, production.typeArgs[0]!, index, fromModule);
     }
     if (name === 'Vec' && production.typeArgs.length === 1) {
       return (
         value.kind === 'array' &&
-        (!value.element || rustReturnAssignable(value.element, production.typeArgs[0]!, _index, _fromModule))
+        (!value.element || rustReturnAssignable(value.element, production.typeArgs[0]!, index, fromModule))
       );
     }
     if (production.typeArgs.length > 0 && value.kind === 'named' && value.name === name) {
       return production.typeArgs.every((arg, i) =>
-        rustReturnAssignable(value.typeArgs[i] ?? { kind: 'unknown' }, arg, _index, _fromModule),
+        rustReturnAssignable(value.typeArgs[i] ?? { kind: 'unknown' }, arg, index, fromModule),
       );
     }
     if (value.kind === 'named' && value.name === name) return true;
+    // Unprovable names — generic params (`V`), qself projections (`<T as Foo>::Output`),
+    // `impl Trait`, `Self`, cross-crate types — resolve to no production symbol (mockall's
+    // own automock tests exercise both generic shapes). PHP's class path uses the same
+    // conservative pass (unresolvable side → pass). Resolvable names stay strict: a scalar
+    // literal cannot construct a struct, and distinct resolved symbols cannot be the same.
+    const prodSym = index.resolveByName(name, fromModule);
+    if (!prodSym) return true;
+    if (value.kind === 'literal' || value.kind === 'array') return false;
+    if (value.kind === 'named') {
+      const valueSym = index.resolveByName(value.name, fromModule);
+      if (!valueSym) return true; // unresolvable value side → conservative pass
+      return prodSym.id === valueSym.id;
+    }
     return false;
   }
   // `null` (Option::None) against a non-Option production type only matches null itself.

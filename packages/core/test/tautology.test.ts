@@ -464,6 +464,34 @@ describe('TAUT-005 zero-reach-stub edges', () => {
     });
     expect(runRules(rulesOf('TAUT-005'), ctx(m))).toHaveLength(1);
   });
+
+  it('stays quiet for a configured patch-object mock (invocation is indirect through the SUT)', () => {
+    for (const pattern of ['patch', 'patch-object', 'patch-multiple'] as const) {
+      const m = testModule({
+        mocks: [
+          mock({
+            id: `p-${pattern}`,
+            pattern,
+            configuredValues: [{ span: sp(FILE, 5), api: 'return_value', once: false, assignable: 'unknown' }],
+          }),
+        ],
+      });
+      expect(runRules(rulesOf('TAUT-005'), ctx(m)), `pattern ${pattern}`).toHaveLength(0);
+    }
+  });
+
+  it('still flags a configured non-patch mock with no invocation or assertion', () => {
+    const m = testModule({
+      mocks: [
+        mock({
+          id: 'm1',
+          pattern: 'autospec',
+          configuredValues: [{ span: sp(FILE, 5), api: 'return_value', once: false, assignable: 'unknown' }],
+        }),
+      ],
+    });
+    expect(runRules(rulesOf('TAUT-005'), ctx(m))).toHaveLength(1);
+  });
 });
 
 describe('TAUT-006 unconfigured-spy-assert edges', () => {
@@ -486,6 +514,39 @@ describe('TAUT-006 unconfigured-spy-assert edges', () => {
   it('does not crash for an assertion with no operands', () => {
     const m = testModule({ assertions: [assertion({ api: 'toHaveBeenCalled', operands: [] })] });
     expect(runRules(rulesOf('TAUT-006'), ctx(m))).toHaveLength(0);
+  });
+
+  it('stays quiet for an unreached Python spy when the enclosing test exercises production', () => {
+    const m = testModule({
+      language: 'python',
+      framework: 'unittest',
+      functions: [{ id: 'f1', span: sp(FILE, 1), hasProductionCalls: true, productionCallCount: 1, assertionCount: 1 }],
+      mocks: [mock({ id: 's1', pattern: 'autospec', framework: 'unittest' })],
+      assertions: [assertion({ fnId: 'f1', api: 'assert_called', operands: [expr({ mockRefs: ['s1'] })] })],
+    });
+    expect(runRules(rulesOf('TAUT-006'), ctx(m))).toHaveLength(0);
+  });
+
+  it('still flags an unreached Python spy when the test has no production calls', () => {
+    const m = testModule({
+      language: 'python',
+      framework: 'unittest',
+      functions: [
+        { id: 'f1', span: sp(FILE, 1), hasProductionCalls: false, productionCallCount: 0, assertionCount: 1 },
+      ],
+      mocks: [mock({ id: 's1', pattern: 'autospec', framework: 'unittest' })],
+      assertions: [assertion({ fnId: 'f1', api: 'assert_called', operands: [expr({ mockRefs: ['s1'] })] })],
+    });
+    expect(runRules(rulesOf('TAUT-006'), ctx(m))).toHaveLength(1);
+  });
+
+  it('still flags an unreached TypeScript spy even when the test exercises production (strict reachability)', () => {
+    const m = testModule({
+      functions: [{ id: 'f1', span: sp(FILE, 1), hasProductionCalls: true, productionCallCount: 1, assertionCount: 1 }],
+      mocks: [mock({ id: 's1', pattern: 'vi.spyOn' })],
+      assertions: [assertion({ fnId: 'f1', api: 'toHaveBeenCalled', operands: [expr({ mockRefs: ['s1'] })] })],
+    });
+    expect(runRules(rulesOf('TAUT-006'), ctx(m))).toHaveLength(1);
   });
 
   it('stays quiet when the asserted mockRef does not exist (no crash)', () => {

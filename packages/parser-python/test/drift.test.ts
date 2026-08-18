@@ -34,6 +34,23 @@ describe('python drift rules', () => {
     expect(result.issues.some((i) => i.rule === 'DRIFT-005')).toBe(true);
   });
 
+  it('DRIFT-005 accepts module-level import bindings as real attributes', () => {
+    // requests dogfood (docs/11 row 32): `import idna` and `from compat import proxy_bypass`
+    // make `prod_imports.idna` / `prod_imports.proxy_bypass` real attributes — patching them
+    // must not fire; the dotted `import os.path` binds `os`; `as` aliases bind the alias.
+    const result = engine().run();
+    const d5 = result.issues.filter((i) => i.rule === 'DRIFT-005');
+    for (const ok of ['idna', 'proxy_bypass', 'osp', 'os']) {
+      expect(d5.some((i) => i.message.includes(`prod_imports.${ok}`))).toBe(false);
+    }
+  });
+
+  it('DRIFT-005 still fires for a function-local import (not a module attribute)', () => {
+    const result = engine().run();
+    const d5 = result.issues.filter((i) => i.rule === 'DRIFT-005');
+    expect(d5.some((i) => i.message.includes('prod_imports.timedelta'))).toBe(true);
+  });
+
   it('DRIFT-005 resolves src-layout packages (`src/pkg/mod.py`) and fires on a missing attr', () => {
     const fix = join(import.meta.dirname, 'fixtures', 'src-layout');
     const result = new AuditEngine({
