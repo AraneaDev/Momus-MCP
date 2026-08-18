@@ -2,6 +2,8 @@
  * Momus-MCP server (spec docs/04). Subpath imports per F2; no stdout writes (F8);
  * annotations + structuredContent per §4.1.
  */
+import { existsSync, readFileSync } from 'node:fs';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { randomUUID } from 'node:crypto';
@@ -25,6 +27,10 @@ import {
   type AuditResult,
   type TypeIR,
   type ParseCache,
+  type ModuleIR,
+  type MockIR,
+  type SymbolIR,
+  type AssertionIR,
 } from '@momus/core';
 import {
   TypeScriptParser,
@@ -48,6 +54,149 @@ export interface MomusServerOptions {
 }
 
 const ANN = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+
+/**
+ * Absolute path for a workspace-relative input, or undefined when it escapes the root.
+ * The check is on the resolved path, so `../` and absolute inputs are both caught.
+ */
+export function resolveInWorkspace(root: string, path: string): string | undefined {
+  const rootAbs = resolve(root);
+  const abs = isAbsolute(path) ? resolve(path) : resolve(rootAbs, path);
+  const rel = relative(rootAbs, abs);
+  if (rel.startsWith('..') || isAbsolute(rel)) return undefined;
+  return abs;
+}
+
+/** Tool execution error in the docs/04 §4.3 envelope shape. */
+function errorResult(tool: string, code: string, message: string, hint: string) {
+  return {
+    content: [{ type: 'text' as const, text: `## Error\n\`${tool}\`: ${message}` }],
+    structuredContent: { schemaVersion: 1, tool, error: { code, message, hint } },
+    isError: true,
+  };
+}
+
+/**
+ * Per-rule cause sentences. A fixed map, not free text: the explanation an agent acts on has
+ * to be the same every run for the same rule, and composing prose per finding would make the
+ * output non-deterministic (docs/02 §2.4.3) and unreviewable.
+ */
+const CAUSE_BY_RULE: Record<string, string> = {
+  'TAUT-001':
+    'Both sides of the comparison are the same expression, so the assertion holds no matter what the code does.',
+  'TAUT-002':
+    'The asserted value is the one the mock was stubbed to return, so the assertion re-states the stub instead of checking the subject.',
+  'TAUT-003': 'Both operands are compile-time constants, so the comparison is decided before the code under test runs.',
+  'TAUT-004':
+    'Every operand is mock-derived and the enclosing test calls no production code, so nothing the subject does can change the result.',
+  'TAUT-005':
+    'The mock is configured but nothing invokes it and no assertion references it, so the stub is decorative.',
+  'TAUT-006':
+    'The spy has no stub, no recorded invocation, and the enclosing test runs no production code, so nothing could have called it.',
+  'DRIFT-000': 'The mock target could not be resolved to a production symbol, so its contract cannot be checked.',
+  'DRIFT-001':
+    'The stubbed member does not exist on the production type: the double promises an API the real dependency no longer has.',
+  'DRIFT-002':
+    'The double\u2019s signature does not match production: a call valid against the mock would not type-check against the real dependency.',
+  'DRIFT-003':
+    'The configured return value is not assignable to the production return type, so the test feeds the subject a shape it can never receive.',
+  'DRIFT-004': 'The double\u2019s constructor no longer matches the production constructor.',
+  'DRIFT-005': 'The mocked module does not export the name being stubbed.',
+  'DRIFT-006': 'A production change since the base ref touched this mock\u2019s target, so the double may be stale.',
+  'MOCK-001':
+    'Nearly every dependency is mocked and almost no assertion operand comes from production, so the test largely exercises its own doubles.',
+  'MOCK-002':
+    'The test mocks the module it is also exercising as the subject, so the thing under test is partly replaced by a stub.',
+};
+
+const irSpan = (s: { startLine: number; startCol: number; endLine: number; endCol: number }) => ({
+  line: s.startLine,
+  column: s.startCol,
+  endLine: s.endLine,
+  endColumn: s.endCol,
+});
+
+/** IR projections: stable, span-flattened shapes so agents never re-read the file to locate a node. */
+function irMock(m: MockIR) {
+  return {
+    id: m.id,
+    pattern: m.pattern,
+    framework: m.framework,
+    ...irSpan(m.span),
+    target: m.target,
+    stubbedMembers: m.stubbedMembers.map((s) => ({ name: s.name, api: s.api, returnValues: s.returnValues.length })),
+    configuredValues: m.configuredValues.length,
+    invocationSites: m.invocationSites.map((s) => s.startLine),
+  };
+}
+
+function irSymbol(s: SymbolIR, exports: readonly string[]) {
+  return {
+    id: s.id,
+    name: s.name,
+    kind: s.kind,
+    ...irSpan(s.span),
+    // SymbolIR carries no export flag; the module's `exports` list is the source of truth,
+    // and it is what DRIFT-005 checks a mocked name against.
+    exported: exports.includes(s.name),
+    members: s.members.length,
+    ...(s.visibility ? { visibility: s.visibility } : {}),
+  };
+}
+
+function irAssertion(a: AssertionIR) {
+  return {
+    id: a.id,
+    api: a.api,
+    ...irSpan(a.span),
+    fnId: a.fnId,
+    operands: a.operands.map((o) => ({ text: o.text, provenance: o.provenance, mockRefs: o.mockRefs })),
+  };
+}
+
+/** Compact human/LLM view; the structured content carries the full slice. */
+function renderIrReport(rel: string, module: ModuleIR, kind: string): string {
+  const lines = [
+    `# Momus IR — ${rel}`,
+    `${module.language} · ${module.kind} · framework: ${module.framework ?? 'none'} · slice: ${kind}`,
+    '',
+  ];
+  if (kind === 'all' || kind === 'mocks') {
+    lines.push(`## Mocks (${module.mocks.length})`);
+    for (const m of module.mocks) {
+      const reached =
+        m.invocationSites.length > 0
+          ? `reached@${m.invocationSites.map((s) => s.startLine).join(',')}`
+          : 'never reached';
+      const target = m.target?.memberName ?? m.target?.exportName ?? m.target?.modulePath ?? 'unresolved';
+      lines.push(
+        `- \`${rel}:${m.span.startLine}\` ${m.pattern} → ${target} · ${m.configuredValues.length} configured · ${reached}`,
+      );
+    }
+    lines.push('');
+  }
+  if (kind === 'all' || kind === 'symbols') {
+    lines.push(`## Symbols (${module.symbols.length})`);
+    for (const s of module.symbols) {
+      lines.push(
+        `- \`${rel}:${s.span.startLine}\` ${s.kind} ${s.name}${module.exports.includes(s.name) ? ' (exported)' : ''}`,
+      );
+    }
+    lines.push('');
+  }
+  if (kind === 'all' || kind === 'assertions') {
+    lines.push(`## Assertions (${module.assertions.length})`);
+    for (const a of module.assertions) {
+      lines.push(`- \`${rel}:${a.span.startLine}\` ${a.api}(${a.operands.map((o) => o.provenance).join(', ')})`);
+    }
+    lines.push('');
+  }
+  if (module.diagnostics.length > 0) {
+    lines.push(`## Parse diagnostics (${module.diagnostics.length})`);
+    for (const d of module.diagnostics) lines.push(`- ${d.severity}: ${d.message}`);
+  }
+  return lines.join('\n').trimEnd();
+}
 
 // Server version tracks the released package version (release-please bumps all
 // @momus/* package.jsons in lockstep; package.json always ships with src/).
@@ -232,6 +381,136 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
           tool: 'synthesize_mock_contract',
           result: { summary: result.summary, template: result.template, contract: result.contract, notes: [] },
         },
+      };
+    },
+  );
+
+  server.tool(
+    'explain_issue',
+    'Resolves one finding to its root cause: the rule that fired, the source span, and a per-rule cause sentence. Address it by path + rule (+ line when a rule fires more than once). Read-only.',
+    {
+      path: z.string().describe('Test file path, workspace-relative'),
+      rule: z.string().describe('Rule id from a prior audit, e.g. TAUT-002'),
+      line: z.number().int().min(1).optional().describe('Disambiguates a rule that fired more than once'),
+    },
+    { ...ANN, title: 'Explain Issue' },
+    async ({ path, rule, line }) => {
+      const abs = resolveInWorkspace(root, path);
+      if (!abs) {
+        return errorResult(
+          'explain_issue',
+          'NOT_FOUND',
+          `path escapes the workspace root: ${path}`,
+          'Pass a workspace-relative path inside the audited root.',
+        );
+      }
+      if (!existsSync(abs)) {
+        return errorResult('explain_issue', 'NOT_FOUND', `no such file: ${path}`, 'Pass a path that exists.');
+      }
+      // The engine's path filter matches workspace-relative paths (audit.ts pathFilter),
+      // so an absolute path here silently selects nothing.
+      const rel = relative(root, abs).replace(/\\/g, '/');
+      const audit = new AuditEngine({ root, parser, config, cache, paths: [rel], maxIssues: 500 }).run();
+      const matches = audit.issues.filter((i) => i.rule === rule && (line === undefined || i.span.startLine === line));
+      const issue = matches[0];
+      if (!issue) {
+        // Name what the file actually reports: without it an agent guesses rule ids one
+        // call at a time, which is the round-tripping this tool exists to remove.
+        const seen = [...new Set(audit.issues.map((i) => `${i.rule}@${i.span.startLine}`))].join(', ');
+        return errorResult(
+          'explain_issue',
+          'NOT_FOUND',
+          `no ${rule} finding${line === undefined ? '' : ` at line ${line}`} in ${path}`,
+          seen ? `This file reports: ${seen}.` : 'This file reports no findings.',
+        );
+      }
+      const source = readFileSync(abs, 'utf8').split(/\r?\n/);
+      const from = Math.max(1, issue.span.startLine - 1);
+      const to = Math.min(source.length, issue.span.endLine + 1);
+      const snippet = [];
+      for (let n = from; n <= to; n++) snippet.push({ line: n, text: source[n - 1] ?? '' });
+      const result = {
+        path: rel,
+        rule: issue.rule,
+        severity: issue.severity,
+        message: issue.message,
+        cause: CAUSE_BY_RULE[issue.rule] ?? 'This rule fired; see the message for the specific condition.',
+        line: issue.span.startLine,
+        column: issue.span.startCol,
+        snippet,
+        ...(issue.evidence ? { evidence: issue.evidence } : {}),
+        ...(issue.fix ? { fix: { description: issue.fix.description, code: issue.fix.code } } : {}),
+        otherMatches: matches.length - 1,
+      };
+      const text = [
+        `# ${issue.rule} — ${result.path}:${result.line}`,
+        `${issue.severity} · ${issue.message}`,
+        '',
+        '## Why',
+        result.cause,
+        '',
+        '## Source',
+        '```',
+        ...snippet.map((l) => `${String(l.line).padStart(4)} | ${l.text}`),
+        '```',
+        ...(issue.fix ? ['', `## Fix`, issue.fix.description] : []),
+      ].join('\n');
+      return {
+        content: [{ type: 'text' as const, text }],
+        structuredContent: { schemaVersion: 1, tool: 'explain_issue', result },
+      };
+    },
+  );
+
+  server.tool(
+    'get_ir',
+    'Returns the parser IR for one file (mocks, symbols, assertions) — the same shapes the rules consume. The "why did this fire / why did it not" debug surface. Read-only.',
+    {
+      path: z.string().describe('File path, workspace-relative'),
+      kind: z.enum(['mocks', 'symbols', 'assertions', 'all']).default('all').describe('IR slice to return'),
+    },
+    { ...ANN, title: 'Get IR' },
+    async ({ path, kind }) => {
+      const abs = resolveInWorkspace(root, path);
+      if (!abs) {
+        return errorResult(
+          'get_ir',
+          'NOT_FOUND',
+          `path escapes the workspace root: ${path}`,
+          'Pass a workspace-relative path inside the audited root.',
+        );
+      }
+      if (!existsSync(abs)) {
+        return errorResult('get_ir', 'NOT_FOUND', `no such file: ${path}`, 'Pass a path that exists in the workspace.');
+      }
+      const source = readFileSync(abs, 'utf8');
+      if (!parser.canParse(abs, source)) {
+        return errorResult(
+          'get_ir',
+          'PARSE_ERROR',
+          `no parser claims ${path}`,
+          'Check which languages are enabled in .momusrc.',
+        );
+      }
+      const module: ModuleIR = parser.parseModule(abs, source, {
+        config,
+        resolveImport: (spec) => parser.resolveImport(spec, abs),
+      });
+      const rel = relative(root, abs).replace(/\\/g, '/');
+      const result: Record<string, unknown> = {
+        path: rel,
+        language: module.language,
+        kind: module.kind,
+        framework: module.framework,
+        diagnostics: module.diagnostics,
+      };
+      if (kind === 'all' || kind === 'mocks') result.mocks = module.mocks.map(irMock);
+      if (kind === 'all' || kind === 'symbols')
+        result.symbols = module.symbols.map((sym) => irSymbol(sym, module.exports));
+      if (kind === 'all' || kind === 'assertions') result.assertions = module.assertions.map(irAssertion);
+      return {
+        content: [{ type: 'text' as const, text: renderIrReport(rel, module, kind) }],
+        structuredContent: { schemaVersion: 1, tool: 'get_ir', result },
       };
     },
   );
@@ -433,8 +712,7 @@ function readRequestBody(req: IncomingMessage): Promise<string> {
 }
 
 // ---------------------------------------------------------------- synth contract
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+// fs/path bindings come from the single import block at the top of this file.
 import * as ts from 'typescript';
 
 /** Type text for a parameter, inferring from its default initializer when unannotated. */

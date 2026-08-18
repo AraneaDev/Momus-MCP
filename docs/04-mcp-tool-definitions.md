@@ -129,6 +129,39 @@ bumps it in lockstep with the other `@momus/*` packages).
       "annotations": { "title": "Synthesize Mock Contract", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
     },
     {
+      "name": "explain_issue",
+      "title": "Explain Issue",
+      "description": "Resolves one finding to its root cause: the rule that fired, the source span, and a per-rule cause sentence. Address it by path + rule (+ line when a rule fires more than once). Read-only.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Test file path, workspace-relative." },
+          "rule": { "type": "string", "description": "Rule id from a prior audit, e.g. 'TAUT-002'." },
+          "line": { "type": "integer", "minimum": 1, "description": "Disambiguates a rule that fired more than once in the file." }
+        },
+        "required": ["path", "rule"],
+        "additionalProperties": false
+      },
+      "annotations": { "title": "Explain Issue", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+    },
+    {
+      "name": "get_ir",
+      "title": "Get IR",
+      "description": "Returns the parser IR for one file (mocks, symbols, assertions) \u2014 the same shapes the rules consume. The \"why did this fire / why did it not\" debug surface. Read-only.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "File path, workspace-relative." },
+          "kind": { "type": "string", "enum": ["mocks", "symbols", "assertions", "all"], "default": "all", "description": "IR slice to return." }
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "annotations": { "title": "Get IR", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+    },
+    {
       "name": "list_rules",
       "title": "List Rules",
       "description": "Returns the rule catalog with default severities, per-workspace overrides, and suppression syntax. Call this first to learn what Momus checks in this workspace and what is disabled.",
@@ -139,6 +172,16 @@ bumps it in lockstep with the other `@momus/*` packages).
   ]
 }
 ```
+
+**Addressing a finding (`explain_issue`).** Issues are addressed by `{path, rule, line?}`, not
+by an opaque id: `Issue.id` exists in the engine but `buildJsonEnvelope` does not project it,
+so no MCP result ever carries one. The tuple is also no less stable — the id embeds line and
+column anyway. `line` is required in practice only when the same rule fires more than once in
+a file; without it the first match wins and `otherMatches` reports how many were skipped.
+
+**Payload budget.** `docs/02` §2.7 caps the serialized `tools/list` at **< 12 KB total and
+< 1 KB per tool** (raised from a flat 4 KB, which the five original tools already filled to
+99.6%). Both halves are asserted in `test/integration/mcp.test.ts`.
 
 > `#/$defs/*` referenced above are defined in `05-output-format.md` §5.4.1 (JSON envelope schema).
 > The MCP client sees only `inputSchema` (inline); `outputSchema`/`$defs` are inlined by the

@@ -51,11 +51,13 @@ describe('Momus MCP server (in-memory transport)', () => {
     expect(init.version).toBe(pkg.version);
   });
 
-  it('advertises exactly the five tools with annotations', async () => {
+  it('advertises exactly the published tools with annotations', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       'audit_test_fidelity',
       'detect_tautological_assertions',
+      'explain_issue',
+      'get_ir',
       'list_rules',
       'synthesize_mock_contract',
       'verify_mock_drift',
@@ -64,10 +66,17 @@ describe('Momus MCP server (in-memory transport)', () => {
     expect(audit.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
     expect(audit.inputSchema.properties?.filePath).toBeDefined();
 
-    // Perf budget §2.7: serialized tools/list must fit one prompt context page (< 4 KB).
+    // Perf budget docs/02 §2.7: the whole surface stays small, and no single tool bloats.
     // The SDK's ListToolsResult shape is { tools: [...] }, so serialize the tool array.
     const payload = JSON.stringify({ tools });
-    expect(Buffer.byteLength(payload, 'utf8')).toBeLessThan(4096);
+    expect(Buffer.byteLength(payload, 'utf8')).toBeLessThan(12288);
+    // The per-tool cap is the one that does the real work: it is what the original 4 KB
+    // total was protecting, and unlike the total it does not need revisiting per tool added.
+    for (const tool of tools) {
+      expect
+        .soft(Buffer.byteLength(JSON.stringify(tool), 'utf8'), `${tool.name} exceeds the per-tool budget`)
+        .toBeLessThan(1024);
+    }
   });
 
   it('audit_test_fidelity returns findings in markdown + structuredContent', async () => {
@@ -82,6 +91,106 @@ describe('Momus MCP server (in-memory transport)', () => {
     // markdown text present and token-budgeted
     const text = res.content[0]!.text;
     expect(text).toContain('TAUT-002');
+  });
+
+  it('get_ir returns the parsed mocks for a test file', async () => {
+    const res = await client.callTool({
+      name: 'get_ir',
+      arguments: { path: 'tests/ledger.test.ts', kind: 'mocks' },
+    });
+    expect(res.isError).toBeFalsy();
+    const sc = res.structuredContent as {
+      result: { path: string; mocks: Array<{ pattern: string; line: number }> };
+    };
+    expect(sc.result.path).toBe('tests/ledger.test.ts');
+    // service.totalForX (planted DRIFT-001), service.totalFor (healthy), stub.totalFor (TAUT-006)
+    expect(sc.result.mocks.filter((m) => m.pattern === 'vi.spyOn').map((m) => m.line)).toEqual([16, 25, 38]);
+  });
+
+  it('get_ir refuses a path that escapes the workspace root', async () => {
+    const res = await client.callTool({
+      name: 'get_ir',
+      arguments: { path: '../../../../etc/passwd' },
+    });
+    expect(res.isError).toBe(true);
+    const sc = res.structuredContent as { error: { code: string; message: string } };
+    expect(sc.error.code).toBe('NOT_FOUND');
+    expect(sc.error.message).toContain('escapes the workspace root');
+  });
+
+  it('get_ir reports a missing file as a typed error, not a crash', async () => {
+    const res = await client.callTool({ name: 'get_ir', arguments: { path: 'tests/nope.test.ts' } });
+    expect(res.isError).toBe(true);
+    const sc = res.structuredContent as { error: { code: string; message: string } };
+    expect(sc.error.code).toBe('NOT_FOUND');
+    expect(sc.error.message).toContain('no such file');
+  });
+
+  it('get_ir reports a file no parser claims as a typed error', async () => {
+    // tsconfig.json sits in the fixture root and no LanguageParser claims .json.
+    const res = await client.callTool({ name: 'get_ir', arguments: { path: 'tsconfig.json' } });
+    expect(res.isError).toBe(true);
+    const sc = res.structuredContent as { error: { code: string; message: string } };
+    expect(sc.error.code).toBe('PARSE_ERROR');
+    expect(sc.error.message).toContain('no parser claims');
+  });
+
+  it('get_ir exposes assertion operand provenance, which is what explains a TAUT finding', async () => {
+    const res = await client.callTool({
+      name: 'get_ir',
+      arguments: { path: 'tests/ledger.test.ts', kind: 'assertions' },
+    });
+    const sc = res.structuredContent as {
+      result: {
+        assertions: Array<{ line: number; api: string; operands: Array<{ provenance: string }> }>;
+        mocks?: unknown;
+        symbols?: unknown;
+      };
+    };
+    // The planted TAUT-002 on line 11 is a mock-config operand echoed against a literal.
+    const echo = sc.result.assertions.find((a) => a.line === 11)!;
+    expect(echo.api).toBe('toBe');
+    expect(echo.operands.map((o) => o.provenance)).toEqual(['mock-config', 'literal']);
+    // A filtered slice carries only what was asked for.
+    expect(sc.result.mocks).toBeUndefined();
+    expect(sc.result.symbols).toBeUndefined();
+  });
+
+  it('explain_issue resolves a finding to its rule, source snippet and cause', async () => {
+    const res = await client.callTool({
+      name: 'explain_issue',
+      arguments: { path: 'tests/ledger.test.ts', rule: 'TAUT-002', line: 11 },
+    });
+    expect(res.isError).toBeFalsy();
+    const sc = res.structuredContent as {
+      result: {
+        rule: string;
+        severity: string;
+        message: string;
+        cause: string;
+        snippet: Array<{ line: number; text: string }>;
+      };
+    };
+    expect(sc.result.rule).toBe('TAUT-002');
+    expect(sc.result.severity).toBe('error');
+    // span +/- 1 line around the assertion
+    expect(sc.result.snippet.map((l) => l.line)).toEqual([10, 11, 12]);
+    expect(sc.result.snippet.find((l) => l.line === 11)!.text).toContain('expect(mocked.getTotal()).toBe(42)');
+    // a per-rule explainer sentence, not free text
+    expect(sc.result.cause).toContain('stubbed');
+  });
+
+  it('explain_issue names the findings the file does have when the requested one is absent', async () => {
+    const res = await client.callTool({
+      name: 'explain_issue',
+      arguments: { path: 'tests/ledger.test.ts', rule: 'DRIFT-003' },
+    });
+    expect(res.isError).toBe(true);
+    const sc = res.structuredContent as { error: { code: string; hint: string } };
+    expect(sc.error.code).toBe('NOT_FOUND');
+    // The hint is what stops an agent guessing rule ids one call at a time.
+    expect(sc.error.hint).toContain('TAUT-002@11');
+    expect(sc.error.hint).toContain('DRIFT-001@16');
   });
 
   it('detect_tautological_assertions returns only TAUT rules', async () => {
@@ -288,7 +397,7 @@ describe('Momus MCP server (Streamable HTTP)', () => {
     try {
       await client.connect(transport);
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(5);
+      expect(tools).toHaveLength(7);
       expect(tools.map((t) => t.name)).toContain('verify_mock_drift');
       const res = await client.callTool({ name: 'verify_mock_drift', arguments: {} });
       expect(res.isError).toBeFalsy();
