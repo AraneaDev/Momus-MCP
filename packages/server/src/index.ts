@@ -103,7 +103,7 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
 
   server.tool(
     'audit_test_fidelity',
-    'Deep static audit of a test file: every mock/stub/spy checked against its real production dependency (members, signatures, return types) plus tautological assertion detection. Read-only; never executes tests.',
+    'Deep static audit of a test file: every mock/stub/spy checked against its real production dependency (members, signatures, return types) plus tautological assertion detection.',
     {
       filePath: z.string().describe('Test file path, workspace-relative (e.g. tests/order.test.ts)'),
       rules: z.array(z.string()).optional().describe('Optional rule filter (TAUT-xxx / DRIFT-xxx / MOCK-xxx)'),
@@ -119,7 +119,7 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
 
   server.tool(
     'detect_tautological_assertions',
-    'Scans test files for assertions that cannot fail: self-comparisons, mock-echo assertions, constant tautologies, mock-only assertions, zero-reach stubs, unconfigured spy assertions. Read-only.',
+    'Scans test files for assertions that cannot fail: self-comparisons, mock-echo assertions, constant tautologies, mock-only assertions, zero-reach stubs, unconfigured spy assertions.',
     {
       paths: z.array(z.string()).optional().describe('Files or globs; defaults to all test files'),
       maxIssues: z.number().int().min(0).max(500).default(50).describe('0 = summary-only'),
@@ -174,12 +174,30 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
 
   server.tool(
     'synthesize_mock_contract',
-    'Generates a strict typed mock fixture template directly from a production class/interface AST. Read-only; writes nothing.',
+    'Generates a strict typed mock fixture template directly from a production class/interface AST.',
     {
       targetPath: z.string().describe('Production file declaring the class/interface (workspace-relative)'),
       symbolName: z.string().optional().describe('Class/interface to mock; defaults to primary export'),
       framework: z
-        .enum(['vitest', 'jest', 'phpunit', 'pest', 'pytest', 'unittest', 'mockall', 'mockito', 'wiremock'])
+        .enum([
+          'vitest',
+          'jest',
+          'phpunit',
+          'pest',
+          'pytest',
+          'unittest',
+          'mockall',
+          'mockito',
+          'wiremock',
+          'httpmock',
+          'mry',
+          'faux',
+          'mockers',
+          'mockiato',
+          'mocktopus',
+          'mock_derive',
+          'galvanic',
+        ])
         .default('vitest'),
       includeReturnValues: z.boolean().default(true),
     },
@@ -194,7 +212,17 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
           ? 'php'
           : framework === 'pytest' || framework === 'unittest'
             ? 'python'
-            : framework === 'mockall' || framework === 'mockito' || framework === 'wiremock'
+            : framework === 'mockall' ||
+                framework === 'mockito' ||
+                framework === 'wiremock' ||
+                framework === 'httpmock' ||
+                framework === 'mry' ||
+                framework === 'faux' ||
+                framework === 'mockers' ||
+                framework === 'mockiato' ||
+                framework === 'mocktopus' ||
+                framework === 'mock_derive' ||
+                framework === 'galvanic'
               ? 'rust'
               : 'ts';
       return {
@@ -230,7 +258,7 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
           tool: 'list_rules',
           result: {
             rules,
-            suppressionSyntax: '// @momus-ignore[:RULE] · /** @momus-ignore */ · // @momus-ignore-file',
+            suppressionSyntax: '// @momus-ignore[:RULE] · /** @momus-ignore */ · // @momus-ignore-file[:RULE]',
             configFile: '.momusrc',
           },
         },
@@ -844,7 +872,157 @@ function synthesizeRustContract(
     sigs.push({ name: m.name, params, ret });
   }
   let body: string[];
-  if (framework === 'mockall') {
+  if (framework === 'faux') {
+    // faux instruments the type in place (`#[faux::create]` + `#[faux::methods]`) and configures
+    // via `faux::when!(mock.method).then(...)`.
+    const setupLines = methods.map((m) => {
+      const retVal = includeReturnValues ? rustReturnExample(m.signature?.returnType) : 'todo!()';
+      return `    faux::when!(mock.${m.name}).then(|_| ${retVal});`;
+    });
+    body = [
+      `#[faux::create]`,
+      `pub struct ${name} {}`,
+      ``,
+      `#[faux::methods]`,
+      `impl ${name} {`,
+      ...sigs.map((s) => `    pub fn ${s.name}(&self${s.params ? ', ' + s.params : ''}) -> ${s.ret};`),
+      `}`,
+      ``,
+      `#[test]`,
+      `fn test_${lowerFirst(name)}() {`,
+      `    let mut mock = ${name}::faux();`,
+      ...setupLines,
+      `}`,
+    ];
+  } else if (framework === 'mry') {
+    // mry instruments the type in place (`#[mry::mry]`) and configures via `mock_<method>`.
+    const mockName = `Mock${name}`;
+    const implLines = sigs.map((s) => `        fn ${s.name}(&self${s.params ? ', ' + s.params : ''}) -> ${s.ret};`);
+    const setupLines = methods.map((m) => {
+      const retVal = includeReturnValues ? rustReturnExample(m.signature?.returnType) : 'todo!()';
+      return `    mock.mock_${m.name}(mry::Any).returns(${retVal});`;
+    });
+    body = [
+      `#[mry::mry]`,
+      `impl ${name} {`,
+      ...implLines,
+      `}`,
+      ``,
+      `#[test]`,
+      `fn test_${lowerFirst(name)}() {`,
+      `    let mut mock = ${mockName}::default();`,
+      ...setupLines,
+      `}`,
+    ];
+  } else if (framework === 'mockers') {
+    // mockers instruments the trait (`#[mocked]`) and configures expectations on the handle via
+    // `scenario.expect(handle.<method>(…).and_return(…))`.
+    const traitLines = sigs.map((s) => `    fn ${s.name}(&self${s.params ? ', ' + s.params : ''}) -> ${s.ret};`);
+    const setupLines = methods.map((m) => {
+      const retVal = includeReturnValues ? rustReturnExample(m.signature?.returnType) : 'todo!()';
+      return `    scenario.expect(handle.${m.name}(ANY).and_return(${retVal}));`;
+    });
+    body = [
+      `#[mocked]`,
+      `trait ${name} {`,
+      ...traitLines,
+      `}`,
+      ``,
+      `#[test]`,
+      `fn test_${lowerFirst(name)}() {`,
+      `    let scenario = Scenario::new();`,
+      `    let (mock, handle) = scenario.create_mock_for::<dyn ${name}>();`,
+      ...setupLines,
+      `}`,
+    ];
+  } else if (framework === 'mockiato') {
+    // mockiato instruments the trait (`#[mockable]`, generated `NameMock`) and configures via
+    // `mock.expect_<method>(…).returns(…)`.
+    const mockName = `${name}Mock`;
+    const traitLines = sigs.map((s) => `    fn ${s.name}(&self${s.params ? ', ' + s.params : ''}) -> ${s.ret};`);
+    const setupLines = methods.map((m) => {
+      const retVal = includeReturnValues ? rustReturnExample(m.signature?.returnType) : 'todo!()';
+      return `    mock.expect_${m.name}(mockiato::Argument::any).returns(${retVal});`;
+    });
+    body = [
+      `#[mockable]`,
+      `trait ${name} {`,
+      ...traitLines,
+      `}`,
+      ``,
+      `#[test]`,
+      `fn test_${lowerFirst(name)}() {`,
+      `    let mut mock = ${mockName}::new();`,
+      ...setupLines,
+      `}`,
+    ];
+  } else if (framework === 'mocktopus') {
+    // mocktopus instruments functions/methods in place (`#[mockable]`) and replaces them via
+    // `Name::method.mock_safe(…)` / `.mock_raw(…)` with a `MockResult::Return` value.
+    const implLines = sigs.map(
+      (s) => `    fn ${s.name}(&self${s.params ? ', ' + s.params : ''}) -> ${s.ret} { todo!() }`,
+    );
+    const setupLines = methods.map((m) => {
+      const retVal = includeReturnValues ? rustReturnExample(m.signature?.returnType) : 'todo!()';
+      return `    unsafe { ${name}::${m.name}.mock_raw(|_| MockResult::Return(${retVal})); }`;
+    });
+    body = [
+      `#[mockable]`,
+      `impl ${name} {`,
+      ...implLines,
+      `}`,
+      ``,
+      `#[test]`,
+      `fn test_${lowerFirst(name)}() {`,
+      ...setupLines,
+      `}`,
+    ];
+  } else if (framework === 'mock_derive') {
+    // mock_derive instruments the trait (`#[mock]`, generated `Mock<Name>`) and configures via
+    // `mock.method_<method>(…).first_call().set_result(…)` + `mock.set_<method>(…)`.
+    const mockName = `Mock${name}`;
+    const traitLines = sigs.map((s) => `    fn ${s.name}(&self${s.params ? ', ' + s.params : ''}) -> ${s.ret};`);
+    const setupLines = methods.map((m) => {
+      const retVal = includeReturnValues ? rustReturnExample(m.signature?.returnType) : 'todo!()';
+      return `    mock.set_${m.name}(mock.method_${m.name}().first_call().set_result(${retVal}));`;
+    });
+    body = [
+      `#[mock]`,
+      `trait ${name} {`,
+      ...traitLines,
+      `}`,
+      ``,
+      `#[test]`,
+      `fn test_${lowerFirst(name)}() {`,
+      `    let mut mock = ${mockName}::new();`,
+      ...setupLines,
+      `}`,
+    ];
+  } else if (framework === 'galvanic') {
+    // galvanic instruments the trait (`#[mockable]`) and configures via the `given! { … }` DSL
+    // (`<mock as Trait>::method(…) then_return …`), enabled per-test with `#[use_mocks]`.
+    const traitLines = sigs.map((s) => `    fn ${s.name}(&self${s.params ? ', ' + s.params : ''}) -> ${s.ret};`);
+    const setupLines = methods.map((m) => {
+      const retVal = includeReturnValues ? rustReturnExample(m.signature?.returnType) : 'todo!()';
+      return `        <mock as ${name}>::${m.name}(galvanic_mock::matchers::any()) then_return ${retVal} always;`;
+    });
+    body = [
+      `#[mockable]`,
+      `trait ${name} {`,
+      ...traitLines,
+      `}`,
+      ``,
+      `#[test]`,
+      `#[use_mocks]`,
+      `fn test_${lowerFirst(name)}() {`,
+      `    let mock = new_mock!(${name});`,
+      ``,
+      `    given! {`,
+      ...setupLines,
+      `    }`,
+      `}`,
+    ];
+  } else if (framework === 'mockall') {
     const mockName = `Mock${name}`;
     const implLines = sigs.map((s) => `        fn ${s.name}(&self${s.params ? ', ' + s.params : ''}) -> ${s.ret};`);
     const setupLines = methods.map((m) => {
@@ -867,8 +1045,8 @@ function synthesizeRustContract(
       `}`,
     ];
   } else {
-    // mockito / wiremock target HTTP routes; the symbol carries no route info, so emit a
-    // labeled scaffold the user wires to the real endpoint.
+    // mockito / wiremock / httpmock target HTTP routes; the symbol carries no route info, so
+    // emit a labeled scaffold the user wires to the real endpoint.
     body =
       framework === 'mockito'
         ? [
@@ -879,14 +1057,23 @@ function synthesizeRustContract(
             `    .with_body("")`,
             `    .create();`,
           ]
-        : [
-            `// Scaffold: wiremock mocks HTTP requests — wire the matcher below to the real one.`,
-            `Mock::given(method("GET"))`,
-            `    .and(path("/path"))`,
-            `    .respond_with(ResponseTemplate::new(200))`,
-            `    .mount(&server)`,
-            `    .await;`,
-          ];
+        : framework === 'httpmock'
+          ? [
+              `// Scaffold: httpmock mocks HTTP endpoints — wire the matcher below to the real one.`,
+              `let server = httpmock::MockServer::start();`,
+              `let _m = server.mock(|when, then| {`,
+              `    when.method(GET).path("/path");`,
+              `    then.status(200).body("");`,
+              `});`,
+            ]
+          : [
+              `// Scaffold: wiremock mocks HTTP requests — wire the matcher below to the real one.`,
+              `Mock::given(method("GET"))`,
+              `    .and(path("/path"))`,
+              `    .respond_with(ResponseTemplate::new(200))`,
+              `    .mount(&server)`,
+              `    .await;`,
+            ];
   }
   const template = [
     `// Generated by momus synthesize_mock_contract — ${name} (${framework})`,

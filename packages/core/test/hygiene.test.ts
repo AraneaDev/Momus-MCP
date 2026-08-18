@@ -188,6 +188,31 @@ describe('MOCK-001 saturation logic', () => {
     expect(runRules(mock001, ctx(m))).toHaveLength(0);
   });
 
+  it('does not count a mock of a same-file fixture symbol toward saturation', () => {
+    // mockall's tests declare `trait Foo` in the test file and mock it to exercise the macro —
+    // the fixture is not a production dependency, so 1 imported dep + 0 real deps mocked stays
+    // quiet (docs/11: mockall 60 false MOCK-001 → 0).
+    const m = testModule({
+      imports: [{ specifier: 'mockall', names: [] }],
+      symbols: [
+        {
+          id: `${FILE}#Foo`,
+          name: 'Foo',
+          kind: 'interface',
+          span: sp(FILE, 1),
+          members: [],
+          extendsIds: [],
+          implementsIds: [],
+        },
+      ],
+      mocks: [
+        mock({ id: 'self', target: { kind: 'class', symbolId: `${FILE}#Foo`, exportName: 'Foo', span: sp(FILE, 5) } }),
+      ],
+      assertions: [assertion({ operands: [expr({ provenance: 'mock-call' })] })],
+    });
+    expect(runRules(mock001, ctx(m))).toHaveLength(0);
+  });
+
   it('ignores mocks without a target (no crash, not counted)', () => {
     const m = testModule({
       imports: [{ specifier: '../src/a', names: ['A'] }],
@@ -361,5 +386,29 @@ describe('MOCK-002 mock-of-self', () => {
       mocks: [mock({ id: 'self', target: { kind: 'class', exportName: 'Foo', span: sp('/ws/src/foo.rs', 30) } })],
     });
     expect(runRules(mock002, ctx(m))).toHaveLength(1);
+  });
+
+  it('does not flag a Rust integration test file that mocks its own fixture trait', () => {
+    // mockall's `tests/*.rs` files declare `trait Foo` as a fixture and mock it to exercise the
+    // macro — the file has no production subject, so it is not mock-of-self (docs/11: 133 false
+    // MOCK-002 → 0). Only an inline #[cfg(test)] mod tests in a production file can mock its own
+    // struct (the case above).
+    const m = testModule({
+      path: '/ws/tests/foo.rs',
+      language: 'rust',
+      symbols: [
+        {
+          id: '/ws/tests/foo.rs#Foo',
+          name: 'Foo',
+          kind: 'interface',
+          span: sp('/ws/tests/foo.rs', 1),
+          members: [],
+          extendsIds: [],
+          implementsIds: [],
+        },
+      ],
+      mocks: [mock({ id: 'self', target: { kind: 'class', exportName: 'Foo', span: sp('/ws/tests/foo.rs', 30) } })],
+    });
+    expect(runRules(mock002, ctx(m))).toHaveLength(0);
   });
 });

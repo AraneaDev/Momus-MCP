@@ -78,7 +78,7 @@ describe('Momus MCP server (in-memory transport)', () => {
     expect(res.isError).toBeFalsy();
     const sc = res.structuredContent as { result: { issues: Array<{ rule: string; line: number }> } };
     const rules = sc.result.issues.map((i) => `${i.rule}@${i.line}`).sort();
-    expect(rules).toEqual(['DRIFT-001@16', 'TAUT-002@11', 'TAUT-006@18']);
+    expect(rules).toEqual(['DRIFT-001@16', 'TAUT-002@11', 'TAUT-004@39', 'TAUT-006@39']);
     // markdown text present and token-budgeted
     const text = res.content[0]!.text;
     expect(text).toContain('TAUT-002');
@@ -572,7 +572,7 @@ describe('Momus MCP server (Rust language selection)', () => {
     expect(text).toContain('mock!');
     expect(text).toContain('expect_find');
     const sc = res.structuredContent as { result: { summary: { members: number } } };
-    expect(sc.result.summary.members).toBe(2);
+    expect(sc.result.summary.members).toBe(3); // find, save, record
   });
 
   it('synthesizes a mockito scaffold from a Rust trait', async () => {
@@ -584,5 +584,21 @@ describe('Momus MCP server (Rust language selection)', () => {
     const text = res.content[0]!.text;
     expect(text).toContain('```rust');
     expect(text).toContain('mockito::Server');
+  });
+
+  it('synthesizes type-derived return examples for rich Rust signatures', async () => {
+    const res = await client.callTool({
+      name: 'synthesize_mock_contract',
+      arguments: { targetPath: 'types.rs', symbolName: 'Widget', framework: 'mockall' },
+    });
+    expect(res.isError).toBeFalsy();
+    const text = res.content[0]!.text;
+    expect(text).toContain('String::from("")');
+    expect(text).toContain('None');
+    expect(text).toContain('Ok(vec![])');
+    expect(text).toContain('false');
+    expect(text).toContain("'a'");
+    expect(text).toContain('(0, false)');
+    expect(text).toContain('panic!()'); // never-returning fn keeps an honest placeholder
   });
 });

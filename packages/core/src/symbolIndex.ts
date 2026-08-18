@@ -13,8 +13,13 @@ export class SymbolIndex {
   private moduleExports = new Map<string, SymbolIR[]>();
   private byName = new Map<string, SymbolIR[]>(); // name -> symbols (for loose resolution)
 
-  constructor(productionModules: ModuleIR[]) {
+  constructor(productionModules: ModuleIR[], extraModules: ModuleIR[] = []) {
     for (const m of productionModules) this.addModule(m);
+    // Test-module symbols join id/member lookups only: a mock-of-own-file (mockall tests define
+    // their own `trait Foo` and mock it) must resolve its same-file members, while loose byName
+    // resolution and export lookups stay production-only so test symbols never pollute cross-file
+    // resolution (docs/11 row 54).
+    for (const m of extraModules) this.addSymbolsOnly(m);
   }
 
   addModule(m: ModuleIR): void {
@@ -28,6 +33,10 @@ export class SymbolIndex {
       this.byName.set(s.name, bucket);
     }
     this.moduleExports.set(m.path, exports);
+  }
+
+  private addSymbolsOnly(m: ModuleIR): void {
+    for (const s of m.symbols) this.symbols.set(s.id, s);
   }
 
   getModule(path: string): ModuleIR | undefined {

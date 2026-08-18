@@ -41,11 +41,11 @@ export function extractMocks(root: SyntaxNode, file: string, _symbols: SymbolIR[
   walk(root, (node) => {
     if (!node.isNamed) return;
     if (node.type === 'call') {
-      const made = makeMock(file, node);
+      const binding = bindingNameFor(node);
+      const made = makeMock(file, node, binding !== null);
       if (!made) return;
       mocks.push(made.mock);
       byCall.set(posKey(node), made.mock);
-      const binding = bindingNameFor(node);
       if (binding) recordBinding(scopeOf(node), binding, made.mock);
     }
   });
@@ -89,7 +89,7 @@ export function extractMocks(root: SyntaxNode, file: string, _symbols: SymbolIR[
   return { mocks, bindings, scopeMap };
 }
 
-function makeMock(file: string, call: SyntaxNode): { mock: MockIR } | null {
+function makeMock(file: string, call: SyntaxNode, bound: boolean): { mock: MockIR } | null {
   const fn = childField(call, 'function');
   if (!fn) return null;
   const path = dottedPath(fn);
@@ -122,10 +122,56 @@ function makeMock(file: string, call: SyntaxNode): { mock: MockIR } | null {
     );
     return { mock };
   }
+  if (lastTwo === 'patch.multiple') {
+    // `patch.multiple(Service, fetch=DEFAULT, save=42)` patches several members at once. Emit a
+    // class-target mock with one stub per keyword (DRIFT-001 checks each against the production
+    // class's members — methods *and* class attributes, now modeled as `property` members).
+    // Member drift for attributes that live on an unresolvable base is still protected by
+    // DRIFT-001's conservative `extendsIds` skip. The keyword *values* are the patched attribute
+    // values, not return values, so the stubs carry no `returnValues` (no DRIFT-003 surface).
+    const cls = argAt(args, 0);
+    const mock = baseMock(
+      file,
+      call,
+      'patch-multiple',
+      cls ? { kind: 'class', exportName: textOf(cls), span: nodeSpan(file, cls) } : undefined,
+      framework,
+    );
+    for (const kw of keywordArgs(args)) {
+      const member = textOf(childField(kw, 'name'));
+      if (member) ensureStub(mock, member, file, kw);
+    }
+    return { mock };
+  }
+  if (lastTwo === 'patch.dict') {
+    // `patch.dict(os.environ, {...})` patches entries of a dictionary in place — the one-call
+    // analogue of `patch.multiple` for mappings. Emit a module-target mock for visibility/MOCK-001;
+    // dict *keys* are not modeled as members (dynamic, like `patch.multiple`'s class attributes),
+    // so no member-level drift is attempted.
+    const dictNode = argAt(args, 0);
+    const spec = dictNode ? dottedPath(dictNode).join('.') : '';
+    const modulePart = spec.split('.').slice(0, -1).join('.');
+    const modulePath = modulePart ? (resolvePythonImport(modulePart, file) ?? undefined) : undefined;
+    const mock = baseMock(
+      file,
+      call,
+      'patch-dict',
+      spec ? { kind: 'module', specifier: spec, modulePath, span: nodeSpan(file, dictNode ?? call) } : undefined,
+      framework,
+    );
+    return { mock };
+  }
   if (FACTORY_NAMES.has(last)) {
     const specNode = kwargValue(args, 'spec');
     const target = specNode || last === 'create_autospec' ? classTarget(specNode ?? argAt(args, 0), file) : undefined;
     const mock = baseMock(file, call, 'autospec', target, framework);
+    // A *bound* `m = Mock(return_value=42)` configures the mock's own `__call__` — capture a
+    // literal `return_value`/`side_effect` so TAUT-002 (echo) can see `assert m() == 42`.
+    // Inline `Mock(return_value=…)` (e.g. a `patch`'s positional `new` arg) is left unconfigured:
+    // its invocation is unobservable (it is injected into the SUT's graph), so recording it would
+    // false-flag TAUT-005. Only statically-known literal values are captured — `return_value=[]` /
+    // `return_value=some_obj` carry no literal to compare and add no TAUT-002 surface.
+    if (bound) attachLiteralKwargConfig(mock, args, file);
     return { mock };
   }
   if (lastTwo === 'monkeypatch.setattr') {
@@ -177,6 +223,26 @@ function classTarget(node: SyntaxNode | null, file: string): MockTarget | undefi
   return { kind: 'class', exportName: textOf(node), span: nodeSpan(file, node) };
 }
 
+/** Record a `return_value=`/`side_effect=` kwarg only when its value is a known literal (TAUT-002). */
+function attachLiteralKwargConfig(mock: MockIR, args: SyntaxNode | null, file: string): void {
+  for (const kw of keywordArgs(args)) {
+    const name = textOf(childField(kw, 'name'));
+    const value = childField(kw, 'value');
+    if ((name === 'return_value' || name === 'side_effect') && value) {
+      const v = valueIR(value);
+      if (v) {
+        mock.configuredValues.push({
+          span: nodeSpan(file, kw),
+          api: name,
+          value: v,
+          once: false,
+          assignable: 'unknown',
+        });
+      }
+    }
+  }
+}
+
 function attachKwargConfig(mock: MockIR, args: SyntaxNode | null, file: string, memberName?: string): void {
   for (const kw of keywordArgs(args)) {
     const name = textOf(childField(kw, 'name'));
@@ -217,10 +283,15 @@ export function dottedPath(node: SyntaxNode | null): string[] {
 
 function bindingNameFor(call: SyntaxNode): string | null {
   const parent = call.parent;
-  if (parent?.type === 'assignment' && childField(parent, 'right') === call) {
-    const left = childField(parent, 'left');
-    if (left?.type === 'identifier') return textOf(left);
-  }
+  if (parent?.type !== 'assignment') return null;
+  // Compare by tree-sitter node `id`, not `===`: `childForFieldName` can return a fresh JS
+  // wrapper for the same node, so identity comparison is unreliable (this silently disabled
+  // mock binding on some files — django dogfood: `fake_method = mock.MagicMock(...)` never
+  // bound, so hand-off reachability and assertion mockRefs were dropped).
+  const right = childField(parent, 'right');
+  if (!right || right.id !== call.id) return null;
+  const left = childField(parent, 'left');
+  if (left?.type === 'identifier') return textOf(left);
   return null;
 }
 

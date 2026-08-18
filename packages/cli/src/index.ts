@@ -38,7 +38,7 @@ Usage:
   momus annotate-pr [--base REF] (GitHub Actions: post check annotations from the diff audit)
   momus annotate [paths...] [--git-diff --base REF]  (machine-readable JSONL for editor plugins)
   momus hook [--install|--uninstall] [--yes]  (install/run the staged-files pre-commit drift gate)
-  momus contract <targetPath> [--framework vitest|jest|phpunit|pest|pytest|unittest|mockall|mockito|wiremock] [--symbol NAME]
+  momus contract <targetPath> [--framework vitest|jest|phpunit|pest|pytest|unittest|mockall|mockito|wiremock|httpmock|mry|faux|mockers|mockiato|mocktopus|mock_derive|galvanic] [--symbol NAME]
   momus rules
   momus serve [--root DIR] [--transport stdio|http] [--port N] [--watch]
   momus init [--force]
@@ -139,7 +139,7 @@ export function rustProjectSignals(root: string): { cargoToml: boolean; rsFiles:
 /** One-line Rust-language readiness summary for `momus doctor`. */
 export function rustReadiness(root: string, config: MomusConfig): string {
   if (!config.languages.rust) {
-    return 'off — set "languages": { "rust": true } in .momusrc to audit mockall/mockito/wiremock suites';
+    return 'off — set "languages": { "rust": true } in .momusrc to audit mockall/mockito/wiremock/httpmock/mry/faux/mockers/mockiato/mocktopus/mock_derive/galvanic suites';
   }
   const { cargoToml, rsFiles } = rustProjectSignals(root);
   if (cargoToml) return `ready — Cargo.toml present, ${rsFiles} .rs file${rsFiles === 1 ? '' : 's'}`;
@@ -629,7 +629,18 @@ export async function runContract(root: string, argv: string[]): Promise<number>
     process.stderr.write('usage: momus contract <targetPath> [--framework vitest]\n');
     return 2;
   }
-  const framework = argValue(argv, '--framework') ?? 'vitest';
+  // Default the framework to the target language's primary template so the header label
+  // matches the emitted body (dogfood: `momus contract x.py` used to print "(vitest)" while
+  // emitting patch.object; `.rs` fell back to a wiremock scaffold instead of mockall).
+  const framework =
+    argValue(argv, '--framework') ??
+    (/\.rs$/i.test(target)
+      ? 'mockall'
+      : /\.py$/i.test(target)
+        ? 'pytest'
+        : /\.php$/i.test(target)
+          ? 'phpunit'
+          : 'vitest');
   const symbol = argValue(argv, '--symbol');
   // reuse the server's synthesis logic via a lightweight re-implementation
   const { synthesizeForCli } = await import('./synthesize.ts');
@@ -651,7 +662,7 @@ export async function runRules(root: string, _argv: string[]): Promise<number> {
     process.stdout.write(`${r.id} ${r.name} (${sev ?? r.severity}) — ${r.description}\n`);
   }
   process.stdout.write(
-    '\nSuppression: // @momus-ignore | // @momus-ignore:RULE | /** @momus-ignore */ | // @momus-ignore-file\n',
+    '\nSuppression: // @momus-ignore | // @momus-ignore:RULE | /** @momus-ignore */ | // @momus-ignore-file[:RULE]\n',
   );
   return 0;
 }

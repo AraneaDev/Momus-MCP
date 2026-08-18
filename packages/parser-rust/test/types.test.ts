@@ -46,4 +46,8 @@ describe('rustTypeToIr', () => {
   it('maps unit () to void', () => {
     expect(rustTypeToIr(ret('()'))).toEqual({ kind: 'void' });
   });
+
+  it('maps never to a never TypeIR', () => {
+    expect(rustTypeToIr(ret('!'))).toEqual({ kind: 'never' });
+  });
 });

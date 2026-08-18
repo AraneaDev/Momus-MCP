@@ -1,5 +1,5 @@
 /** pytest/unittest assertions -> AssertionIR, with operand provenance and mock reachability. */
-import type { AssertionIR, ConfiguredValueIR, ExprIR, MockIR, SourceSpan, TestFnIR } from '@momus/core';
+import type { AssertionIR, ConfiguredValueIR, ExprIR, ImportIR, MockIR, SourceSpan, TestFnIR } from '@momus/core';
 import { span } from '@momus/core';
 import { childField, end, start, textOf, walk, type SyntaxNode } from './tree.ts';
 import { dottedPath, resolveMockName, type PythonMockState } from './mocks.ts';
@@ -42,21 +42,65 @@ export function extractAssertions(root: SyntaxNode, file: string, state: PythonM
   return assertions;
 }
 
-export function extractTestFunctions(root: SyntaxNode, file: string): TestFnIR[] {
-  const out: TestFnIR[] = [];
+/**
+ * Test-framework / mocking specifiers: names imported from these are helpers (assertions,
+ * mock factories, fixtures), never production. Mirrors the TS `FRAMEWORK_SPECIFIERS` heuristic
+ * in dataflow.ts (`vitest`/`jest`).
+ */
+function isFrameworkSpecifier(specifier: string): boolean {
+  return (
+    specifier === 'unittest' ||
+    specifier.startsWith('unittest.') ||
+    specifier === 'mock' ||
+    specifier.startsWith('mock.') ||
+    specifier === 'pytest' ||
+    specifier.startsWith('pytest.') ||
+    specifier.startsWith('pytest_') ||
+    specifier.startsWith('_pytest') ||
+    specifier === 'django.test' ||
+    specifier.startsWith('django.test.')
+  );
+}
+
+/**
+ * A test function "touches production" when it calls a name imported from a non-framework
+ * module (the SUT or a real/stdlib dependency) — the Python analogue of the TS `productionCalls`
+ * pass. TAUT-004/006 consult `hasProductionCalls` to avoid flagging tests whose mock assertions
+ * sit alongside a genuine production call (django dogfood: 25 false positives from
+ * `call_command(...)` / `F(...)` / `feedgenerator.Stylesheet(...)` / `copy.copy(...)` misread
+ * as mock-only/spy-without-a-call-path).
+ */
+export function extractTestFunctions(
+  root: SyntaxNode,
+  file: string,
+  imports: ImportIR[],
+  state: PythonMockState,
+): TestFnIR[] {
+  const productionRoots = new Set(imports.filter((i) => !isFrameworkSpecifier(i.specifier)).flatMap((i) => i.names));
+
+  const fnSpans = testFnSpans(root, file);
+  const counts = new Map<string, number>();
   walk(root, (node) => {
-    if (!node.isNamed || node.type !== 'function_definition') return;
-    const name = textOf(childField(node, 'name'));
-    if (!name || !(name.startsWith('test') || name.endsWith('_test'))) return;
-    out.push({
-      id: `${file}#fn:${nodeLine(node)}`,
-      span: nodeSpan(file, node),
-      hasProductionCalls: false,
-      productionCallCount: 0,
-      assertionCount: 0,
-    });
+    if (!node.isNamed || node.type !== 'call') return;
+    const rootName = dottedPath(childField(node, 'function'))[0];
+    if (!rootName || !productionRoots.has(rootName)) return;
+    // A mock binding (`m = Mock()` then `m.method()`) shadows an imported name — never production.
+    if (resolveMockName(state, rootName, node)) return;
+    const fnId = enclosingFn(fnSpans, nodeLine(node));
+    if (!fnId) return;
+    counts.set(fnId, (counts.get(fnId) ?? 0) + 1);
   });
-  return out;
+
+  return fnSpans.map((f) => {
+    const productionCallCount = counts.get(f.id) ?? 0;
+    return {
+      id: f.id,
+      span: f.span,
+      hasProductionCalls: productionCallCount > 0,
+      productionCallCount,
+      assertionCount: 0,
+    };
+  });
 }
 
 function assertionFromAssert(
@@ -166,6 +210,12 @@ function mockAccess(node: SyntaxNode, state: PythonMockState): { mock: MockIR | 
       const stub = mock && member ? mock.stubbedMembers.find((s) => s.name === member) : undefined;
       return { mock: mock ?? null, configured: stub?.returnValues[0] };
     }
+    // A direct `m()` call on a `Mock(return_value=42)` bound variable: the mock's own `__call__`
+    // is configured, so the operand carries the configured value for TAUT-002 (echo).
+    if (fn?.type === 'identifier') {
+      const mock = resolveMockName(state, textOf(fn), node);
+      return { mock: mock ?? null, configured: mock?.configuredValues[0] };
+    }
     return { mock: null };
   }
   if (node.type === 'attribute') {
@@ -183,7 +233,21 @@ function mockAccess(node: SyntaxNode, state: PythonMockState): { mock: MockIR | 
 function markReachableMocks(root: SyntaxNode, file: string, state: PythonMockState): void {
   walk(root, (node) => {
     if (!node.isNamed || node.type !== 'call') return;
-    const path = dottedPath(childField(node, 'function'));
+    const fn = childField(node, 'function');
+    // A direct call on a bound mock variable (`m()`) invokes the mock's own `__call__` — mark it
+    // reached so `m = Mock(return_value=42); result = m()` is not a zero-reach stub (TAUT-005).
+    if (fn?.type === 'identifier') {
+      const mock = resolveMockName(state, textOf(fn), node);
+      if (mock) {
+        const line = nodeLine(node);
+        if (!mock.invocationSites.some((s) => s.startLine === line)) {
+          mock.invocationSites.push(nodeSpan(file, node));
+        }
+        return; // direct mock call — no positional-arg hand-off
+      }
+      // A plain `run(m)` call (identifier callee, not a mock): fall through to positional hand-off.
+    }
+    const path = dottedPath(fn);
     // Skip mock-factory calls (Mock(...), patch(...)) and mock-member config calls (m.method()).
     if (
       path.length === 0 ||
@@ -206,13 +270,39 @@ function markReachableMocks(root: SyntaxNode, file: string, state: PythonMockSta
       }
     }
   });
+
+  // A mock handed off via `return_value=m` / `side_effect=m` on a factory
+  // (`patch.object(X, "m", return_value=cursor)`, `Mock(return_value=other)`) is injected into the
+  // SUT's graph: production invokes it *indirectly*, which the positional-arg walk above can't
+  // observe (django dogfood: `cursor` injected as a patch's `return_value` then exercised by
+  // `compiler.execute_sql`). Mark it reached so TAUT-005 stays quiet.
+  walk(root, (node) => {
+    if (!node.isNamed || node.type !== 'call') return;
+    if (!isMockFactory(dottedPath(childField(node, 'function')))) return;
+    const args = childField(node, 'arguments');
+    for (const kw of args?.namedChildren ?? []) {
+      if (kw.type !== 'keyword_argument') continue;
+      const kwName = textOf(childField(kw, 'name'));
+      if (kwName !== 'return_value' && kwName !== 'side_effect') continue;
+      const value = childField(kw, 'value');
+      const name = value ? rootName(value) : null;
+      if (!name || !value) continue;
+      const mock = resolveMockName(state, name, value);
+      if (mock) {
+        const line = nodeLine(node);
+        if (!mock.invocationSites.some((s) => s.startLine === line)) {
+          mock.invocationSites.push(nodeSpan(file, node));
+        }
+      }
+    }
+  });
 }
 
 function isMockFactory(path: string[]): boolean {
   const last = path[path.length - 1] ?? '';
   if (last === 'Mock' || last === 'MagicMock' || last === 'AsyncMock' || last === 'create_autospec' || last === 'patch')
     return true;
-  if (last === 'object' && path[path.length - 2] === 'patch') return true;
+  if (path[path.length - 2] === 'patch') return true; // patch.object / patch.multiple / patch.dict
   if (last === 'setattr' && path[path.length - 2] === 'monkeypatch') return true;
   return false;
 }
@@ -251,13 +341,21 @@ function exprKind(node: SyntaxNode): ExprIR['kind'] {
   }
 }
 
-function testFnSpans(root: SyntaxNode, file: string): Array<{ start: number; end: number; id: string }> {
-  const out: Array<{ start: number; end: number; id: string }> = [];
+function testFnSpans(
+  root: SyntaxNode,
+  file: string,
+): Array<{ start: number; end: number; id: string; span: SourceSpan }> {
+  const out: Array<{ start: number; end: number; id: string; span: SourceSpan }> = [];
   walk(root, (node) => {
     if (!node.isNamed || node.type !== 'function_definition') return;
     const name = textOf(childField(node, 'name'));
     if (!name || !(name.startsWith('test') || name.endsWith('_test'))) return;
-    out.push({ start: nodeLine(node), end: end(node).line + 1, id: `${file}#fn:${nodeLine(node)}` });
+    out.push({
+      start: nodeLine(node),
+      end: end(node).line + 1,
+      id: `${file}#fn:${nodeLine(node)}`,
+      span: nodeSpan(file, node),
+    });
   });
   return out;
 }

@@ -451,6 +451,43 @@ describe('DRIFT-001 missing member', () => {
     });
     expect(runRules(rulesOf('DRIFT-001'), ctx(m, index))).toHaveLength(0);
   });
+  it('stays quiet when the target extends an unresolvable base (member may be inherited)', () => {
+    const withBase: ModuleIR = {
+      ...prod,
+      symbols: [
+        {
+          id: `${PROD}#LedgerService`,
+          name: 'LedgerService',
+          kind: 'class',
+          span: sp(PROD, 1),
+          members: [
+            { id: `${PROD}#LedgerService.totalFor`, name: 'totalFor', kind: 'method', span: sp(PROD, 3), members: [] },
+          ],
+          // An imported/external base (e.g. unittest.TestCase) is not in the index — a stub for
+          // a member it defines (e.g. _pre_setup) must not false-flag as missing (django dogfood).
+          extendsIds: [`${PROD}#ExternalBase`],
+          implementsIds: [],
+        },
+      ],
+    };
+    const idx = new SymbolIndex([withBase]);
+    const m = testModule({
+      mocks: [
+        mock({
+          id: 'm1',
+          pattern: 'vi.spyOn',
+          target: {
+            kind: 'instance-member',
+            symbolId: `${PROD}#LedgerService`,
+            memberName: '_pre_setup',
+            span: sp(FILE, 5),
+          },
+          stubbedMembers: [{ name: '_pre_setup', span: sp(FILE, 5), api: 'spyOn', returnValues: [] }],
+        }),
+      ],
+    });
+    expect(runRules(rulesOf('DRIFT-001'), ctx(m, idx))).toHaveLength(0);
+  });
   it('emits a rename fix only for an unambiguous near-match', () => {
     const m = testModule({
       mocks: [
@@ -1232,6 +1269,219 @@ describe('MOCK-002 mock-of-self', () => {
       mocks: [mock({ id: 'x', target: { kind: 'module', modulePath: PROD, span: sp(FILE, 5) } })],
     });
     expect(runRules(rulesOf('MOCK-002'), ctx(m))).toHaveLength(0);
+  });
+
+  it('flags a Python patch of the SUT module itself (patch("help") in test_help.py)', () => {
+    const m = testModule({
+      path: '/ws/tests/test_help.py',
+      language: 'python',
+      framework: 'pytest',
+      mocks: [
+        mock({
+          id: 'self',
+          target: { kind: 'module', modulePath: '/ws/src/help.py', specifier: 'help', span: sp(FILE, 5) },
+        }),
+      ],
+    });
+    const issues = runRules(rulesOf('MOCK-002'), ctx(m));
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.message).toContain('mock-of-self');
+  });
+
+  it('stays quiet for a Python patch of an attribute inside the SUT module (patch("help.idna"))', () => {
+    // requests dogfood (docs/11 row 32): patching a dependency attribute inside the module
+    // under test is normal; only a patch of the module itself is mock-of-self.
+    const m = testModule({
+      path: '/ws/tests/test_help.py',
+      language: 'python',
+      framework: 'pytest',
+      mocks: [
+        mock({
+          id: 'attr',
+          target: { kind: 'module', modulePath: '/ws/src/help.py', specifier: 'help.idna', span: sp(FILE, 5) },
+        }),
+      ],
+    });
+    expect(runRules(rulesOf('MOCK-002'), ctx(m))).toHaveLength(0);
+  });
+});
+
+describe('Rust DRIFT-003 resolution pass', () => {
+  const RUST_TEST = '/ws/tests/repo_test.rs';
+  const RUST_PROD = '/ws/src/repo.rs';
+  const member = (owner: string, name: string, returnType: TypeIR): SymbolIR => ({
+    id: `${owner}.${name}`,
+    name,
+    kind: 'method',
+    path: RUST_PROD,
+    span: sp(RUST_PROD, 1),
+    signature: { parameters: [], returnType, typeParams: [] },
+    members: [],
+    extendsIds: [],
+    implementsIds: [],
+  });
+  const recordSym: SymbolIR = {
+    id: 'prod#Record',
+    name: 'Record',
+    kind: 'class',
+    path: RUST_PROD,
+    span: sp(RUST_PROD, 1),
+    members: [],
+    extendsIds: [],
+    implementsIds: [],
+  };
+  const otherSym: SymbolIR = { ...recordSym, id: 'prod#Other', name: 'Other' };
+  const widgetSym: SymbolIR = {
+    id: 'prod#Widget',
+    name: 'Widget',
+    kind: 'interface',
+    path: RUST_PROD,
+    span: sp(RUST_PROD, 1),
+    members: [member('prod#Widget', 'get', { kind: 'named', name: 'Record', typeArgs: [] })],
+    extendsIds: [],
+    implementsIds: [],
+  };
+  const index = new SymbolIndex([
+    {
+      path: RUST_PROD,
+      language: 'rust',
+      kind: 'production',
+      imports: [],
+      symbols: [recordSym, otherSym, widgetSym],
+      exports: ['Record', 'Other', 'Widget'],
+      mocks: [],
+      assertions: [],
+      functions: [],
+      comments: [],
+      diagnostics: [],
+      hash: '',
+    },
+  ]);
+  const rustModule = (values: TypeIR[]): ModuleIR =>
+    testModule({
+      path: RUST_TEST,
+      language: 'rust',
+      framework: 'mockall',
+      mocks: [
+        mock({
+          id: 'm:get',
+          pattern: 'automock',
+          target: { kind: 'class', symbolId: 'prod#Widget', exportName: 'Widget', span: sp(RUST_TEST, 1) },
+          stubbedMembers: [
+            {
+              name: 'get',
+              span: sp(RUST_TEST, 5),
+              api: 'return_const',
+              returnValues: values.map((value) => ({
+                span: sp(RUST_TEST, 5),
+                api: 'return_const',
+                value,
+                once: false,
+                assignable: 'unknown' as const,
+              })),
+            },
+          ],
+        }),
+      ],
+    });
+
+  it('passes a named value whose type is unresolvable (conservative pass)', () => {
+    const m = rustModule([{ kind: 'named', name: 'Phantom', typeArgs: [] }]);
+    expect(runRules(rulesOf('DRIFT-003'), ctx(m, index))).toHaveLength(0);
+  });
+
+  it('passes a named value that resolves to the same symbol under a different name', () => {
+    // byName 'Rec' -> the same prod#Record symbol id (alias-style shape)
+    const aliasSym: SymbolIR = { ...recordSym, name: 'Rec' };
+    const idx = new SymbolIndex([
+      {
+        path: RUST_PROD,
+        language: 'rust',
+        kind: 'production',
+        imports: [],
+        symbols: [recordSym, aliasSym, widgetSym],
+        exports: ['Record', 'Rec', 'Widget'],
+        mocks: [],
+        assertions: [],
+        functions: [],
+        comments: [],
+        diagnostics: [],
+        hash: '',
+      },
+    ]);
+    const m = rustModule([{ kind: 'named', name: 'Rec', typeArgs: [] }]);
+    expect(runRules(rulesOf('DRIFT-003'), ctx(m, idx))).toHaveLength(0);
+  });
+
+  it('flags a named value that resolves to a different symbol', () => {
+    const m = rustModule([{ kind: 'named', name: 'Other', typeArgs: [] }]);
+    const issues = runRules(rulesOf('DRIFT-003'), ctx(m, index));
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.message).toContain('return-type-mismatch');
+  });
+
+  it('checks generic type arguments when production and value share the constructor name', () => {
+    const boxed: SymbolIR = {
+      ...recordSym,
+      id: 'prod#Box',
+      name: 'Box',
+      members: [
+        member('prod#Box', 'wrap', {
+          kind: 'named',
+          name: 'Box',
+          typeArgs: [{ kind: 'named', name: 'u32', typeArgs: [] }],
+        }),
+      ],
+    };
+    const idx = new SymbolIndex([
+      {
+        path: RUST_PROD,
+        language: 'rust',
+        kind: 'production',
+        imports: [],
+        symbols: [boxed],
+        exports: ['Box'],
+        mocks: [],
+        assertions: [],
+        functions: [],
+        comments: [],
+        diagnostics: [],
+        hash: '',
+      },
+    ]);
+    const m = testModule({
+      path: RUST_TEST,
+      language: 'rust',
+      framework: 'mockall',
+      mocks: [
+        mock({
+          id: 'm:wrap',
+          pattern: 'automock',
+          target: { kind: 'class', symbolId: 'prod#Box', exportName: 'Box', span: sp(RUST_TEST, 1) },
+          stubbedMembers: [
+            {
+              name: 'wrap',
+              span: sp(RUST_TEST, 5),
+              api: 'return_const',
+              returnValues: [
+                {
+                  span: sp(RUST_TEST, 5),
+                  api: 'return_const',
+                  value: {
+                    kind: 'named',
+                    name: 'Box',
+                    typeArgs: [{ kind: 'named', name: 'u32', typeArgs: [] }],
+                  },
+                  once: false,
+                  assignable: 'unknown' as const,
+                },
+              ],
+            },
+          ],
+        }),
+      ],
+    });
+    expect(runRules(rulesOf('DRIFT-003'), ctx(m, idx))).toHaveLength(0);
   });
 });
 

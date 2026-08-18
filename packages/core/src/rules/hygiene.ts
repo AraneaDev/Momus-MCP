@@ -62,10 +62,15 @@ export class Mock001Saturation extends HygieneRule {
     const out: Issue[] = [];
     const threshold = config.mockSaturationThreshold;
     const mockedTargets = new Set<string>();
+    // Symbols declared in the test file itself are fixtures (mockall's tests declare a
+    // `trait Foo` and mock it to exercise the macro), not production dependencies — a mock of
+    // one must not count toward saturation. This is language-neutral: a test can only *depend*
+    // on modules it imports, and a same-file symbol is not an import.
+    const ownSymbolIds = new Set(module.symbols.map((s) => s.id));
     for (const m of module.mocks) {
       // prefer module path; symbol ids of the same module would double-count
       if (m.target?.modulePath) mockedTargets.add(m.target.modulePath);
-      else if (m.target?.symbolId) mockedTargets.add(m.target.symbolId);
+      else if (m.target?.symbolId && !ownSymbolIds.has(m.target.symbolId)) mockedTargets.add(m.target.symbolId);
     }
     const deps = module.imports.filter((i) => !FRAMEWORK_SPECIFIERS.test(i.specifier));
     const totalDeps = new Set(deps.map((i) => i.resolvedPath ?? i.specifier)).size;
@@ -100,7 +105,13 @@ export class Mock002MockOfSelf extends HygieneRule {
     for (const m of module.mocks) {
       // Rust: a #[cfg(test)] mod tests mocking a struct/trait declared in the same file.
       if (module.language === 'rust') {
+        // Integration test crates (`tests/*.rs`) declare their own fixture traits/structs and
+        // mock them to exercise the mock framework — the file has no production subject, so
+        // that is not mock-of-self (mockall's own suite does exactly this, docs/11). Only an
+        // inline `#[cfg(test)] mod tests` inside a production file can mock its own struct.
+        const isIntegrationTest = /(?:^|[\\/])tests[\\/]/.test(module.path);
         if (
+          !isIntegrationTest &&
           m.target?.exportName &&
           module.symbols.some((s) => (s.kind === 'class' || s.kind === 'interface') && s.name === m.target!.exportName)
         ) {
@@ -123,7 +134,13 @@ export class Mock002MockOfSelf extends HygieneRule {
           .split('/')
           .pop()
           ?.replace(/\.(ts|tsx|js|jsx|mts|cts|mjs|php|py)$/, '');
-        if (targetBase === subject) {
+        // Python `patch('mod.attr')` patches an attribute *inside* the SUT module — normal
+        // dependency patching (requests: `patch('requests.help.idna')` in test_help.py). Only
+        // a patch of the module itself (`patch('requests.help')` — the specifier's final
+        // dotted segment is the module) is mock-of-self. TS `vi.mock('mod')`/`jest.mock`
+        // always target whole modules, so they keep the bare basename comparison.
+        const specLast = m.target.specifier?.split('.').pop();
+        if (targetBase === subject && (module.language !== 'python' || specLast === targetBase)) {
           out.push(
             issue(
               { module } as RuleContext,

@@ -44,6 +44,7 @@ fn item(it: &syn::Item) -> Value {
             "kind": "trait",
             "name": t.ident.to_string(),
             "attrs": t.attrs.iter().map(attr).collect::<Vec<_>>(),
+            "supertraits": t.supertraits.iter().filter_map(supertrait_name).collect::<Vec<_>>(),
             "items": t.items.iter().filter_map(trait_item).collect::<Vec<_>>(),
             "span": span_of(&t.ident),
         }),
@@ -81,13 +82,47 @@ fn item(it: &syn::Item) -> Value {
                 "span": span_of(&u),
             })
         }
+        syn::Item::ForeignMod(f) => json!({
+            // `extern "C" { fn x(…); … }` — mock_derive's `#[mock]` on an extern block generates an
+            // `Extern<Abi>Mocks` static mock (`ExternCMocks`, `ExternRustMocks`), so the parser needs
+            // the ABI name + the foreign fn names (and the `#[mock]` attr) to detect it.
+            "kind": "extern",
+            "name": f.abi.name.as_ref().map(|l| l.value()).unwrap_or_default(),
+            "attrs": f.attrs.iter().map(attr).collect::<Vec<_>>(),
+            "items": f.items.iter().map(foreign_item).collect::<Vec<_>>(),
+            "span": span_of(f),
+        }),
         syn::Item::Macro(m) => json!({
             "kind": "macro",
             "path": path_text(&m.mac.path),
             "tokens": m.mac.tokens.to_string(),
             "span": span_of(&m.mac),
         }),
-        _ => json!({ "kind": "other", "name": "item", "span": span_of(it) }),
+        _ => json!({ "kind": "other", "name": "item", "attrs": [], "span": span_of(it) }),
+    }
+}
+
+fn foreign_item(fi: &syn::ForeignItem) -> Value {
+    match fi {
+        syn::ForeignItem::Fn(f) => json!({
+            "name": f.sig.ident.to_string(),
+            "sig": sig(&f.sig),
+            "span": span_of(&f.sig.ident),
+        }),
+        syn::ForeignItem::Static(s) => json!({
+            "name": s.ident.to_string(),
+            "span": span_of(&s.ident),
+        }),
+        _ => json!({ "name": "", "span": span_of(fi) }),
+    }
+}
+
+/// The last path segment of a trait supertrait bound (`trait Derived : Base` -> `Base`;
+/// `trait X : std::fmt::Debug` -> `Debug`). Lifetime bounds (`: 'static`) are dropped.
+fn supertrait_name(b: &syn::TypeParamBound) -> Option<String> {
+    match b {
+        syn::TypeParamBound::Trait(tb) => tb.path.segments.last().map(|s| s.ident.to_string()),
+        _ => None,
     }
 }
 
@@ -243,11 +278,29 @@ fn block_exprs(block: &syn::Block) -> Vec<Value> {
             syn::Stmt::Local(l) => {
                 // `let mut m = MockFoo::new();` — surface the initializer expression, tagged
                 // with the binding name so TS can associate later `m.method()` invocations.
+                // `let (mock, handle) = …;` (tuple destructuring) surfaces `bindings` so mocks
+                // can bind their fake (element 0) and config handle (element 1) variables.
                 if let Some(init) = &l.init {
                     let mut e = expr(&init.expr);
-                    if let syn::Pat::Ident(pi) = &l.pat {
-                        if let Some(obj) = e.as_object_mut() {
-                            obj.insert("binding".to_string(), json!(pi.ident.to_string()));
+                    if let Some(obj) = e.as_object_mut() {
+                        match &l.pat {
+                            syn::Pat::Ident(pi) => {
+                                obj.insert("binding".to_string(), json!(pi.ident.to_string()));
+                            }
+                            syn::Pat::Tuple(pt) => {
+                                let names: Vec<String> = pt
+                                    .elems
+                                    .iter()
+                                    .filter_map(|p| match p {
+                                        syn::Pat::Ident(pi) => Some(pi.ident.to_string()),
+                                        _ => None,
+                                    })
+                                    .collect();
+                                if !names.is_empty() {
+                                    obj.insert("bindings".to_string(), json!(names));
+                                }
+                            }
+                            _ => {}
                         }
                     }
                     out.push(e);
@@ -322,6 +375,13 @@ fn expr(e: &syn::Expr) -> Value {
             "receiver": expr(p.expr.as_ref()),
             "span": span_of(e),
         }),
+        syn::Expr::Await(a) => json!({
+            "kind": "other",
+            "text": text,
+            // `.await` is transparent: `Mock::given(...).mount(...).await` must stay walkable.
+            "receiver": expr(a.base.as_ref()),
+            "span": span_of(e),
+        }),
         syn::Expr::Reference(r) => json!({
             "kind": "other",
             "text": text,
@@ -342,7 +402,45 @@ fn expr(e: &syn::Expr) -> Value {
             "stmts": block_exprs(&u.block),
             "span": span_of(e),
         }),
+        // Control-flow expressions execute their bodies at runtime — descend so a mock invoked
+        // inside `for`/`while`/`loop`/`if`/`match` counts as reached (mockiato `sequential_calls`
+        // stubs `bar` then invokes it in a `for` loop).
+        syn::Expr::ForLoop(_) | syn::Expr::While(_) | syn::Expr::Loop(_) | syn::Expr::If(_) | syn::Expr::Match(_) => {
+            json!({
+                "kind": "block",
+                "text": text,
+                "stmts": control_flow_stmts(e),
+                "span": span_of(e),
+            })
+        },
+        syn::Expr::Try(t) => json!({
+            "kind": "other",
+            "text": text,
+            // `?` is transparent: `mock.foo()?` must stay walkable.
+            "receiver": expr(t.expr.as_ref()),
+            "span": span_of(e),
+        }),
         _ => json!({ "kind": "other", "text": text, "span": span_of(e) }),
+    }
+}
+
+/// Collect the runtime statements of a control-flow expression (`for`/`while`/`loop` bodies,
+/// `if` then+else branches, `match` arm bodies) so mock invocations inside them are walked.
+fn control_flow_stmts(e: &syn::Expr) -> Vec<Value> {
+    match e {
+        syn::Expr::Block(b) => block_exprs(&b.block),
+        syn::Expr::ForLoop(f) => block_exprs(&f.body),
+        syn::Expr::While(w) => block_exprs(&w.body),
+        syn::Expr::Loop(l) => block_exprs(&l.body),
+        syn::Expr::If(i) => {
+            let mut stmts = block_exprs(&i.then_branch);
+            if let Some((_, else_expr)) = &i.else_branch {
+                stmts.extend(control_flow_stmts(else_expr));
+            }
+            stmts
+        }
+        syn::Expr::Match(m) => m.arms.iter().flat_map(|arm| control_flow_stmts(arm.body.as_ref())).collect(),
+        _ => Vec::new(),
     }
 }
 

@@ -30,4 +30,17 @@ describe('RustParser', () => {
     const m = new RustParser().parseModule('/c/src/broken.rs', 'fn broken( {', ctx);
     expect(m.diagnostics[0]?.message).toContain('SYS-001');
   });
+
+  it('tolerates items the wasm serializer models as opaque (extern crate)', () => {
+    // `extern crate` (and other un-modeled items) previously crashed attrsOf with
+    // `Cannot read properties of undefined (reading 'some')` — the whole file degraded to SYS-001.
+    const m = new RustParser().parseModule(
+      '/c/tests/lib.rs',
+      '#[macro_use]\nextern crate serde_json;\n\nuse mockito::Server;\n\n#[test]\nfn t() { let s = Server::new(); s.mock("GET", "/").create(); }\n',
+      ctx,
+    );
+    expect(m.diagnostics).toHaveLength(0);
+    expect(m.kind).toBe('test');
+    expect(m.functions).toHaveLength(1);
+  });
 });

@@ -28,6 +28,21 @@ describe('extractTestFunctions', () => {
     expect(fns[0]!.assertionCount).toBe(2);
   });
 
+  it('extracts assert! with a binary comparison into two operands', () => {
+    const file = parseRust(`#[test]\nfn a() {\n  let x = 1;\n  assert!(x == 2);\n}\n`);
+    const assertions = extractAssertions(file, '/c/src/t.rs');
+    expect(assertions[0]!.api).toBe('assert');
+    expect(assertions[0]!.operands.map((o) => o.text)).toEqual(['x', '2']);
+  });
+
+  it('descends into nested blocks and unsafe blocks to count assertions', () => {
+    const file = parseRust(`#[test]\nfn a() {\n  {\n    assert_eq!(1, 1);\n    unsafe { assert!(2 == 2); }\n  }\n}\n`);
+    const fns = extractTestFunctions(file, '/c/src/t.rs');
+    const assertions = extractAssertions(file, '/c/src/t.rs');
+    expect(fns[0]!.assertionCount).toBe(2);
+    expect(assertions).toHaveLength(2);
+  });
+
   it('flags #[should_panic] test functions', () => {
     const file = parseRust(`#[test]\n#[should_panic(expected = "fails as designed")]\nfn a() { assert_eq!(1, 1); }\n`);
     const fns = extractTestFunctions(file, '/c/src/t.rs');

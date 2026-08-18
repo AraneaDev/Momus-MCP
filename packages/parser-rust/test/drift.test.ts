@@ -30,4 +30,32 @@ describe('rust drift rules', () => {
     );
     expect(healthyDrift).toHaveLength(0);
   });
+
+  it('stays quiet on generic-dependent return types (type params, qself projections)', () => {
+    // mockall dogfood (docs/11 row 31): `fn myfunc<V>(&self) -> V` and
+    // `fn bar<T>(&self, _t: T) -> <T as OutputTrait>::Output` with return_const(42u32)
+    // are unprovable statically — DRIFT-003 must not fire.
+    const result = engine().run();
+    const genericDrift = result.issues.filter(
+      (i) => i.span.file.includes('generic_test.rs') && (i.rule === 'DRIFT-001' || i.rule === 'DRIFT-003'),
+    );
+    expect(genericDrift).toHaveLength(0);
+  });
+
+  it('still fires DRIFT-003 for a scalar literal against a resolvable struct return', () => {
+    // repo.rs defines `pub struct Record` in production, so `return_const(42)` on
+    // `fn record(&self) -> Record` is provably a mismatch — the conservative pass only
+    // applies to unresolvable names.
+    const result = engine().run();
+    const d3 = result.issues.filter((i) => i.rule === 'DRIFT-003');
+    expect(d3.some((i) => i.message.includes("'record'"))).toBe(true);
+  });
+
+  it('resolves a member inherited from a trait supertrait (no DRIFT-001 false flag)', () => {
+    // `trait Derived : Base` — `add` is declared on Base and inherited by Derived, so stubbing
+    // it on MockDerived must not read as "missing member" (mock_derive's advanced_traits.rs).
+    const result = engine().run();
+    const d1 = result.issues.filter((i) => i.span.file.includes('supertrait_test.rs') && i.rule === 'DRIFT-001');
+    expect(d1).toHaveLength(0);
+  });
 });

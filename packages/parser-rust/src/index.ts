@@ -85,5 +85,7 @@ function isIntegrationTestPath(path: string): boolean {
 
 function attrsOf(item: RustItem): { path: string; args: string | null }[] {
   if (item.kind === 'use' || item.kind === 'macro') return [];
-  return item.attrs;
+  // Items the wasm serializer can't model (`extern crate`, `extern "C" { … }`, …) fall into
+  // the catch-all without an `attrs` key — default defensively.
+  return item.attrs ?? [];
 }

@@ -188,6 +188,17 @@ export class Taut005ZeroReachStub extends BaseRule {
       if (asserted.has(mock.id)) continue;
       // A #[should_panic] test asserts the drop-time panic — the un-invoked expectation is the point.
       if (mock.fnId ? fns.get(mock.fnId)?.shouldPanic : false) continue;
+      // `patch`/`patch-object`/`patch-multiple`/`patch-dict` inject the mock into the SUT's dependency
+      // graph for the enclosing scope; the invocation is *indirect* (the SUT calls the patched target),
+      // so the parser can never record an invocationSite for them. Reachability is unobservable at the
+      // syntactic level (django dogfood: 90 `with mock.patch.object(…, return_value=…)` false positives).
+      if (
+        mock.pattern === 'patch' ||
+        mock.pattern === 'patch-object' ||
+        mock.pattern === 'patch-multiple' ||
+        mock.pattern === 'patch-dict'
+      )
+        continue;
       out.push(
         issue(
           { module } as RuleContext,
@@ -210,6 +221,7 @@ export class Taut006UnconfiguredSpyAssert extends BaseRule {
   check({ module }: RuleContext): Issue[] {
     const out: Issue[] = [];
     const mocks = new Map(module.mocks.map((m) => [m.id, m]));
+    const fns = new Map(module.functions.map((f) => [f.id, f]));
     for (const a of module.assertions) {
       const spyApi =
         a.api.startsWith('toHaveBeenCalled') ||
@@ -230,7 +242,18 @@ export class Taut006UnconfiguredSpyAssert extends BaseRule {
         mock.pattern === 'patch' ||
         mock.pattern === 'patch-object';
       const configured = mock.configuredValues.length > 0 || mock.stubbedMembers.some((s) => s.returnValues.length > 0);
-      if (isSpy && !configured && mock.invocationSites.length === 0) {
+      // A spy the SUT reaches *indirectly* has no syntactic invocation site in ANY language:
+      // `jest.spyOn(manager, 'emit')` followed by `manager.initialize(cfg)` records a call to
+      // `initialize`, never to `emit`, and a double installed through a factory
+      // (`spyOn(cm, 'createAdapter').mockReturnValue(adapter)`) is called only from inside the
+      // SUT. `invocationSites` therefore proves a spy was reached, never that it was not. When
+      // the enclosing test exercises production the call path is unobservable, so the strict
+      // signal is unsound — Argos-MCP dogfood: 15/15 TypeScript findings were false positives
+      // (docs/11 §Argos). The rule keeps its real target: a spy asserted by a test that runs no
+      // production code at all, where nothing could ever have called it.
+      const fn = fns.get(a.fnId);
+      const unobservableIndirectPath = fn?.hasProductionCalls === true;
+      if (isSpy && !configured && mock.invocationSites.length === 0 && !unobservableIndirectPath) {
         out.push(
           issue(
             { module } as RuleContext,

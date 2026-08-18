@@ -130,7 +130,7 @@ export class AuditEngine {
       else production.push(module);
     }
 
-    const index = new SymbolIndex(production);
+    const index = new SymbolIndex(production, testModules);
     const diff = this.buildDiffScope(root, production);
     // Syntax-only parser passes preserve a syntactic target name instead of relying on
     // checker identity. Resolve that name against the production index before rules run.
@@ -141,10 +141,14 @@ export class AuditEngine {
           !target ||
           target.symbolId ||
           !target.exportName ||
-          (target.kind !== 'class' && target.kind !== 'instance-member')
+          (target.kind !== 'class' && target.kind !== 'instance-member' && target.kind !== 'global')
         )
           continue;
-        const symbol = index.resolveByName(target.exportName, module.path);
+        // Same-file symbols win (a test defining its own `trait Foo` mocks that Foo, not an
+        // unrelated production Foo with the same name — mockall's tests do exactly this);
+        // otherwise resolve against the production index.
+        let symbol = module.symbols.find((s) => s.name === target.exportName);
+        if (!symbol) symbol = index.resolveByName(target.exportName, module.path);
         if (symbol) target.symbolId = symbol.id;
       }
     }

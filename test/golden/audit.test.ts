@@ -37,7 +37,8 @@ describe('golden audit — planted violations fixture', () => {
       'TAUT-002@22', // echoes the beforeAll value 7 against itself
       'TAUT-002@39', // echoes the first nested setup value 11
       'TAUT-002@49', // echoes the second nested setup value 22
-      'TAUT-006@18', // toHaveBeenCalled on an unconfigured, unreached spy
+      'TAUT-004@39', // every operand mock-derived in a test that runs no production code
+      'TAUT-006@39', // toHaveBeenCalled on an unconfigured spy nothing could have reached
     ]);
   });
 
@@ -54,6 +55,7 @@ describe('golden audit — planted violations fixture', () => {
       'DRIFT-001': 'error',
       'DRIFT-003': 'warning',
       'TAUT-002': 'error',
+      'TAUT-004': 'warning',
       'TAUT-006': 'warning',
     });
   });
@@ -65,8 +67,8 @@ describe('golden audit — planted violations fixture', () => {
 
   it('summary counts match the issue list', () => {
     expect(result.summary.errors).toBe(6);
-    expect(result.summary.warnings).toBe(4);
-    expect(result.summary.issues).toBe(10);
+    expect(result.summary.warnings).toBe(5);
+    expect(result.summary.issues).toBe(11);
     expect(result.summary.suppressed).toBe(0);
   });
 
@@ -98,7 +100,9 @@ describe('golden audit — python drift fixtures', () => {
       'DRIFT-001@drift_test.py:6', // patch.object(Repo, "save2") — member does not exist
       'DRIFT-003@drift_test.py:12', // price.return_value = "nope" not assignable to int
       'DRIFT-003@drift_test.py:17', // count.return_value = "nope" not assignable to inferred int
+      'DRIFT-005@test_patch_imports.py:29', // function-local import is not a module attribute
       'DRIFT-005@test_patch_missing.py:5', // patch("prod_missing.missing") — attribute does not exist
+      'MOCK-001@test_patch_imports.py:1', // over-mocking heuristic on the mock-only patch fixture
       'MOCK-001@test_patch_missing.py:1', // over-mocking heuristic on the mock-only patch fixture
       'TAUT-005@drift_test.py:11', // zero-reach stub
       'TAUT-005@drift_test.py:16', // zero-reach stub (test_count mock)
@@ -136,8 +140,13 @@ describe('golden audit — rust drift fixtures', () => {
     expect(found).toEqual([
       'DRIFT-001@drift_test.rs:10', // expect_save2() — member does not exist on Repo
       'DRIFT-003@drift_test.rs:11', // return_const("nope") not assignable to u32
+      'DRIFT-003@drift_test.rs:12', // return_const(42) not assignable to a resolvable struct return
+      'DRIFT-003@mocktopus_test.rs:12', // mocktopus mock_safe("nope") not assignable to u32
+      'MOCK-002@generic_test.rs:36', // automock fixture mocks its own trait (info)
+      'MOCK-002@generic_test.rs:43', // automock fixture mocks its own trait (info)
       'TAUT-005@drift_test.rs:9', // zero-reach stub
       'TAUT-005@healthy_test.rs:9', // zero-reach stub (healthy twin is drift-clean)
+      'TAUT-005@mocktopus_test.rs:12', // zero-reach stub
     ]);
   });
 
