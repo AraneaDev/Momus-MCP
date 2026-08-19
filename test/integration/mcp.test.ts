@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,6 +54,7 @@ describe('Momus MCP server (in-memory transport)', () => {
   it('advertises exactly the published tools with annotations', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
+      'apply_issue_fix',
       'audit_test_fidelity',
       'audit_workspace',
       'detect_tautological_assertions',
@@ -61,6 +62,7 @@ describe('Momus MCP server (in-memory transport)', () => {
       'explain_issue',
       'get_ir',
       'list_rules',
+      'preview_issue_fix',
       'synthesize_mock_contract',
       'verify_mock_drift',
     ]);
@@ -259,6 +261,49 @@ describe('Momus MCP server (in-memory transport)', () => {
     expect(sc.result.dependency?.symbol).toContain('LedgerService');
     expect(sc.result.dependency?.members).toContain('totalFor');
     expect(sc.result.dependency?.file).toBe('src/services/ledger.ts');
+  });
+
+  it('preview_issue_fix returns the diff for one issue without touching the file', async () => {
+    const before = readFileSync(join(FIXTURES, 'tests', 'ledger.test.ts'), 'utf8');
+    const res = await client.callTool({
+      name: 'preview_issue_fix',
+      arguments: { path: 'tests/ledger.test.ts', rule: 'DRIFT-001', line: 16 },
+    });
+    expect(res.isError).toBeFalsy();
+    const sc = res.structuredContent as {
+      result: { fixable: boolean; description: string; diff: string; contentHash: string };
+    };
+    expect(sc.result.fixable).toBe(true);
+    expect(sc.result.diff).toContain("-    const spy = vi.spyOn(service, 'totalForX');");
+    expect(sc.result.diff).toContain("+    const spy = vi.spyOn(service, 'totalFor');");
+    expect(sc.result.description).toContain('rename');
+    // The hash is what apply refuses on when the file moved under the agent.
+    expect(sc.result.contentHash).toMatch(/^[0-9a-f]{16}$/);
+    // Read-only: the fixture on disk is untouched.
+    expect(readFileSync(join(FIXTURES, 'tests', 'ledger.test.ts'), 'utf8')).toBe(before);
+  });
+
+  it('preview_issue_fix reports a semantic finding as not fixable, not as an error', async () => {
+    // TAUT-002 is deliberately descriptive-only: any rewrite would invent the asserted value.
+    const res = await client.callTool({
+      name: 'preview_issue_fix',
+      arguments: { path: 'tests/ledger.test.ts', rule: 'TAUT-002', line: 11 },
+    });
+    expect(res.isError).toBeFalsy();
+    const sc = res.structuredContent as { result: { fixable: boolean; reason: string } };
+    expect(sc.result.fixable).toBe(false);
+    expect(sc.result.reason).toContain('no auto-fix');
+  });
+
+  it('marks apply_issue_fix as the one writing, destructive tool', async () => {
+    const { tools } = await client.listTools();
+    // Clients decide whether to prompt from these; a writer advertised as read-only would be
+    // applied silently. Every other tool must stay read-only.
+    const apply = tools.find((t) => t.name === 'apply_issue_fix')!;
+    expect(apply.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: false });
+    for (const tool of tools.filter((t) => t.name !== 'apply_issue_fix')) {
+      expect.soft(tool.annotations, `${tool.name} should be read-only`).toMatchObject({ readOnlyHint: true });
+    }
   });
 
   it('detect_tautological_assertions returns only TAUT rules', async () => {
@@ -465,7 +510,7 @@ describe('Momus MCP server (Streamable HTTP)', () => {
     try {
       await client.connect(transport);
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(9);
+      expect(tools).toHaveLength(11);
       expect(tools.map((t) => t.name)).toContain('verify_mock_drift');
       const res = await client.callTool({ name: 'verify_mock_drift', arguments: {} });
       expect(res.isError).toBeFalsy();
@@ -624,6 +669,107 @@ describe('Momus MCP server (PHP language selection)', () => {
     expect(text).toContain("shouldReceive('factory')->andReturn(null);");
     const sc = res.structuredContent as { result: { summary: { members: number } } };
     expect(sc.result.summary.members).toBe(7);
+  });
+});
+
+describe('Momus MCP server (apply_issue_fix — the only write surface)', () => {
+  let client: Client;
+  let cleanup: () => Promise<void>;
+  let workspace: string;
+  const TEST_FILE = 'tests/ledger.test.ts';
+
+  // A copy, never the in-repo fixture: this suite writes, and an in-tree edit would leave the
+  // planted-violations gallery mutated for every other test in the run.
+  beforeAll(async () => {
+    workspace = mkdtempSync(join(tmpdir(), 'momus-apply-'));
+    cpSync(FIXTURES, workspace, { recursive: true });
+    const pair = InMemoryTransport.createLinkedPair();
+    const server = createMomusServer({
+      root: workspace,
+      config: { ...DEFAULT_CONFIG, cache: { dir: '.momus/cache', enabled: false } },
+    });
+    cleanup = async () => {
+      await server.close();
+      rmSync(workspace, { recursive: true, force: true });
+    };
+    await server.connect(pair[0]);
+    client = new Client({ name: 'momus-apply-test', version: '1.0.0' }, { capabilities: {} });
+    await client.connect(pair[1]);
+  });
+
+  afterAll(async () => {
+    await cleanup();
+  });
+
+  const preview = async () => {
+    const res = await client.callTool({
+      name: 'preview_issue_fix',
+      arguments: { path: TEST_FILE, rule: 'DRIFT-001', line: 16 },
+    });
+    return (res.structuredContent as { result: { contentHash: string } }).result.contentHash;
+  };
+
+  it('refuses to apply against a hash that no longer matches the file', async () => {
+    const res = await client.callTool({
+      name: 'apply_issue_fix',
+      arguments: { path: TEST_FILE, rule: 'DRIFT-001', line: 16, contentHash: '0000000000000000' },
+    });
+    expect(res.isError).toBe(true);
+    const sc = res.structuredContent as { error: { code: string; hint: string } };
+    expect(sc.error.code).toBe('STALE_CONTENT');
+    expect(sc.error.hint).toContain('preview_issue_fix');
+    // and nothing was written
+    expect(readFileSync(join(workspace, TEST_FILE), 'utf8')).toContain("'totalForX'");
+  });
+
+  it('refuses a path that escapes the workspace root', async () => {
+    const res = await client.callTool({
+      name: 'apply_issue_fix',
+      arguments: { path: '../../../etc/passwd', rule: 'DRIFT-001', contentHash: '0000000000000000' },
+    });
+    expect(res.isError).toBe(true);
+    expect((res.structuredContent as { error: { code: string } }).error.code).toBe('NOT_FOUND');
+  });
+
+  it('refuses a finding that carries no mechanically applicable fix', async () => {
+    const hash = await preview();
+    const res = await client.callTool({
+      name: 'apply_issue_fix',
+      arguments: { path: TEST_FILE, rule: 'TAUT-002', line: 11, contentHash: hash },
+    });
+    expect(res.isError).toBe(true);
+    const sc = res.structuredContent as { error: { code: string; message: string } };
+    expect(sc.error.code).toBe('NOT_FIXABLE');
+    expect(sc.error.message).toContain('TAUT-002');
+  });
+
+  it('applies exactly one fix and reports the issue it cleared', async () => {
+    const hash = await preview();
+    const res = await client.callTool({
+      name: 'apply_issue_fix',
+      arguments: { path: TEST_FILE, rule: 'DRIFT-001', line: 16, contentHash: hash },
+    });
+    expect(res.isError).toBeFalsy();
+    const sc = res.structuredContent as {
+      result: {
+        applied: boolean;
+        diff: string;
+        issuesBefore: number;
+        issuesAfter: number;
+        cleared: string[];
+        contentHash: string;
+      };
+    };
+    expect(sc.result.applied).toBe(true);
+    // The proof is the re-audit, not the write: the finding is gone.
+    expect(sc.result.cleared).toContain('DRIFT-001@16');
+    expect(sc.result.issuesAfter).toBe(sc.result.issuesBefore - 1);
+    // The file really changed, and only in the one place.
+    const after = readFileSync(join(workspace, TEST_FILE), 'utf8');
+    expect(after).toContain("vi.spyOn(service, 'totalFor')");
+    expect(after).not.toContain('totalForX');
+    // A fresh hash comes back so a follow-up apply does not need another preview round-trip.
+    expect(sc.result.contentHash).not.toBe(hash);
   });
 });
 
