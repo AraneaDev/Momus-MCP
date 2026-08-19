@@ -6,6 +6,7 @@
   },
   "type": "module",
   "description": "Momus CLI: audit, drift, precommit, hook, annotate, annotate-pr, contract, rules, serve, init, doctor",
+  "license": "MIT",
   "files": [
     "src"
   ],

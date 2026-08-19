@@ -6,6 +6,7 @@
   },
   "type": "module",
   "description": "Rust parser plugin for Momus using syn (compiled to wasm32)",
+  "license": "MIT",
   "files": [
     "src",
     "wasm/pkg"

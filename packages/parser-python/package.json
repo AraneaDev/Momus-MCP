@@ -6,6 +6,7 @@
   },
   "type": "module",
   "description": "Python parser plugin for Momus using tree-sitter-python",
+  "license": "MIT",
   "files": [
     "src"
   ],

@@ -27,7 +27,8 @@ export default defineConfig({
       provider: 'v8',
       include: ['packages/*/src/**/*.ts'],
       exclude: ['packages/*/src/**/*.d.ts', 'packages/*/test/**', 'test/**'],
-      reporter: ['text', 'text-summary'],
+      // lcov is what the Codecov upload in CI consumes; text/summary are for humans.
+      reporter: ['text', 'text-summary', 'lcov'],
       thresholds: {
         statements: 80,
         branches: 75,

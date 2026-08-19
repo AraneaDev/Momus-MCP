@@ -6,6 +6,7 @@
   },
   "type": "module",
   "description": "Momus engine: IR, symbol index, rules, formatters (no MCP, no parsers)",
+  "license": "MIT",
   "files": [
     "src"
   ],

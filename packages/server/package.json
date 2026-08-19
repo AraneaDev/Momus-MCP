@@ -6,6 +6,7 @@
   },
   "type": "module",
   "description": "Momus-MCP: MCP server exposing mock & test integrity audit tools",
+  "license": "MIT",
   "files": [
     "src"
   ],
