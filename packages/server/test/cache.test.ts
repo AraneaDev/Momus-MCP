@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SqliteParseCache, openParseCache } from '../src/cache.ts';
@@ -76,6 +76,43 @@ describe('SqliteParseCache', () => {
       const cache = openParseCache(dir, { dir: 'cache', enabled: true });
       expect(cache).toBeInstanceOf(SqliteParseCache);
       cache!.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('SqliteParseCache is advisory: I/O failure degrades, never throws', () => {
+  it('never throws from a get against a removed cache file', () => {
+    // What a live MCP server hits when someone deletes .momus/ underneath it: the sqlite
+    // handle is still open but its file is gone. The contract is only that this cannot blow
+    // up the audit — sqlite may still answer from its own page cache, and that answer is
+    // valid, because the hash guard is what proves an entry usable, not the file's existence.
+    const dir = mkdtempSync(join(tmpdir(), 'momus-sqlite-gone-'));
+    const cache = new SqliteParseCache(dir);
+    cache.put('a.ts', 'h1', 'w1', module('a.ts'));
+    rmSync(dir, { recursive: true, force: true });
+
+    expect(() => cache.get('a.ts', 'h1', 'w1')).not.toThrow();
+  });
+
+  it('swallows a put against a removed cache file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'momus-sqlite-put-'));
+    const cache = new SqliteParseCache(dir);
+    rmSync(dir, { recursive: true, force: true });
+
+    expect(() => cache.put('a.ts', 'h1', 'w1', module('a.ts'))).not.toThrow();
+  });
+
+  it('returns undefined rather than throwing when the cache cannot be opened at all', () => {
+    // Blocked by a FILE where the cache directory should be, not by permissions: the suite
+    // runs as root in CI, and root bypasses permission bits, so a chmod-based test would
+    // silently succeed and prove nothing.
+    const dir = mkdtempSync(join(tmpdir(), 'momus-sqlite-blocked-'));
+    try {
+      writeFileSync(join(dir, 'blocked'), 'not a directory');
+      const opened = openParseCache(dir, { dir: 'blocked/cache', enabled: true });
+      expect(opened).toBeUndefined();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

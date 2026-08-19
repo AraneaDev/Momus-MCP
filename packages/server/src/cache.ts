@@ -1,7 +1,8 @@
 /**
  * Persistent IR cache (spec docs/02 §2.4.3): better-sqlite3, keyed by file content hash
- * + workspace digest. Advisory only — a corrupt or mismatched entry is always treated as a
- * miss and recomputed, never a correctness hazard.
+ * + workspace digest. Advisory only — a corrupt or mismatched entry, and any sqlite-level
+ * failure (unwritable file, deleted directory, locked db), is treated as a miss and
+ * recomputed. The cache may never fail an audit: it is an optimization, not a dependency.
  */
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
@@ -25,27 +26,42 @@ export class SqliteParseCache implements ParseCache {
   }
 
   get(path: string, fileHash: string, workspaceHash: string): ModuleIR | undefined {
-    const row = this.db.prepare('SELECT file_hash, workspace_hash, ir FROM modules WHERE path = ?').get(path) as
-      { file_hash: string; workspace_hash: string; ir: string } | undefined;
-    if (!row) return undefined;
-    if (row.file_hash !== fileHash || row.workspace_hash !== workspaceHash) return undefined;
     try {
-      return JSON.parse(row.ir) as ModuleIR;
+      const row = this.db.prepare('SELECT file_hash, workspace_hash, ir FROM modules WHERE path = ?').get(path) as
+        { file_hash: string; workspace_hash: string; ir: string } | undefined;
+      if (!row) return undefined;
+      if (row.file_hash !== fileHash || row.workspace_hash !== workspaceHash) return undefined;
+      try {
+        return JSON.parse(row.ir) as ModuleIR;
+      } catch {
+        // Corrupt entry: drop it and recompute rather than fail the audit.
+        this.db.prepare('DELETE FROM modules WHERE path = ?').run(path);
+        return undefined;
+      }
     } catch {
-      // Corrupt entry: drop it and recompute rather than fail the audit.
-      this.db.prepare('DELETE FROM modules WHERE path = ?').run(path);
+      // Any sqlite-level failure — file deleted under a long-lived server, read-only mount,
+      // locked db — is a cache miss. The cache is advisory; it may never fail an audit.
       return undefined;
     }
   }
 
   put(path: string, fileHash: string, workspaceHash: string, module: ModuleIR): void {
-    this.db
-      .prepare('INSERT OR REPLACE INTO modules (path, file_hash, workspace_hash, ir) VALUES (?, ?, ?, ?)')
-      .run(path, fileHash, workspaceHash, JSON.stringify(module));
+    try {
+      this.db
+        .prepare('INSERT OR REPLACE INTO modules (path, file_hash, workspace_hash, ir) VALUES (?, ?, ?, ?)')
+        .run(path, fileHash, workspaceHash, JSON.stringify(module));
+    } catch {
+      // Failing to memoize costs a re-parse next run; failing the audit costs the user their
+      // result. Swallow — "attempt to write a readonly database" must not surface as a tool error.
+    }
   }
 
   close(): void {
-    this.db.close();
+    try {
+      this.db.close();
+    } catch {
+      // Already closed, or the file is gone; nothing to release either way.
+    }
   }
 }
 
@@ -55,5 +71,11 @@ export function openParseCache(
   cacheConfig: { dir: string; enabled: boolean },
 ): SqliteParseCache | undefined {
   if (cacheConfig.enabled === false) return undefined;
-  return new SqliteParseCache(join(root, cacheConfig.dir));
+  try {
+    return new SqliteParseCache(join(root, cacheConfig.dir));
+  } catch {
+    // A workspace we cannot write to (read-only mount, permissions) still gets audited —
+    // just without memoization. Running uncached is a degraded mode, not a failure mode.
+    return undefined;
+  }
 }
