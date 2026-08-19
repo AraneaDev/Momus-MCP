@@ -5,7 +5,7 @@
 > reports about those codebases and (b) the bugs we found in Momus while doing so.
 > Non-normative (see `docs/README`).
 
-**Last updated:** 2026-08-18 (round 50)
+**Last updated:** 2026-08-19 (round 51)
 
 ## 1. Targets
 
@@ -14,6 +14,7 @@
 | `/root/Chaos-MCP` | TypeScript (ESM, NodeNext) | 202 audited files, 97 test files | Vitest (`vi.*`), Stryker mutation testing | default TS |
 | `/root/Knossos-MCP` | PHP ≥ 8.3 | 455 audited files (683 `.php` + 324 `.ts` + 17 `.py` in tree) | PHPUnit 12, Infection | `.momusrc` → `{languages:{typescript,php,python}}` |
 | `/root/Argos-MCP` | TypeScript | 78 audited files | Jest | default TS |
+| `/root/termaxa` | Rust | 29 audited files, 8 integration tests + inline `#[cfg(test)]` | Rust built-in `#[test]` / `assert*!`, **no mock library** | `.momusrc` → `{languages:{rust:true}}` |
 | `Momus-MCP` (self) | TypeScript + PHP | 59 audited files | Vitest | `.momusrc` (fixtures excluded) |
 | `psf/requests` (dogfood clone at `/tmp/requests-dogfood`) | Python | 35 files, 13 test files | pytest + unittest.mock (live test server) | temp `.momusrc` → `{languages:{python:true}}` |
 | `asomers/mockall` (dogfood clone at `/tmp/mockall-dogfood`) | Rust | 188 `.rs` files, 172 under `tests/` | mockall's own `#[automock]`/`mock!` + `#[test]`/`#[cfg(test)]` | temp `.momusrc` → `{languages:{rust:true}}` |
@@ -708,3 +709,28 @@ flask's own repo (**83 files, 3,000+ LOC of pytest tests**, src-layout package u
       reached DRIFT-003's assignability check; it now emits the `{ kind: 'literal', value }` shape
       the rest of the Rust parser produces, with the string delimiters stripped.
     Gate: **626 tests** (617 → 626), typecheck/lint/format clean, self-audit CLEAN.
+
+51. **Re-verification round on our own MCPs, plus a Rust target (`termaxa`):** re-audited every
+    dogfood repo at v0.0.10 with the IR caches cleared, and added `termaxa` (29 `.rs` files) to
+    cover a Rust codebase that is not itself a mock library. Result: **Chaos 0 (3 suppressed) ·
+    Knossos 0 · Argos 0 · Momus self 0 · termaxa 0.**
+    - **termaxa's clean result was checked for vacuity before being believed.** `indexStats`
+      reported `mocks: 0`, which is the same signature as the galvanic round 47 failure where a
+      whole framework was invisible and the audit passed by seeing nothing. Here it is honest:
+      termaxa uses no mock library at all, so there are no doubles to check. Confirmed by
+      planting a `assert_eq!(value, value)` / `assert_eq!(1, 1)` probe in `tests/`, which fired
+      TAUT-001 ×2 + TAUT-003 as expected, then removing it. **A zero on a repo Momus has never
+      seen before means nothing until a planted probe proves the pipeline is live on it.**
+    - **Momus bug found by running the tool through its own MCP server** (`audit_workspace` over
+      stdio, rather than the CLI): the call answered `attempt to write a readonly database` and
+      produced no audit. The parse cache is documented as advisory — "a corrupt or mismatched
+      entry is always treated as a miss and recomputed, never a correctness hazard" — but only
+      JSON corruption was guarded; any sqlite-level failure propagated out as a tool error. The
+      trigger was ordinary: `.momus/` had been deleted while a long-lived server still held the
+      handle open, which is what a cache-clearing dogfood run does to an editor's live server.
+      `get`/`put`/`close`/`openParseCache` now all degrade, and the docblock says what the code
+      does. **An optimization that can fail the thing it optimizes is not advisory.**
+    - The fix's own test caught a second trap: the first draft blocked the cache directory with
+      `chmod 0o500`, which proves nothing because the suite runs as root and root bypasses
+      permission bits. It now blocks the path with a *file*, which fails for every uid.
+    Gate: **655 tests** (652 → 655), typecheck/lint/format clean, self-audit CLEAN.
