@@ -29,7 +29,7 @@ import { TypeScriptParser } from '@momus/parser-typescript';
 import { PhpParser } from '@momus/parser-php';
 import { PythonParser } from '@momus/parser-python';
 import { RustParser } from '@momus/parser-rust';
-import { serve, serveHttp, watchWorkspace, openParseCache } from '@momus/mcp-server';
+import { serve, serveHttp, openParseCache } from '@momus/mcp-server';
 import { collectFixable, editsByFile, buildFixDiff, applyFixToFiles } from './fix.ts';
 
 const HELP = `momus — unsparing mock & test integrity auditor
@@ -538,17 +538,18 @@ export async function runRules(root: string, _argv: string[]): Promise<number> {
 export async function runServe(root: string, argv: string[]): Promise<number> {
   // `root` already includes `--root` (resolved in main); keep the alias for clarity.
   const rootDir = root;
-  if (argv.includes('--watch')) {
-    watchWorkspace(rootDir); // invalidate the ts.Program cache on source changes
-    process.stderr.write(`momus serve: watching ${rootDir} for changes\n`);
-  }
+  // The watcher is handed to the server rather than started beside it: a detached watcher
+  // invalidates the ts.Program cache but has no way to tell subscribers of
+  // momus://issues/latest that the snapshot went stale.
+  const watch = argv.includes('--watch');
+  if (watch) process.stderr.write(`momus serve: watching ${rootDir} for changes\n`);
   if (argValue(argv, '--transport') === 'http') {
     const port = Number(argValue(argv, '--port') ?? '3000');
-    await serveHttp({ root: rootDir, port });
+    await serveHttp({ root: rootDir, port, watch });
     await new Promise<void>(() => {}); // keep serving until terminated
     return 0;
   }
-  await serve({ root: rootDir });
+  await serve({ root: rootDir, watch });
   return 0;
 }
 

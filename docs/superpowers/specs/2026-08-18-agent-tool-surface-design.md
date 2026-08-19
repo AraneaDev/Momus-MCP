@@ -232,7 +232,14 @@ Four independently-shippable phases, each a reviewable PR with a green gate
    re-auditing or the re-audit re-reports the finding it just fixed.
 4. **Notify** — resources + watcher notifications + the corrected capability
    declaration and `docs/04` fix (§2); degrades to doc-noted refresh on SDKs
-   older than 1.30.
+   older than 1.30. **Shipped.** **[revised]** Two things the spec did not have: the SDK's
+   `McpServer` declares the resources capability but does not answer `resources/subscribe`
+   itself, so those handlers are registered explicitly (without them a subscribe returns
+   "Method not found" and no notification ever arrives); and the watcher is now **owned by the
+   server** rather than started beside it — `momus serve --watch` previously started a
+   detached `watchWorkspace` that invalidated the `ts.Program` cache but could not notify
+   anyone. Watching is opt-in (`watch: true`), because a watcher is a real fs handle and a
+   caller that only makes tool calls should not pay for one.
 
 Acceptance after 3: an agent can take `audit_test_fidelity` output and
 `preview`/`apply` — and after 4: an agent react to file changes without polling.

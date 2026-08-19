@@ -11,7 +11,11 @@ import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
+import {
+  isInitializeRequest,
+  SubscribeRequestSchema,
+  UnsubscribeRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { watch } from 'chokidar';
 import {
@@ -61,9 +65,19 @@ export interface MomusServerOptions {
   config?: MomusConfig;
   /** Pre-opened parse cache to reuse (serveHttp shares one across sessions). */
   cache?: ParseCache;
+  /**
+   * Watch the workspace and notify subscribers of `momus://issues/latest` when a source file
+   * changes. Off by default: a watcher is a real fs handle, and a caller that only makes tool
+   * calls should not pay for one. `momus serve --watch` turns it on.
+   */
+  watch?: boolean;
 }
 
 const ANN = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+
+const RULES_URI = 'momus://rules';
+const CONFIG_URI = 'momus://config';
+const ISSUES_URI = 'momus://issues/latest';
 
 /**
  * Absolute path for a workspace-relative input, or undefined when it escapes the root.
@@ -351,7 +365,16 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
   const cache = opts.cache ?? openParseCache(root, config.cache);
   const server = new McpServer(
     { name: 'momus-mcp', version: SERVER_VERSION },
-    { capabilities: { tools: { listChanged: true } } },
+    {
+      capabilities: {
+        tools: { listChanged: true },
+        // `subscribe` is what makes notifications/resources/updated meaningful: a client that
+        // subscribes to momus://issues/latest is told when a file change invalidated it.
+        // docs/04 §4.1 documented a resources capability the server never declared — this is
+        // that declaration, corrected to match what is actually served.
+        resources: { subscribe: true, listChanged: false },
+      },
+    },
   );
   // Only close the cache when this server opened it (serveHttp shares a single cache).
   if (cache && !opts.cache) server.server.onclose = () => cache.close?.();
@@ -373,7 +396,16 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
       includeUnresolved: args.includeUnresolved,
     }).run();
 
+  /**
+   * Newest audit this session has produced, served as `momus://issues/latest`. Not state the
+   * protocol depends on — it is re-derivable by calling any audit tool — so a client that
+   * never reads the resource is unaffected, and a restart simply starts empty.
+   */
+  let latestAudit: { result: AuditResult; tool: string; at: string } | undefined;
+
   const respond = (tool: string, result: AuditResult, label: string) => {
+    latestAudit = { result, tool, at: new Date().toISOString() };
+    notifyIssuesUpdated();
     const text = buildMarkdownReport(result, {
       workspaceRoot: root,
       verbosity: config.tokenBudget.verbosity,
@@ -611,6 +643,86 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
       ...(mock?.target?.memberName ? { stubbed: mock.target.memberName } : {}),
     };
   };
+
+  /**
+   * Tell subscribed clients the audit snapshot moved on. Best-effort: a transport that is not
+   * connected yet, or a client that never subscribed, must not turn a successful audit into a
+   * failed tool call.
+   */
+  const notifyIssuesUpdated = () => {
+    void server.server.sendResourceUpdated({ uri: ISSUES_URI }).catch(() => undefined);
+  };
+
+  const jsonResource = (uri: string, build: () => unknown) => ({
+    contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(build(), null, 2) }],
+  });
+
+  server.registerResource(
+    'rules',
+    RULES_URI,
+    { title: 'Rule catalog', description: 'The rule catalog with effective severities.', mimeType: 'application/json' },
+    async () =>
+      jsonResource(RULES_URI, () => ({
+        rules: RULES_CATALOG.map((r) => {
+          const severity = effectiveSeverity(config, r);
+          return { id: r.id, name: r.name, severity, enabled: severity !== 'off', description: r.description };
+        }),
+      })),
+  );
+
+  server.registerResource(
+    'config',
+    CONFIG_URI,
+    { title: 'Merged config', description: 'The effective .momusrc for this workspace.', mimeType: 'application/json' },
+    async () => jsonResource(CONFIG_URI, () => config),
+  );
+
+  server.registerResource(
+    'issues',
+    ISSUES_URI,
+    {
+      title: 'Latest audit',
+      description: 'Snapshot of the most recent audit run in this session.',
+      mimeType: 'application/json',
+    },
+    async () =>
+      jsonResource(ISSUES_URI, () =>
+        latestAudit
+          ? {
+              audited: true,
+              tool: latestAudit.tool,
+              at: latestAudit.at,
+              ...(buildJsonEnvelope(latestAudit.result, { workspaceRoot: root, tool: latestAudit.tool })
+                .result as object),
+            }
+          : { audited: false, hint: 'Call audit_workspace (or any audit tool) to populate this.' },
+      ),
+  );
+
+  // McpServer declares the resources capability but does not itself answer resources/subscribe,
+  // so a client that subscribes gets "Method not found" and never receives an update. The
+  // subscription set is per-session and advisory — notifications are broadcast to the
+  // connected client either way; tracking it keeps unsubscribe honest.
+  const subscriptions = new Set<string>();
+  server.server.setRequestHandler(SubscribeRequestSchema, async (request) => {
+    subscriptions.add(request.params.uri);
+    return {};
+  });
+  server.server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
+    subscriptions.delete(request.params.uri);
+    return {};
+  });
+
+  if (opts.watch) {
+    // A source edit makes the snapshot stale even though no tool ran, which is exactly the
+    // case polling cannot see. watchWorkspace already invalidates the ts.Program cache.
+    const watcher = watchWorkspace(root, { onChange: () => notifyIssuesUpdated() });
+    const closeCache = server.server.onclose;
+    server.server.onclose = () => {
+      void watcher.close();
+      closeCache?.();
+    };
+  }
 
   server.tool(
     'apply_issue_fix',
