@@ -11,7 +11,7 @@
   "protocolVersion": "2026-07-28",
   "capabilities": {
     "tools": { "listChanged": true },
-    "resources": { "subscribe": false, "listChanged": false }
+    "resources": { "subscribe": true, "listChanged": false }
   },
   "serverInfo": { "name": "momus-mcp", "version": "0.0.1" }
 }
@@ -251,6 +251,23 @@ full list is unchanged, so line-level work is unaffected — this is an index ov
 found), `degraded` (source files but no manifest, so resolution is loose), `empty` (nothing to
 audit). The status is a value rather than the CLI's prose so an agent can branch on it. Both
 surfaces read the same `@momus/core` project signals.
+
+**Resources.** Three, all `application/json`:
+
+| URI | Contents |
+|---|---|
+| `momus://rules` | the rule catalog with effective severities (same data as `list_rules`) |
+| `momus://config` | the merged `.momusrc` for this workspace |
+| `momus://issues/latest` | snapshot of the most recent audit run this session, or `{ audited: false }` with a hint before any has run |
+
+`subscribe: true` is real: a client that subscribes to `momus://issues/latest` receives
+`notifications/resources/updated` when a tool runs a fresh audit, and — when the server was
+started with `watch` (`momus serve --watch`) — when a source file changes on disk, which is
+exactly the staleness polling cannot see. The watcher is owned by the server rather than
+started beside it; a detached watcher invalidates the `ts.Program` cache but has no way to
+tell subscribers anything. Note the SDK's `McpServer` declares the capability but does not
+answer `resources/subscribe` itself, so the server registers those handlers explicitly —
+without them a subscribe attempt returns "Method not found" and no update ever arrives.
 
 **The write path.** `apply_issue_fix` is the only tool that writes, and it is the only one
 annotated `readOnlyHint: false, destructiveHint: true` — a client decides whether to prompt

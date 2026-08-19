@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { ResourceUpdatedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { createMomusServer, serveHttp, watchWorkspace } from '@momus/mcp-server';
 import { DEFAULT_CONFIG } from '@momus/core';
 
@@ -303,6 +304,57 @@ describe('Momus MCP server (in-memory transport)', () => {
     expect(apply.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: false });
     for (const tool of tools.filter((t) => t.name !== 'apply_issue_fix')) {
       expect.soft(tool.annotations, `${tool.name} should be read-only`).toMatchObject({ readOnlyHint: true });
+    }
+  });
+
+  it('exposes the rule catalog, config and last-audit snapshot as resources', async () => {
+    const { resources } = await client.listResources();
+    expect(resources.map((r) => r.uri).sort()).toEqual(['momus://config', 'momus://issues/latest', 'momus://rules']);
+    for (const r of resources) expect(r.mimeType).toBe('application/json');
+  });
+
+  it('serves the rule catalog as a resource matching list_rules', async () => {
+    const res = await client.readResource({ uri: 'momus://rules' });
+    const rules = JSON.parse(res.contents[0]!.text as string) as { rules: Array<{ id: string }> };
+    expect(rules.rules).toHaveLength(14);
+    expect(rules.rules.map((r) => r.id)).toContain('TAUT-002');
+  });
+
+  it('serves the merged config as a resource', async () => {
+    const res = await client.readResource({ uri: 'momus://config' });
+    const config = JSON.parse(res.contents[0]!.text as string) as {
+      languages: Record<string, boolean>;
+      mockSaturationThreshold: number;
+    };
+    expect(config.languages.typescript).toBe(true);
+    expect(config.mockSaturationThreshold).toBeGreaterThan(0);
+  });
+
+  it('serves the last audit snapshot, and says so when nothing has been audited yet', async () => {
+    // A fresh server has run no audit; the resource must still read cleanly rather than 404.
+    const pair = InMemoryTransport.createLinkedPair();
+    const fresh = createMomusServer({
+      root: FIXTURES,
+      config: { ...DEFAULT_CONFIG, cache: { dir: '.momus/cache', enabled: false } },
+    });
+    await fresh.connect(pair[0]);
+    const c = new Client({ name: 'momus-fresh', version: '1.0.0' }, { capabilities: {} });
+    await c.connect(pair[1]);
+    try {
+      const empty = JSON.parse(
+        (await c.readResource({ uri: 'momus://issues/latest' })).contents[0]!.text as string,
+      ) as { audited: boolean };
+      expect(empty.audited).toBe(false);
+
+      await c.callTool({ name: 'audit_workspace', arguments: {} });
+      const after = JSON.parse(
+        (await c.readResource({ uri: 'momus://issues/latest' })).contents[0]!.text as string,
+      ) as { audited: boolean; summary: { issues: number }; issues: Array<{ rule: string }> };
+      expect(after.audited).toBe(true);
+      expect(after.summary.issues).toBe(11);
+      expect(after.issues.some((i) => i.rule === 'DRIFT-001')).toBe(true);
+    } finally {
+      await fresh.close();
     }
   });
 
@@ -670,6 +722,44 @@ describe('Momus MCP server (PHP language selection)', () => {
     const sc = res.structuredContent as { result: { summary: { members: number } } };
     expect(sc.result.summary.members).toBe(7);
   });
+});
+
+describe('Momus MCP server (resource notifications)', () => {
+  it('tells a subscribed client when a source change invalidates the audit snapshot', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'momus-notify-'));
+    cpSync(FIXTURES, workspace, { recursive: true });
+    const pair = InMemoryTransport.createLinkedPair();
+    const server = createMomusServer({
+      root: workspace,
+      config: { ...DEFAULT_CONFIG, cache: { dir: '.momus/cache', enabled: false } },
+      watch: true,
+    });
+    await server.connect(pair[0]);
+    const client = new Client({ name: 'momus-notify', version: '1.0.0' }, { capabilities: {} });
+    await client.connect(pair[1]);
+    try {
+      const updated = new Promise<string>((resolve) => {
+        client.setNotificationHandler(ResourceUpdatedNotificationSchema, (n) => resolve(n.params.uri));
+      });
+      await client.subscribeResource({ uri: 'momus://issues/latest' });
+      // Let chokidar's initial scan of the copied tree settle, as the watchWorkspace tests do;
+      // a write during the scan is not reported as a change.
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      // Touch a source file the way an editor would.
+      const target = join(workspace, 'tests', 'ledger.test.ts');
+      writeFileSync(target, readFileSync(target, 'utf8') + '\n// touched\n');
+
+      const uri = await Promise.race([
+        updated,
+        new Promise<string>((_, reject) => setTimeout(() => reject(new Error('no notification')), 8000)),
+      ]);
+      expect(uri).toBe('momus://issues/latest');
+    } finally {
+      await server.close();
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  }, 15000);
 });
 
 describe('Momus MCP server (apply_issue_fix — the only write surface)', () => {
