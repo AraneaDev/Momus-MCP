@@ -3,7 +3,7 @@
  * annotations + structuredContent per §4.1.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { randomUUID } from 'node:crypto';
@@ -23,6 +23,8 @@ import {
   buildJsonEnvelope,
   filterResult,
   RULES_CATALOG,
+  findUpwards,
+  countFilesBySuffix,
   phpProjectSignals,
   pythonProjectSignals,
   rustProjectSignals,
@@ -127,6 +129,9 @@ function effectiveSeverity(config: MomusConfig, rule: { id: string; severity: st
   return sev ?? rule.severity;
 }
 
+/** Same skip set the other language counters use; a vendored tsconfig proves nothing. */
+const TS_SKIP_DIRS: ReadonlySet<string> = new Set(['node_modules', '.git', 'vendor', 'dist']);
+
 interface LanguageStatus {
   enabled: boolean;
   /** `off` = disabled in config · `ready` = manifest found · `degraded` = files but no manifest · `empty` = nothing to audit. */
@@ -159,9 +164,13 @@ function languageStatuses(root: string, config: MomusConfig): Record<string, Lan
   };
 
   const out: Record<string, LanguageStatus> = {};
+  // The TS parser resolves a tsconfig by walking UP from each source file (program.ts), so a
+  // monorepo whose root holds only tsconfig.base.json is still fully type-aware through its
+  // per-package configs. Checking the root alone reported Momus's own repo as degraded.
+  const tsconfig = findUpwards(root, 'tsconfig.json') || countFilesBySuffix(root, 'tsconfig.json', 1, TS_SKIP_DIRS) > 0;
   out.typescript = config.languages.typescript
-    ? existsSync(join(root, 'tsconfig.json'))
-      ? { enabled: true, status: 'ready', detail: 'tsconfig.json present, type-aware analysis available' }
+    ? tsconfig
+      ? { enabled: true, status: 'ready', detail: 'tsconfig.json found, type-aware analysis available' }
       : { enabled: true, status: 'degraded', detail: 'no tsconfig.json (syntax-only mode; DRIFT-002/003 degrade)' }
     : off('typescript', 'Vitest/Jest suites');
   const php = phpProjectSignals(root);
