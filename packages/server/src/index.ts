@@ -3,7 +3,7 @@
  * annotations + structuredContent per §4.1.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { randomUUID } from 'node:crypto';
@@ -23,6 +23,9 @@ import {
   buildJsonEnvelope,
   filterResult,
   RULES_CATALOG,
+  phpProjectSignals,
+  pythonProjectSignals,
+  rustProjectSignals,
   type MomusConfig,
   type AuditResult,
   type TypeIR,
@@ -77,9 +80,110 @@ function errorResult(tool: string, code: string, message: string, hint: string) 
 }
 
 /**
- * Per-rule cause sentences. A fixed map, not free text: the explanation an agent acts on has
- * to be the same every run for the same rule, and composing prose per finding would make the
- * output non-deterministic (docs/02 §2.4.3) and unreviewable.
+ * Collapse findings that share a root cause into one entry each.
+ *
+ * The key is the rule plus the evidence that distinguishes one cause from another — a renamed
+ * production member flagged in eight test files is one rename, not eight problems, and an
+ * agent that fixes it once clears all eight. The full issue list is still returned alongside,
+ * so line-level work is unaffected; this is an index over it, not a replacement.
+ *
+ * Ordered by count so the biggest lever is first, then by rule id for determinism (docs/02
+ * §2.4.3 — identical workspace, identical output).
+ */
+function groupByCause(result: AuditResult, root: string) {
+  const causes = new Map<string, { rule: string; cause: string; count: number; files: Set<string> }>();
+  for (const issue of result.issues) {
+    // `evidence` is the per-rule discriminator (the missing member, the echoed value); without
+    // one, every finding of that rule in the workspace is treated as the same cause.
+    const key = `${issue.rule}\u0000${issue.evidence ?? ''}`;
+    const rel = relative(root, issue.span.file).replace(/\\/g, '/');
+    const existing = causes.get(key);
+    if (existing) {
+      existing.count++;
+      existing.files.add(rel);
+    } else {
+      causes.set(key, {
+        rule: issue.rule,
+        cause: CAUSE_BY_RULE[issue.rule] ?? issue.message,
+        count: 1,
+        files: new Set([rel]),
+      });
+    }
+  }
+  const ordered = [...causes.values()]
+    .map((c) => ({ rule: c.rule, cause: c.cause, count: c.count, files: [...c.files].sort() }))
+    .sort((a, b) => b.count - a.count || a.rule.localeCompare(b.rule));
+  return { causes: ordered, totalCauses: ordered.length, totalIssues: result.issues.length };
+}
+
+/**
+ * A rule's severity after config overrides. `.momusrc` may carry either a bare severity or a
+ * `{ severity }` object, so both shapes have to be unwrapped — comparing the raw entry to
+ * 'off' silently reports every rule as enabled.
+ */
+function effectiveSeverity(config: MomusConfig, rule: { id: string; severity: string }): string {
+  const override = config.rules[rule.id];
+  const sev = typeof override === 'object' ? override.severity : override;
+  return sev ?? rule.severity;
+}
+
+interface LanguageStatus {
+  enabled: boolean;
+  /** `off` = disabled in config · `ready` = manifest found · `degraded` = files but no manifest · `empty` = nothing to audit. */
+  status: 'off' | 'ready' | 'degraded' | 'empty';
+  detail: string;
+}
+
+/**
+ * Per-language readiness, structured. The CLI's `doctor` prints prose built from the same
+ * `@momus/core` signals; this returns the status as a value so an agent can branch on it
+ * instead of parsing a sentence.
+ */
+function languageStatuses(root: string, config: MomusConfig): Record<string, LanguageStatus> {
+  const off = (lang: string, hint: string): LanguageStatus => ({
+    enabled: false,
+    status: 'off',
+    detail: `disabled — set "languages": { "${lang}": true } in .momusrc to audit ${hint}`,
+  });
+  const fromSignals = (
+    manifest: string,
+    present: boolean,
+    files: number,
+    ext: string,
+    loose: string,
+  ): LanguageStatus => {
+    if (present) return { enabled: true, status: 'ready', detail: `${manifest} present, ${files} ${ext} file(s)` };
+    if (files > 0)
+      return { enabled: true, status: 'degraded', detail: `${files} ${ext} file(s) but no ${manifest} (${loose})` };
+    return { enabled: true, status: 'empty', detail: `no ${manifest} or ${ext} files found` };
+  };
+
+  const out: Record<string, LanguageStatus> = {};
+  out.typescript = config.languages.typescript
+    ? existsSync(join(root, 'tsconfig.json'))
+      ? { enabled: true, status: 'ready', detail: 'tsconfig.json present, type-aware analysis available' }
+      : { enabled: true, status: 'degraded', detail: 'no tsconfig.json (syntax-only mode; DRIFT-002/003 degrade)' }
+    : off('typescript', 'Vitest/Jest suites');
+  const php = phpProjectSignals(root);
+  out.php = config.languages.php
+    ? fromSignals('composer.json', php.composerJson, php.phpFiles, '.php', 'class resolution will be loose')
+    : off('php', 'PHPUnit/Pest suites');
+  const py = pythonProjectSignals(root);
+  out.python = config.languages.python
+    ? fromSignals('pyproject.toml', py.pyprojectToml, py.pyFiles, '.py', 'import resolution will be loose')
+    : off('python', 'pytest/unittest suites');
+  const rs = rustProjectSignals(root);
+  out.rust = config.languages.rust
+    ? fromSignals('Cargo.toml', rs.cargoToml, rs.rsFiles, '.rs', 'module resolution will be loose')
+    : off('rust', 'mockall/mockito/wiremock suites');
+  return out;
+}
+
+/**
+ * Per-rule cause sentences: the 14 catalogued rules plus DRIFT-000, which is not catalogued
+ * but can still be emitted under `includeUnresolved`. A fixed map, not free text: the
+ * explanation an agent acts on has to be the same every run for the same rule, and composing
+ * prose per finding would make the output non-deterministic (docs/02 §2.4.3) and unreviewable.
  */
 const CAUSE_BY_RULE: Record<string, string> = {
   'TAUT-001':
@@ -385,6 +489,136 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
     },
   );
 
+  const parseFile = (abs: string): ModuleIR =>
+    parser.parseModule(abs, readFileSync(abs, 'utf8'), {
+      config,
+      resolveImport: (spec) => parser.resolveImport(spec, abs),
+    });
+
+  /**
+   * The production side of a DRIFT finding: which real symbol the double stood in for, and
+   * what that symbol actually exposes. "`totalForX` does not exist" only becomes actionable
+   * once the agent can see that `totalFor` does.
+   *
+   * Resolved through the mock's `target.symbolId`, which is `<production file>#<Symbol>` (the
+   * id convention in ir.ts), so a second single-file parse answers it — no workspace index
+   * needed, and both parses are cache-backed.
+   */
+  const resolveDependency = (testFile: string, line: number) => {
+    let mock;
+    try {
+      mock = parseFile(testFile).mocks.find((m) => m.span.startLine === line);
+    } catch {
+      return undefined;
+    }
+    const symbolId = mock?.target?.symbolId;
+    const hash = symbolId === undefined ? -1 : symbolId.lastIndexOf('#');
+    if (symbolId === undefined || hash < 0) return undefined;
+    const depFile = symbolId.slice(0, hash);
+    const symbolName = symbolId.slice(hash + 1);
+    if (!existsSync(depFile)) return undefined;
+    let symbol;
+    try {
+      symbol = parseFile(depFile).symbols.find((sym) => sym.name === symbolName);
+    } catch {
+      return undefined;
+    }
+    if (!symbol) return undefined;
+    return {
+      symbol: symbolName,
+      file: relative(root, depFile).replace(/\\/g, '/'),
+      kind: symbol.kind,
+      line: symbol.span.startLine,
+      members: symbol.members.map((m) => m.name).sort(),
+      ...(mock?.target?.memberName ? { stubbed: mock.target.memberName } : {}),
+    };
+  };
+
+  server.tool(
+    'audit_workspace',
+    'Every rule across the whole workspace in one call, with findings grouped by root cause so an agent fixes causes, not lines. Read-only.',
+    {
+      scope: z.enum(['workspace', 'git-diff']).default('workspace').describe('git-diff requires baseRef'),
+      baseRef: z.string().optional().describe('Git ref for git-diff scope'),
+      paths: z.array(z.string()).optional().describe('Files/globs to restrict the sweep to'),
+      maxIssues: z.number().int().min(0).max(500).default(100).describe('0 = summary-only'),
+      includeSuppressed: z.boolean().default(false),
+      dedupe: z.boolean().default(true).describe('Group findings by root cause'),
+    },
+    { ...ANN, title: 'Audit Workspace' },
+    async ({ scope, baseRef, paths, maxIssues, includeSuppressed, dedupe }) => {
+      if (scope === 'git-diff' && !baseRef) {
+        return errorResult(
+          'audit_workspace',
+          'INVALID_BASE_REF',
+          'baseRef is required when scope=git-diff',
+          "Pass a ref such as 'main', or use scope='workspace'.",
+        );
+      }
+      let diff: { baseRef: string; changedPaths: string[] } | undefined;
+      if (scope === 'git-diff') {
+        try {
+          diff = { baseRef: baseRef!, changedPaths: gitChangedPaths(root, baseRef!) };
+        } catch (e) {
+          return errorResult(
+            'audit_workspace',
+            'INVALID_BASE_REF',
+            `cannot resolve baseRef '${baseRef}': ${(e as Error).message.split('\n')[0]}`,
+            'Pass an existing ref, or use scope=workspace.',
+          );
+        }
+      }
+      const result = new AuditEngine({
+        root,
+        parser,
+        config,
+        cache,
+        paths,
+        maxIssues,
+        includeSuppressed,
+        diff,
+      }).run();
+      const base = respond('audit_workspace', result, `${scope}${baseRef ? ' vs ' + baseRef : ''}`);
+      if (!dedupe) return base;
+      const structured = base.structuredContent as { result?: Record<string, unknown> };
+      if (structured.result) structured.result.dedupe = groupByCause(result, root);
+      return base;
+    },
+  );
+
+  server.tool(
+    'doctor_status',
+    'Workspace readiness in one call: per-language status, the rule catalog, and cache health. Ask before a sweep to learn whether coverage will be degraded. Read-only.',
+    {},
+    { ...ANN, title: 'Doctor Status' },
+    async () => {
+      const languages = languageStatuses(root, config);
+      const disabledRules = RULES_CATALOG.filter((r) => effectiveSeverity(config, r) === 'off').map((r) => r.id);
+      const result = {
+        root,
+        node: process.version,
+        languages,
+        rules: {
+          total: RULES_CATALOG.length,
+          enabled: RULES_CATALOG.length - disabledRules.length,
+          disabled: disabledRules,
+        },
+        cache: { enabled: config.cache.enabled, dir: config.cache.dir },
+      };
+      const text = [
+        `# Momus doctor — ${root}`,
+        `node ${process.version} · ${result.rules.enabled}/${result.rules.total} rules enabled · cache ${config.cache.enabled ? 'on' : 'off'}`,
+        '',
+        '## Languages',
+        ...Object.entries(languages).map(([name, l]) => `- **${name}** — ${l.status}: ${l.detail}`),
+      ].join('\n');
+      return {
+        content: [{ type: 'text' as const, text }],
+        structuredContent: { schemaVersion: 1, tool: 'doctor_status', result },
+      };
+    },
+  );
+
   server.tool(
     'explain_issue',
     'Resolves one finding to its root cause: the rule that fired, the source span, and a per-rule cause sentence. Address it by path + rule (+ line when a rule fires more than once). Read-only.',
@@ -434,6 +668,7 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
         rule: issue.rule,
         severity: issue.severity,
         message: issue.message,
+        ...(issue.rule.startsWith('DRIFT') ? { dependency: resolveDependency(abs, issue.span.startLine) } : {}),
         cause: CAUSE_BY_RULE[issue.rule] ?? 'This rule fired; see the message for the specific condition.',
         line: issue.span.startLine,
         column: issue.span.startCol,
@@ -522,9 +757,8 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
     { ...ANN, title: 'List Rules' },
     async () => {
       const rules = RULES_CATALOG.map((r) => {
-        const override = config.rules[r.id];
-        const sev = typeof override === 'object' ? override.severity : override;
-        return { ...r, severity: sev ?? r.severity, enabled: (sev ?? r.severity) !== 'off' };
+        const sev = effectiveSeverity(config, r);
+        return { ...r, severity: sev, enabled: sev !== 'off' };
       });
       const text =
         '# Rules\n' +
