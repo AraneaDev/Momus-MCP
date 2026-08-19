@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.11](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.10...v0.0.11) (2026-08-19)
+
+
+### Bug Fixes
+
+* **server:** an unwritable parse cache must not fail the audit ([7d57d7a](https://github.com/AraneaDev/Momus-MCP/commit/7d57d7ae01c29df26202b55e52eb7eaad9226bfa))
+* **server:** an unwritable parse cache must not fail the audit ([ebbf030](https://github.com/AraneaDev/Momus-MCP/commit/ebbf030d41114d00fb35bf61cb301e492be7279d))
+
 ## [0.0.10](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.9...v0.0.10) (2026-08-19)
 
 
