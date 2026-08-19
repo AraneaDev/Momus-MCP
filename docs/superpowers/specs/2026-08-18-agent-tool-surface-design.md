@@ -224,7 +224,12 @@ Four independently-shippable phases, each a reviewable PR with a green gate
    `<production file>#<Symbol>`, so a second cache-backed single-file parse answers it.
 3. **Fix** — the `fix.ts` move to `@momus/core` (§1.2, first commit, no behaviour
    change), then `preview_issue_fix` / `apply_issue_fix` (the only write surface) +
-   the stale-span guard tests.
+   the stale-span guard tests. **Shipped.** **[revised]** The freshness guard is a
+   `contentHash` the agent carries from preview to apply, and it is a *required* input —
+   optional, it would let an agent skip preview and apply blind, which is not the two-phase
+   design decision §0.2 locked. One further step the spec did not have: the type-aware TS
+   program is cached per workspace, so an apply must call `invalidateProgramCache()` before
+   re-auditing or the re-audit re-reports the finding it just fixed.
 4. **Notify** — resources + watcher notifications + the corrected capability
    declaration and `docs/04` fix (§2); degrades to doc-noted refresh on SDKs
    older than 1.30.
