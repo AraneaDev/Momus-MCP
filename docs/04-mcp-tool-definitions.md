@@ -129,6 +129,41 @@ bumps it in lockstep with the other `@momus/*` packages).
       "annotations": { "title": "Synthesize Mock Contract", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
     },
     {
+      "name": "apply_issue_fix",
+      "title": "Apply Issue Fix",
+      "description": "Applies the auto-fix for exactly one finding, then re-audits the file and reports what cleared. Requires the contentHash from preview_issue_fix. The only tool that writes.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "rule": { "type": "string" },
+          "line": { "type": "integer", "minimum": 1 },
+          "contentHash": { "type": "string", "description": "From preview_issue_fix; refuses if the file moved on." }
+        },
+        "required": ["path", "rule", "contentHash"],
+        "additionalProperties": false
+      },
+      "annotations": { "title": "Apply Issue Fix", "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": false }
+    },
+    {
+      "name": "preview_issue_fix",
+      "title": "Preview Issue Fix",
+      "description": "Unified diff for the auto-fix of exactly one finding, applying nothing. Semantic findings answer fixable:false with a reason rather than erroring. Read-only.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "rule": { "type": "string" },
+          "line": { "type": "integer", "minimum": 1 }
+        },
+        "required": ["path", "rule"],
+        "additionalProperties": false
+      },
+      "annotations": { "title": "Preview Issue Fix", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+    },
+    {
       "name": "audit_workspace",
       "title": "Audit Workspace",
       "description": "Every rule across the whole workspace in one call, with findings grouped by root cause so an agent fixes causes, not lines. Read-only.",
@@ -216,6 +251,18 @@ full list is unchanged, so line-level work is unaffected — this is an index ov
 found), `degraded` (source files but no manifest, so resolution is loose), `empty` (nothing to
 audit). The status is a value rather than the CLI's prose so an agent can branch on it. Both
 surfaces read the same `@momus/core` project signals.
+
+**The write path.** `apply_issue_fix` is the only tool that writes, and it is the only one
+annotated `readOnlyHint: false, destructiveHint: true` — a client decides whether to prompt
+from those, so the annotation is a safety contract, asserted in the integration suite. It
+applies exactly one span-precise fix per call and refuses in four typed ways: `NOT_FOUND`
+(path escapes the root, or no such file), `STALE_CONTENT` (`contentHash` no longer matches —
+re-preview first), and `NOT_FIXABLE` (the finding carries no mechanically applicable edit;
+TAUT-001/002/003 are semantic and descriptive-only by design, docs/03 §3.6). Containment and
+freshness are checked before anything is read for editing, so a refusal never depends on
+having already parsed attacker-chosen input. Every apply re-audits the file and reports
+`cleared` / `introduced` — the write is not the claim, the re-audit is. Both surfaces share
+one fixer in `@momus/core`, so `momus audit --fix` and `apply_issue_fix` cannot drift.
 
 **Payload budget.** `docs/02` §2.7 caps the serialized `tools/list` at **< 12 KB total and
 < 1 KB per tool** (raised from a flat 4 KB, which the five original tools already filled to

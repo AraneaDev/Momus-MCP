@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -25,6 +25,10 @@ import {
   RULES_CATALOG,
   findUpwards,
   countFilesBySuffix,
+  collectFixable,
+  editsByFile,
+  buildFixDiff,
+  applyFixToFiles,
   phpProjectSignals,
   pythonProjectSignals,
   rustProjectSignals,
@@ -33,6 +37,7 @@ import {
   type TypeIR,
   type ParseCache,
   type ModuleIR,
+  type Issue,
   type MockIR,
   type SymbolIR,
   type AssertionIR,
@@ -116,6 +121,23 @@ function groupByCause(result: AuditResult, root: string) {
     .map((c) => ({ rule: c.rule, cause: c.cause, count: c.count, files: [...c.files].sort() }))
     .sort((a, b) => b.count - a.count || a.rule.localeCompare(b.rule));
   return { causes: ordered, totalCauses: ordered.length, totalIssues: result.issues.length };
+}
+
+/**
+ * `resolveIssue`'s two outcomes, spelled out rather than inferred. Left to inference, TS
+ * normalises the union by adding `error?: undefined` to the success branch, which makes
+ * `'error' in found` stop discriminating and lets `undefined` leak into every handler's
+ * return type.
+ */
+interface ResolvedIssueFailure {
+  error: ReturnType<typeof errorResult>;
+}
+interface ResolvedIssue {
+  abs: string;
+  rel: string;
+  issue: Issue;
+  matches: Issue[];
+  audit: AuditResult;
 }
 
 /**
@@ -498,6 +520,53 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
     },
   );
 
+  /**
+   * Resolve `{path, rule, line?}` to one issue by re-auditing just that file. Shared by
+   * explain/preview/apply so all three address a finding identically; the parse cache makes
+   * the narrow re-audit cheap.
+   */
+  const resolveIssue = (
+    tool: string,
+    path: string,
+    rule: string,
+    line?: number,
+  ): ResolvedIssueFailure | ResolvedIssue => {
+    const abs = resolveInWorkspace(root, path);
+    if (!abs) {
+      return {
+        error: errorResult(
+          tool,
+          'NOT_FOUND',
+          `path escapes the workspace root: ${path}`,
+          'Pass a workspace-relative path inside the audited root.',
+        ),
+      };
+    }
+    if (!existsSync(abs)) {
+      return { error: errorResult(tool, 'NOT_FOUND', `no such file: ${path}`, 'Pass a path that exists.') };
+    }
+    const rel = relative(root, abs).replace(/\\/g, '/');
+    const audit = new AuditEngine({ root, parser, config, cache, paths: [rel], maxIssues: 500 }).run();
+    const matches = audit.issues.filter((i) => i.rule === rule && (line === undefined || i.span.startLine === line));
+    const issue = matches[0];
+    if (!issue) {
+      const seen = [...new Set(audit.issues.map((i) => `${i.rule}@${i.span.startLine}`))].join(', ');
+      return {
+        error: errorResult(
+          tool,
+          'NOT_FOUND',
+          `no ${rule} finding${line === undefined ? '' : ` at line ${line}`} in ${path}`,
+          seen ? `This file reports: ${seen}.` : 'This file reports no findings.',
+        ),
+      };
+    }
+    return { abs, rel, issue, matches, audit };
+  };
+
+  /** Short content hash: the freshness token an apply is checked against. */
+  const contentHashOf = (abs: string): string =>
+    createHash('sha256').update(readFileSync(abs, 'utf8')).digest('hex').slice(0, 16);
+
   const parseFile = (abs: string): ModuleIR =>
     parser.parseModule(abs, readFileSync(abs, 'utf8'), {
       config,
@@ -542,6 +611,145 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
       ...(mock?.target?.memberName ? { stubbed: mock.target.memberName } : {}),
     };
   };
+
+  server.tool(
+    'apply_issue_fix',
+    'Applies the auto-fix for exactly one finding, then re-audits the file and reports what cleared. Requires the contentHash from preview_issue_fix. The only tool that writes.',
+    {
+      path: z.string().describe('Test file path, workspace-relative'),
+      rule: z.string().describe('Rule id from a prior audit'),
+      line: z.number().int().min(1).optional().describe('Disambiguates a repeated rule'),
+      contentHash: z.string().describe('contentHash from preview_issue_fix; refuses if the file moved on'),
+    },
+    {
+      ...ANN,
+      title: 'Apply Issue Fix',
+      // The one tool that writes. A client decides whether to prompt from these, so a writer
+      // advertised as read-only would be applied silently.
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+    },
+    async ({ path, rule, line, contentHash }) => {
+      // Order matters: containment and freshness are checked before anything is read for
+      // editing, so a refusal never depends on having already parsed attacker-chosen input.
+      const found = resolveIssue('apply_issue_fix', path, rule, line);
+      if ('error' in found) return found.error;
+      const { abs, rel, issue, audit } = found;
+      const actual = contentHashOf(abs);
+      if (actual !== contentHash) {
+        return errorResult(
+          'apply_issue_fix',
+          'STALE_CONTENT',
+          `${rel} changed since the fix was previewed`,
+          'Call preview_issue_fix again and apply with the contentHash it returns.',
+        );
+      }
+      const fixable = collectFixable([issue]);
+      if (fixable.length === 0) {
+        return errorResult(
+          'apply_issue_fix',
+          'NOT_FIXABLE',
+          `${issue.rule} at ${rel}:${issue.span.startLine} has no mechanically applicable fix`,
+          'Semantic findings (TAUT-001/002/003) carry a described fix only; edit the test yourself.',
+        );
+      }
+      const edits = editsByFile(fixable);
+      const diff = buildFixDiff(root, edits);
+      applyFixToFiles(root, edits);
+      // The type-aware TS program is cached per workspace and still holds the pre-write
+      // source, so without this the re-audit re-reports the finding we just fixed. The
+      // watcher does the same on every file event.
+      invalidateProgramCache();
+      // The write is not the claim — the re-audit is. Report what actually cleared.
+      const after = new AuditEngine({ root, parser, config, cache, paths: [rel], maxIssues: 500 }).run();
+      const key = (i: Issue) => `${i.rule}@${i.span.startLine}`;
+      const remaining = new Set(after.issues.map(key));
+      const cleared = audit.issues.map(key).filter((k) => !remaining.has(k));
+      const result = {
+        path: rel,
+        rule: issue.rule,
+        line: issue.span.startLine,
+        applied: true,
+        description: issue.fix?.description ?? '',
+        diff,
+        issuesBefore: audit.issues.length,
+        issuesAfter: after.issues.length,
+        cleared,
+        introduced: after.issues.map(key).filter((k) => !audit.issues.map(key).includes(k)),
+        contentHash: contentHashOf(abs),
+      };
+      const text = [
+        `# Applied ${issue.rule} — ${rel}:${issue.span.startLine}`,
+        `${result.description}`,
+        '',
+        `${result.issuesBefore} → ${result.issuesAfter} findings in this file${cleared.length ? ` · cleared ${cleared.join(', ')}` : ''}`,
+        '',
+        '```diff',
+        diff.trimEnd(),
+        '```',
+      ].join('\n');
+      return {
+        content: [{ type: 'text' as const, text }],
+        structuredContent: { schemaVersion: 1, tool: 'apply_issue_fix', result },
+      };
+    },
+  );
+
+  server.tool(
+    'preview_issue_fix',
+    'Unified diff for the auto-fix of exactly one finding, applying nothing. Semantic findings answer fixable:false with a reason rather than erroring. Read-only.',
+    {
+      path: z.string().describe('Test file path, workspace-relative'),
+      rule: z.string().describe('Rule id from a prior audit'),
+      line: z.number().int().min(1).optional().describe('Disambiguates a repeated rule'),
+    },
+    { ...ANN, title: 'Preview Issue Fix' },
+    async ({ path, rule, line }) => {
+      const found = resolveIssue('preview_issue_fix', path, rule, line);
+      if ('error' in found) return found.error;
+      const { abs, rel, issue } = found;
+      const fixable = collectFixable([issue]);
+      const contentHash = contentHashOf(abs);
+      if (fixable.length === 0) {
+        // Not an error: TAUT-001/002/003 are semantic and carry descriptive suggestions only
+        // (docs/03 §3.6), so "nothing to apply" is the correct, expected answer.
+        const result = {
+          path: rel,
+          rule: issue.rule,
+          line: issue.span.startLine,
+          fixable: false,
+          reason: issue.fix
+            ? `${issue.rule} has no auto-fix: ${issue.fix.description}`
+            : `${issue.rule} has no auto-fix (no mechanically applicable edit)`,
+          contentHash,
+        };
+        return {
+          content: [{ type: 'text' as const, text: `# ${issue.rule} — not auto-fixable\n${result.reason}` }],
+          structuredContent: { schemaVersion: 1, tool: 'preview_issue_fix', result },
+        };
+      }
+      const diff = buildFixDiff(root, editsByFile(fixable));
+      const result = {
+        path: rel,
+        rule: issue.rule,
+        line: issue.span.startLine,
+        fixable: true,
+        description: issue.fix?.description ?? '',
+        diff,
+        contentHash,
+      };
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `# ${issue.rule} — ${rel}:${issue.span.startLine}\n${result.description}\n\n\`\`\`diff\n${diff}\`\`\``,
+          },
+        ],
+        structuredContent: { schemaVersion: 1, tool: 'preview_issue_fix', result },
+      };
+    },
+  );
 
   server.tool(
     'audit_workspace',
@@ -638,35 +846,9 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
     },
     { ...ANN, title: 'Explain Issue' },
     async ({ path, rule, line }) => {
-      const abs = resolveInWorkspace(root, path);
-      if (!abs) {
-        return errorResult(
-          'explain_issue',
-          'NOT_FOUND',
-          `path escapes the workspace root: ${path}`,
-          'Pass a workspace-relative path inside the audited root.',
-        );
-      }
-      if (!existsSync(abs)) {
-        return errorResult('explain_issue', 'NOT_FOUND', `no such file: ${path}`, 'Pass a path that exists.');
-      }
-      // The engine's path filter matches workspace-relative paths (audit.ts pathFilter),
-      // so an absolute path here silently selects nothing.
-      const rel = relative(root, abs).replace(/\\/g, '/');
-      const audit = new AuditEngine({ root, parser, config, cache, paths: [rel], maxIssues: 500 }).run();
-      const matches = audit.issues.filter((i) => i.rule === rule && (line === undefined || i.span.startLine === line));
-      const issue = matches[0];
-      if (!issue) {
-        // Name what the file actually reports: without it an agent guesses rule ids one
-        // call at a time, which is the round-tripping this tool exists to remove.
-        const seen = [...new Set(audit.issues.map((i) => `${i.rule}@${i.span.startLine}`))].join(', ');
-        return errorResult(
-          'explain_issue',
-          'NOT_FOUND',
-          `no ${rule} finding${line === undefined ? '' : ` at line ${line}`} in ${path}`,
-          seen ? `This file reports: ${seen}.` : 'This file reports no findings.',
-        );
-      }
+      const found = resolveIssue('explain_issue', path, rule, line);
+      if ('error' in found) return found.error;
+      const { abs, rel, issue, matches } = found;
       const source = readFileSync(abs, 'utf8').split(/\r?\n/);
       const from = Math.max(1, issue.span.startLine - 1);
       const to = Math.min(source.length, issue.span.endLine + 1);
