@@ -129,6 +129,33 @@ bumps it in lockstep with the other `@momus/*` packages).
       "annotations": { "title": "Synthesize Mock Contract", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
     },
     {
+      "name": "audit_workspace",
+      "title": "Audit Workspace",
+      "description": "Every rule across the whole workspace in one call, with findings grouped by root cause so an agent fixes causes, not lines. Read-only.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "scope": { "type": "string", "enum": ["workspace", "git-diff"], "default": "workspace" },
+          "baseRef": { "type": "string", "description": "Git ref for git-diff scope." },
+          "paths": { "type": "array", "items": { "type": "string" } },
+          "maxIssues": { "type": "integer", "minimum": 0, "maximum": 500, "default": 100 },
+          "includeSuppressed": { "type": "boolean", "default": false },
+          "dedupe": { "type": "boolean", "default": true, "description": "Group findings by root cause." }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": { "title": "Audit Workspace", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+    },
+    {
+      "name": "doctor_status",
+      "title": "Doctor Status",
+      "description": "Workspace readiness in one call: per-language status, the rule catalog, and cache health. Ask before a sweep to learn whether coverage will be degraded. Read-only.",
+      "inputSchema": { "type": "object", "additionalProperties": false },
+      "annotations": { "title": "Doctor Status", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+    },
+    {
       "name": "explain_issue",
       "title": "Explain Issue",
       "description": "Resolves one finding to its root cause: the rule that fired, the source span, and a per-rule cause sentence. Address it by path + rule (+ line when a rule fires more than once). Read-only.",
@@ -178,6 +205,17 @@ by an opaque id: `Issue.id` exists in the engine but `buildJsonEnvelope` does no
 so no MCP result ever carries one. The tuple is also no less stable — the id embeds line and
 column anyway. `line` is required in practice only when the same rule fires more than once in
 a file; without it the first match wins and `otherMatches` reports how many were skipped.
+
+**Root-cause grouping (`audit_workspace`).** Alongside the full issue list, the result carries
+a `dedupe.causes` array keyed on rule + `evidence`: a renamed production member flagged across
+eight test files is one rename, not eight problems, and an agent that fixes it once clears all
+eight. Causes are ordered by count (biggest lever first), then rule id for determinism. The
+full list is unchanged, so line-level work is unaffected — this is an index over it.
+
+**Readiness (`doctor_status`).** Per language: `off` (disabled in config), `ready` (manifest
+found), `degraded` (source files but no manifest, so resolution is loose), `empty` (nothing to
+audit). The status is a value rather than the CLI's prose so an agent can branch on it. Both
+surfaces read the same `@momus/core` project signals.
 
 **Payload budget.** `docs/02` §2.7 caps the serialized `tools/list` at **< 12 KB total and
 < 1 KB per tool** (raised from a flat 4 KB, which the five original tools already filled to

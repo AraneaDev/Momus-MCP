@@ -215,7 +215,13 @@ Four independently-shippable phases, each a reviewable PR with a green gate
 1. **Sight** — `explain_issue`, `get_ir` (read-only; no write surface). **Shipped** —
    the `DRIFT-*` real-dependency snippet moved to phase 2, where the symbol index is already
    loaded for `audit_workspace`.
-2. **Sweep** — `audit_workspace` + dedupe, `doctor_status`.
+2. **Sweep** — `audit_workspace` + dedupe, `doctor_status`. **Shipped**, including the
+   `DRIFT-*` real-dependency snippet deferred from phase 1. **[revised]** Phase 2 needed the
+   same package-cycle fix phase 3 was scheduled to make: the `doctor` project-signal readers
+   lived in `@momus/cli`, so `@momus/core` gained `projectSignals.ts` and the CLI re-exports
+   from it. The pattern is now established for the phase-3 `fix.ts` move. The dependency
+   snippet needed no index plumbing after all — `target.symbolId` is
+   `<production file>#<Symbol>`, so a second cache-backed single-file parse answers it.
 3. **Fix** — the `fix.ts` move to `@momus/core` (§1.2, first commit, no behaviour
    change), then `preview_issue_fix` / `apply_issue_fix` (the only write surface) +
    the stale-span guard tests.

@@ -55,7 +55,9 @@ describe('Momus MCP server (in-memory transport)', () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       'audit_test_fidelity',
+      'audit_workspace',
       'detect_tautological_assertions',
+      'doctor_status',
       'explain_issue',
       'get_ir',
       'list_rules',
@@ -191,6 +193,72 @@ describe('Momus MCP server (in-memory transport)', () => {
     // The hint is what stops an agent guessing rule ids one call at a time.
     expect(sc.error.hint).toContain('TAUT-002@11');
     expect(sc.error.hint).toContain('DRIFT-001@16');
+  });
+
+  it('doctor_status reports per-language readiness and the rule catalog', async () => {
+    const res = await client.callTool({ name: 'doctor_status', arguments: {} });
+    expect(res.isError).toBeFalsy();
+    const sc = res.structuredContent as {
+      result: {
+        languages: Record<string, { enabled: boolean; status: string; detail: string }>;
+        rules: { total: number; enabled: number };
+        cache: { enabled: boolean };
+      };
+    };
+    // The fixture root has a tsconfig.json, so TS analysis is type-aware.
+    expect(sc.result.languages.typescript).toMatchObject({ enabled: true, status: 'ready' });
+    // PHP is off by default, which is a different thing from "enabled but unusable".
+    expect(sc.result.languages.php).toMatchObject({ enabled: false, status: 'off' });
+    expect(sc.result.languages.php.detail).toContain('.momusrc');
+    // DRIFT-000 is not catalogued — it is the opt-in unresolvable-target info rule.
+    expect(sc.result.rules.total).toBe(14);
+    // This server is constructed with the cache disabled.
+    expect(sc.result.cache.enabled).toBe(false);
+  });
+
+  it('audit_workspace sweeps every rule across the workspace in one call', async () => {
+    const res = await client.callTool({ name: 'audit_workspace', arguments: {} });
+    expect(res.isError).toBeFalsy();
+    const sc = res.structuredContent as {
+      result: { summary: { issues: number; errors: number }; issues: Array<{ rule: string }> };
+    };
+    // The planted-violations fixture: same 11 findings the golden audit pins.
+    expect(sc.result.summary.issues).toBe(11);
+    expect(sc.result.summary.errors).toBe(6);
+    const rules = new Set(sc.result.issues.map((i) => i.rule));
+    // A sweep spans rule families, unlike the single-family tools.
+    expect(rules.has('TAUT-002')).toBe(true);
+    expect(rules.has('DRIFT-001')).toBe(true);
+  });
+
+  it('audit_workspace groups findings that share a root cause', async () => {
+    const res = await client.callTool({ name: 'audit_workspace', arguments: {} });
+    const sc = res.structuredContent as {
+      result: { dedupe: { causes: Array<{ rule: string; count: number; files: string[] }> } };
+    };
+    // TAUT-002 fires 5 times across two files; as one cause that is a single line for an
+    // agent to act on rather than five to correlate by hand.
+    const echo = sc.result.dedupe.causes.find((c) => c.rule === 'TAUT-002')!;
+    expect(echo.count).toBe(5);
+    expect(echo.files.sort()).toEqual(['tests/before-each.test.ts', 'tests/ledger.test.ts']);
+    // Causes are ordered by how much they explain, so the biggest lever comes first.
+    expect(sc.result.dedupe.causes[0]!.rule).toBe('TAUT-002');
+  });
+
+  it('explain_issue shows the production members a DRIFT-001 stub could have meant', async () => {
+    // The planted spy targets LedgerService.totalForX, which does not exist. Naming what the
+    // real type does expose is the whole answer to "so what should it have been".
+    const res = await client.callTool({
+      name: 'explain_issue',
+      arguments: { path: 'tests/ledger.test.ts', rule: 'DRIFT-001' },
+    });
+    expect(res.isError).toBeFalsy();
+    const sc = res.structuredContent as {
+      result: { dependency?: { symbol: string; file: string; members: string[] } };
+    };
+    expect(sc.result.dependency?.symbol).toContain('LedgerService');
+    expect(sc.result.dependency?.members).toContain('totalFor');
+    expect(sc.result.dependency?.file).toBe('src/services/ledger.ts');
   });
 
   it('detect_tautological_assertions returns only TAUT rules', async () => {
@@ -397,7 +465,7 @@ describe('Momus MCP server (Streamable HTTP)', () => {
     try {
       await client.connect(transport);
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(7);
+      expect(tools).toHaveLength(9);
       expect(tools.map((t) => t.name)).toContain('verify_mock_drift');
       const res = await client.callTool({ name: 'verify_mock_drift', arguments: {} });
       expect(res.isError).toBeFalsy();
@@ -556,6 +624,41 @@ describe('Momus MCP server (PHP language selection)', () => {
     expect(text).toContain("shouldReceive('factory')->andReturn(null);");
     const sc = res.structuredContent as { result: { summary: { members: number } } };
     expect(sc.result.summary.members).toBe(7);
+  });
+});
+
+describe('Momus MCP server (doctor_status with a disabled rule)', () => {
+  let client: Client;
+  let cleanup: () => Promise<void>;
+
+  beforeAll(async () => {
+    const pair = InMemoryTransport.createLinkedPair();
+    const server = createMomusServer({
+      root: FIXTURES,
+      config: {
+        ...DEFAULT_CONFIG,
+        cache: { dir: '.momus/cache', enabled: false },
+        // A .momusrc severity override is an object, not a bare string.
+        rules: { 'TAUT-005': { severity: 'off' } },
+      },
+    });
+    cleanup = () => server.close();
+    await server.connect(pair[0]);
+    client = new Client({ name: 'momus-test', version: '1.0.0' }, { capabilities: {} });
+    await client.connect(pair[1]);
+  });
+
+  afterAll(async () => {
+    await cleanup();
+  });
+
+  it('counts a rule switched off in .momusrc as disabled', async () => {
+    const res = await client.callTool({ name: 'doctor_status', arguments: {} });
+    const sc = res.structuredContent as {
+      result: { rules: { total: number; enabled: number; disabled: string[] } };
+    };
+    expect(sc.result.rules.disabled).toEqual(['TAUT-005']);
+    expect(sc.result.rules.enabled).toBe(sc.result.rules.total - 1);
   });
 });
 
