@@ -6,6 +6,7 @@
   },
   "type": "module",
   "description": "PHP parser plugin for Momus using php-parser",
+  "license": "MIT",
   "files": [
     "src"
   ],

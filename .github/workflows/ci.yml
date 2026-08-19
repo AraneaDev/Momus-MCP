@@ -29,6 +29,30 @@ jobs:
       - name: Verify release-please config consistency
         run: node scripts/verify-release-config.mjs
 
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Typecheck
+        run: npm run typecheck
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -44,17 +68,15 @@ jobs:
       - name: Install
         run: npm ci --no-audit --no-fund
 
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Test with coverage
+        run: npm run test:coverage
 
-      - name: Test
-        run: npm test
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Format check
-        run: npm run format:check
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          fail_ci_if_error: false
 
       - name: Self-audit gate (Momus audits its own tests)
         run: npm run audit-self

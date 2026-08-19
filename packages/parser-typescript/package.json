@@ -6,6 +6,7 @@
   },
   "type": "module",
   "description": "TypeScript/JavaScript parser plugin for Momus (TS compiler API → IR)",
+  "license": "MIT",
   "files": [
     "src"
   ],
