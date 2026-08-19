@@ -16,3 +16,4 @@ export * from './rules/drift.ts';
 export * from './rules/hygiene.ts';
 export * from './format/markdown.ts';
 export * from './format/json.ts';
+export * from './projectSignals.ts';
