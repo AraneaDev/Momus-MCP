@@ -530,9 +530,19 @@ rule default** (§3.5 of `03-analysis-algorithms.md`).
 | `audit_test_fidelity` single file | < 200 ms |
 | `verify_mock_drift` workspace (100k LOC) | < 2 s |
 | Peak memory at 100k LOC | < 200 MB |
-| MCP `tools/list` serialized size | < 4 KB (fits one prompt context page) |
+| MCP `tools/list` serialized size | < 12 KB total, and < 1 KB per tool |
 
 Exceeding budgets degrades to `info` diagnostics (`SYS-004`), never crashes.
+
+**On the `tools/list` budget (revised 2026-08-19).** It was `< 4 KB` while the surface had
+five tools, and those five measured 4080 B — 99.6% of the cap, so any sixth tool broke it
+regardless of how lean it was. The agent-tool-surface spec adds six narrow tools by design
+(one intent each, discoverable through `tools/list`), which cannot fit in 4 KB at any
+plausible density: the five existing tools range 437–972 B each. The cap is therefore 12 KB,
+which holds the full eleven-tool surface with room to spare and is still negligible against a
+real context window. The **per-tool** budget is the part that now does the work: it is what
+keeps any single tool from bloating, which is what the original 4 KB figure was really
+protecting. Both halves are asserted in `test/integration/mcp.test.ts`.
 
 ## 2.8 Error taxonomy
 
