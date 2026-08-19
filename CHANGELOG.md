@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.9](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.8...v0.0.9) (2026-08-19)
+
+
+### Features
+
+* **server:** add explain_issue and get_ir (agent tool surface, phase 1) ([2374da4](https://github.com/AraneaDev/Momus-MCP/commit/2374da42edb00fba076149f4409c94e42a659df3))
+* **server:** add explain_issue and get_ir (agent tool surface, phase 1) ([8b8f04a](https://github.com/AraneaDev/Momus-MCP/commit/8b8f04a7e4eea83710684f2d7c63da526df468e3))
+
 ## [0.0.8](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.7...v0.0.8) (2026-08-18)
 
 
