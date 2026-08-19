@@ -662,6 +662,68 @@ describe('Momus MCP server (doctor_status with a disabled rule)', () => {
   });
 });
 
+describe('Momus MCP server (doctor_status in a monorepo)', () => {
+  it('reports TypeScript ready when the tsconfig governs a subdirectory, not the root', async () => {
+    // Momus's own shape: tsconfig.base.json at the root, real tsconfig.json per package. The
+    // parser resolves tsconfig by walking up from each FILE, so those files are fully
+    // type-aware; reporting "degraded" here tells an agent to expect a loss of DRIFT-002/003
+    // coverage it is not actually going to suffer.
+    const workspace = mkdtempSync(join(tmpdir(), 'momus-monorepo-'));
+    try {
+      mkdirSync(join(workspace, 'packages', 'core', 'src'), { recursive: true });
+      writeFileSync(join(workspace, 'tsconfig.base.json'), '{"compilerOptions":{"strict":true}}');
+      writeFileSync(join(workspace, 'packages', 'core', 'tsconfig.json'), '{"include":["src"]}');
+      writeFileSync(join(workspace, 'packages', 'core', 'src', 'a.ts'), 'export const a = 1;\n');
+
+      const pair = InMemoryTransport.createLinkedPair();
+      const server = createMomusServer({
+        root: workspace,
+        config: { ...DEFAULT_CONFIG, cache: { dir: '.momus/cache', enabled: false } },
+      });
+      await server.connect(pair[0]);
+      const c = new Client({ name: 'momus-monorepo', version: '1.0.0' }, { capabilities: {} });
+      await c.connect(pair[1]);
+      try {
+        const res = await c.callTool({ name: 'doctor_status', arguments: {} });
+        const sc = res.structuredContent as {
+          result: { languages: { typescript: { status: string } } };
+        };
+        expect(sc.result.languages.typescript.status).toBe('ready');
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('still reports TypeScript degraded when the workspace has no tsconfig at all', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'momus-notsconfig-'));
+    try {
+      writeFileSync(join(workspace, 'a.ts'), 'export const a = 1;\n');
+      const pair = InMemoryTransport.createLinkedPair();
+      const server = createMomusServer({
+        root: workspace,
+        config: { ...DEFAULT_CONFIG, cache: { dir: '.momus/cache', enabled: false } },
+      });
+      await server.connect(pair[0]);
+      const c = new Client({ name: 'momus-notsconfig', version: '1.0.0' }, { capabilities: {} });
+      await c.connect(pair[1]);
+      try {
+        const res = await c.callTool({ name: 'doctor_status', arguments: {} });
+        const sc = res.structuredContent as {
+          result: { languages: { typescript: { status: string } } };
+        };
+        expect(sc.result.languages.typescript.status).toBe('degraded');
+      } finally {
+        await server.close();
+      }
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('Momus MCP server (Python language selection)', () => {
   let client: Client;
   let cleanup: () => Promise<void>;
