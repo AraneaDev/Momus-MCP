@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.0.10](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.9...v0.0.10) (2026-08-19)
+
+
+### Features
+
+* **server:** add audit_workspace and doctor_status (agent tool surface, phase 2) ([da991c6](https://github.com/AraneaDev/Momus-MCP/commit/da991c6d2ed4ccf1db58da74fd0596e2d15c62fb))
+* **server:** add audit_workspace and doctor_status (agent tool surface, phase 2) ([739660b](https://github.com/AraneaDev/Momus-MCP/commit/739660b0d70f44ffe2e65d3f6687b6f8d6e1133c))
+* **server:** add preview_issue_fix and apply_issue_fix (agent tool surface, phase 3) ([74b6850](https://github.com/AraneaDev/Momus-MCP/commit/74b68508113b097f60790ad07e26b0737ee41ffa))
+* **server:** add preview_issue_fix and apply_issue_fix (phase 3, write surface) ([592ef58](https://github.com/AraneaDev/Momus-MCP/commit/592ef58a0861449c5f55fafa8cc43073116fe159))
+* **server:** add resources and change notifications (agent tool surface, phase 4) ([228be7f](https://github.com/AraneaDev/Momus-MCP/commit/228be7ff38c38cbcd16ed2634ff38a670c8d79c8))
+* **server:** add resources and change notifications (phase 4, final) ([bbdf0ac](https://github.com/AraneaDev/Momus-MCP/commit/bbdf0acdad49c2972623d64875469174d6126232))
+
+
+### Bug Fixes
+
+* **server:** detect a monorepo's tsconfig in doctor_status ([a9bc952](https://github.com/AraneaDev/Momus-MCP/commit/a9bc95268f29efa0434bef87294fb68e63ad30e8))
+
 ## [0.0.9](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.8...v0.0.9) (2026-08-19)
 
 
