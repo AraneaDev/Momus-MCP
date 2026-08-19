@@ -4,12 +4,15 @@
 
 **The ultimate critic among the deities, pointed at your test suite.**
 
-[![Release](https://img.shields.io/github/v/release/AraneaDev/Momus-MCP)](https://github.com/AraneaDev/Momus-MCP/releases)
-[![CI](https://github.com/AraneaDev/Momus-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/AraneaDev/Momus-MCP/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/codecov/c/github/AraneaDev/Momus-MCP)](https://codecov.io/gh/AraneaDev/Momus-MCP)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![MCP Observatory risk grade](https://mcpobservatory.com/servers/github:AraneaDev/Momus-MCP/badge.svg)](https://mcpobservatory.com/servers/github:AraneaDev/Momus-MCP/security)
-[![status: in development](https://img.shields.io/badge/status-in%20development-orange.svg)](#quick-start)
+[![Release](https://img.shields.io/github/v/release/AraneaDev/Momus-MCP?label=release)](https://github.com/AraneaDev/Momus-MCP/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/AraneaDev/Momus-MCP/ci.yml?label=CI)](https://github.com/AraneaDev/Momus-MCP/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAraneaDev%2FMomus-MCP%2Fgh-pages%2Fcoverage.json)](https://github.com/AraneaDev/Momus-MCP/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/AraneaDev/Momus-MCP?label=license&color=yellow)](./LICENSE)
+[![Language](https://img.shields.io/github/languages/top/AraneaDev/Momus-MCP)](https://github.com/AraneaDev/Momus-MCP)
+[![Last commit](https://img.shields.io/github/last-commit/AraneaDev/Momus-MCP?label=last%20commit)](https://github.com/AraneaDev/Momus-MCP/commits/main)
+[![Conventional Commits](https://img.shields.io/badge/commits-conventional-fe5196?logo=conventionalcommits&logoColor=white)](https://www.conventionalcommits.org/)
+[![MCP Observatory](https://mcpobservatory.com/servers/github:AraneaDev/Momus-MCP/badge.svg)](https://mcpobservatory.com/servers/github:AraneaDev/Momus-MCP/security)
+[![Status](https://img.shields.io/badge/status-in%20development-orange)](#quick-start)
 
 </div>
 

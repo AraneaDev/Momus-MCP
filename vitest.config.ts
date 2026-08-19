@@ -27,8 +27,9 @@ export default defineConfig({
       provider: 'v8',
       include: ['packages/*/src/**/*.ts'],
       exclude: ['packages/*/src/**/*.d.ts', 'packages/*/test/**', 'test/**'],
-      // lcov is what the Codecov upload in CI consumes; text/summary are for humans.
-      reporter: ['text', 'text-summary', 'lcov'],
+      // json-summary feeds scripts/coverage-badge.mjs; lcov is kept for editors and any
+      // external consumer; text/text-summary are for humans reading CI logs.
+      reporter: ['text', 'text-summary', 'lcov', 'json-summary'],
       thresholds: {
         statements: 80,
         branches: 75,
