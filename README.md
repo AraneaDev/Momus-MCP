@@ -247,7 +247,6 @@ file-banner) and the full configuration schema (`schemas/momusrc.schema.json`).
 | [`docs/04-mcp-tool-definitions.md`](docs/04-mcp-tool-definitions.md) | MCP tool schemas and agent protocol |
 | [`docs/05-output-format.md`](docs/05-output-format.md) | Issue grammar and Markdown/JSON schemas |
 | [`docs/10-build-plan.md`](docs/10-build-plan.md) | Implementation status and sequenced plan |
-| [`HANDOVER.md`](HANDOVER.md) | Current engineering handover |
 
 ---
 

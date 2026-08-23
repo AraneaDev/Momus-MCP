@@ -4,7 +4,10 @@ packages/parser-rust/wasm/target/
 *.tsbuildinfo
 **/.momus/cache/
 coverage/
+test-results/
 .stryker-tmp/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
 .agents/
 .claude/
 skills-lock.json
