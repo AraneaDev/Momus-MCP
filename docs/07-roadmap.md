@@ -179,8 +179,7 @@ client can attach `momus-mcp` the same way it attaches any other server.
 
 ## Python support (shipped) — annotations-first, pyright deferred
 
-Added as a third language family (separate from the numbered phases; design in
-`docs/superpowers/specs/2026-08-17-python-language-support-design.md`). A single language
+Added as a third language family, separate from the numbered phases. A single language
 registry now drives `Language`/config/test-patterns/discovery, and `@momus/parser-python`
 parses `pytest`/`unittest` suites via `tree-sitter-python` + textual PEP 484/526/585/604
 annotations into the same `ModuleIR` — rules stay IR-only. `DRIFT-002`/`DRIFT-003` fire only on
@@ -191,8 +190,7 @@ type inference shipped (see four-language parity below).
 
 ## Rust support (shipped) — semantic-from-day-one, `syn` → WASM
 
-Added as a fourth language family (design in
-`docs/superpowers/specs/2026-08-17-rust-language-support-design.md`). `@momus/parser-rust`
+Added as a fourth language family. `@momus/parser-rust`
 compiles `syn` to `wasm32-unknown-unknown` and exposes a synchronous `parse_file → JSON AST` FFI;
 all extraction (symbols, imports, structural `#[test]`/`#[cfg(test)]` detection, `mockall`/
 `mockito`/`wiremock` mocks, assertions) happens in TypeScript over that AST, reusing the existing
@@ -204,8 +202,7 @@ signatures so drift rules are semantic-from-day-one (external-crate traits degra
 
 ## Four-language parity (shipped) — one rule surface, equal depth
 
-Brings all four language families to the same level (design in
-`docs/superpowers/specs/2026-08-17-four-language-parity-design.md`). Five phases:
+Brings all four language families to the same level. Five phases:
 
 - **Consistency** — one shared rule catalog (`RUST_CATALOG` → 14 rules) drives both the CLI
   `momus rules` and MCP `list_rules`; the watcher watches `.rs` and the default ignores cover
