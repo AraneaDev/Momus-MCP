@@ -5,7 +5,7 @@
 **The ultimate critic among the deities, pointed at your test suite.**
 
 [![Release](https://img.shields.io/github/v/release/AraneaDev/Momus-MCP?label=release)](https://github.com/AraneaDev/Momus-MCP/releases)
-[![Project page](https://img.shields.io/badge/project%20page-aranea--development.nl-0b7285)](https://aranea-development.nl/en/projects/momus-mcp)
+[![Tool page](https://img.shields.io/badge/tool%20page-aranea--development.nl-0b7285)](https://aranea-development.nl/en/tools/momus-mcp)
 [![CI](https://img.shields.io/github/actions/workflow/status/AraneaDev/Momus-MCP/ci.yml?label=CI)](https://github.com/AraneaDev/Momus-MCP/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAraneaDev%2FMomus-MCP%2Fgh-pages%2Fcoverage.json)](https://github.com/AraneaDev/Momus-MCP/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/AraneaDev/Momus-MCP?label=license&color=yellow)](./LICENSE)
