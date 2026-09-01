@@ -271,3 +271,7 @@ pre-publish phase; `npx momus` resolves through the workspace bin after `npm ci`
 Released under the **MIT License**, free for any use, commercial included. It speaks any MCP
 client, not just Claude Code, and reads code you already have. Like its namesake, it will tell
 you exactly what is wrong. Politely is not in the job description.
+
+---
+
+Built by [Aranea Development](https://aranea-development.nl).
