@@ -587,7 +587,7 @@ export class Drift005MissingExport extends DriftRule {
   readonly id = 'DRIFT-005' as const;
   readonly name = 'missing-export';
   readonly defaultSeverity = 'error' as const;
-  readonly description = 'vi.mock factory keys reference exports that do not exist';
+  readonly description = 'a vi.mock factory key or a Python patch target names something the module does not export';
   check(ctx: RuleContext): Issue[] {
     const { module, index } = ctx;
     const out: Issue[] = [];

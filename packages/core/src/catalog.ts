@@ -78,7 +78,7 @@ export const RULES_CATALOG: readonly RuleCatalogEntry[] = [
     id: 'DRIFT-005',
     name: 'missing-export',
     severity: 'error',
-    description: 'vi.mock factory keys reference exports that do not exist',
+    description: 'mocked name is not exported by the target module (vi.mock factory keys, Python patch targets)',
   },
   {
     id: 'DRIFT-006',
