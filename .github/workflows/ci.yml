@@ -22,7 +22,17 @@ jobs:
         with:
           fetch-depth: 0 # full history so --all sees every commit
 
+      # A release-please PR's diff is version files, the manifest, and a
+      # CHANGELOG entry -- the code underneath is byte-identical to the main
+      # it was cut from, which already ran this suite and passed. The step
+      # below just re-verifies code that hasn't moved, so it's skipped when
+      # the head branch is the one release-please owns. The job itself still
+      # runs and reports: `commit-hygiene` and `test` are required checks on
+      # main, and a required check that never reports leaves the PR blocked
+      # forever, which is worse than a slow one. Every guard in this file
+      # below is keyed on that same branch name.
       - name: Verify no Codebuff attribution footer in history
+        if: github.head_ref != 'release-please--branches--main'
         run: node scripts/verify-no-codebuff-footer.mjs
 
   release-config:
@@ -34,6 +44,10 @@ jobs:
       # Deterministic, no-network check that mirrors what release-please will do:
       # manifest/package versions lockstep, extra-files cover every workspace,
       # internal deps use ~ ranges, changelog-path + tag shape correct.
+      #
+      # This is the one check in the file that stays unguarded on a release
+      # PR: it's verifying the version bump itself, not re-verifying code that
+      # didn't change, so it runs in full every time.
       - name: Verify release-please config consistency
         run: node scripts/verify-release-config.mjs
 
@@ -43,22 +57,29 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Lint/format/typecheck re-verify source that a release PR never
+      # touches -- see the comment on commit-hygiene above.
       - name: Setup Node
+        if: github.head_ref != 'release-please--branches--main'
         uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
 
       - name: Install
+        if: github.head_ref != 'release-please--branches--main'
         run: npm ci --no-audit --no-fund
 
       - name: Lint
+        if: github.head_ref != 'release-please--branches--main'
         run: npm run lint
 
       - name: Format check
+        if: github.head_ref != 'release-please--branches--main'
         run: npm run format:check
 
       - name: Typecheck
+        if: github.head_ref != 'release-please--branches--main'
         run: npm run typecheck
 
   test:
@@ -69,16 +90,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Build + test re-verify source that a release PR never touches -- see
+      # the comment on commit-hygiene above. `test` is one of the required
+      # checks, so the job still has to run and report; only the expensive
+      # work underneath is skipped.
       - name: Setup Node
+        if: github.head_ref != 'release-please--branches--main'
         uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
 
       - name: Install
+        if: github.head_ref != 'release-please--branches--main'
         run: npm ci --no-audit --no-fund
 
       - name: Test with coverage
+        if: github.head_ref != 'release-please--branches--main'
         run: npm run test:coverage
 
       # Self-hosted coverage badge: the percentage is published as a shields endpoint on an
@@ -105,9 +133,11 @@ jobs:
             "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
 
       - name: Self-audit gate (Momus audits its own tests)
+        if: github.head_ref != 'release-please--branches--main'
         run: npm run audit-self
 
       - name: CLI smoke (fixture must fail, exit code 1)
+        if: github.head_ref != 'release-please--branches--main'
         run: |
           # copy the fixture gallery to a temp dir (no .momusrc) so planted
           # violations are audited, then verify the exit-code contract.
