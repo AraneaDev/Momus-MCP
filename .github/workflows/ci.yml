@@ -32,7 +32,7 @@ jobs:
       # forever, which is worse than a slow one. Every guard in this file
       # below is keyed on that same branch name.
       - name: Verify no Codebuff attribution footer in history
-        if: github.head_ref != 'release-please--branches--main'
+        if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
         run: node scripts/verify-no-codebuff-footer.mjs
 
   release-config:
@@ -60,26 +60,26 @@ jobs:
       # Lint/format/typecheck re-verify source that a release PR never
       # touches -- see the comment on commit-hygiene above.
       - name: Setup Node
-        if: github.head_ref != 'release-please--branches--main'
+        if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
         uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
 
       - name: Install
-        if: github.head_ref != 'release-please--branches--main'
+        if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
         run: npm ci --no-audit --no-fund
 
       - name: Lint
-        if: github.head_ref != 'release-please--branches--main'
+        if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
         run: npm run lint
 
       - name: Format check
-        if: github.head_ref != 'release-please--branches--main'
+        if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
         run: npm run format:check
 
       - name: Typecheck
-        if: github.head_ref != 'release-please--branches--main'
+        if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
         run: npm run typecheck
 
   test:
@@ -95,18 +95,18 @@ jobs:
       # checks, so the job still has to run and report; only the expensive
       # work underneath is skipped.
       - name: Setup Node
-        if: github.head_ref != 'release-please--branches--main'
+        if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
         uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
 
       - name: Install
-        if: github.head_ref != 'release-please--branches--main'
+        if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
         run: npm ci --no-audit --no-fund
 
       - name: Test with coverage
-        if: github.head_ref != 'release-please--branches--main'
+        if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
         run: npm run test:coverage
 
       # Self-hosted coverage badge: the percentage is published as a shields endpoint on an
@@ -133,11 +133,11 @@ jobs:
             "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
 
       - name: Self-audit gate (Momus audits its own tests)
-        if: github.head_ref != 'release-please--branches--main'
+        if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
         run: npm run audit-self
 
       - name: CLI smoke (fixture must fail, exit code 1)
-        if: github.head_ref != 'release-please--branches--main'
+        if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
         run: |
           # copy the fixture gallery to a temp dir (no .momusrc) so planted
           # violations are audited, then verify the exit-code contract.
