@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.0.12](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.11...v0.0.12) (2026-09-15)
+
+
+### Documentation
+
+* adopt the house README style, add the missing MIT licence ([aa770f2](https://github.com/AraneaDev/Momus-MCP/commit/aa770f27a371b83e1b9558349ae8fa9bcbf159b3))
+* adopt the house README style, add the missing MIT licence ([79d9086](https://github.com/AraneaDev/Momus-MCP/commit/79d9086d6cb8a42436d3689aed1d02705dcd164e))
+* link the project site from the readme ([#38](https://github.com/AraneaDev/Momus-MCP/issues/38)) ([19bee5e](https://github.com/AraneaDev/Momus-MCP/commit/19bee5e8a8683c63b5a8f173fa47530669b0806f))
+* link the README to the project page ([4b8b687](https://github.com/AraneaDev/Momus-MCP/commit/4b8b687451234d91975f7cab36d597b77802073d))
+* name the Python half of DRIFT-005 ([#39](https://github.com/AraneaDev/Momus-MCP/issues/39)) ([b66a749](https://github.com/AraneaDev/Momus-MCP/commit/b66a749b71e9996c13af5001c86f10c7b535141b))
+* normalise the badge row, self-host the coverage badge ([a10d91e](https://github.com/AraneaDev/Momus-MCP/commit/a10d91ea5889a0cad3752cb785561561c9c5d918))
+* normalise the badge row, self-host the coverage badge ([91f1170](https://github.com/AraneaDev/Momus-MCP/commit/91f117073509a85698bc4436f5ab794deee5b80f))
+* point the badge at the renamed /tools section ([#37](https://github.com/AraneaDev/Momus-MCP/issues/37)) ([84911ca](https://github.com/AraneaDev/Momus-MCP/commit/84911ca55e2097d720b9b3188a0572e057cfb43e))
+* **readme:** credit the author and link the write-up ([#44](https://github.com/AraneaDev/Momus-MCP/issues/44)) ([32ec00e](https://github.com/AraneaDev/Momus-MCP/commit/32ec00e380e1966b4ac6edb942f84069ce56d067))
+
+
+### Continuous integration
+
+* cancel superseded runs and give every job a timeout ([#40](https://github.com/AraneaDev/Momus-MCP/issues/40)) ([223c9e6](https://github.com/AraneaDev/Momus-MCP/commit/223c9e64c657300c1fed1790ed8cb3fcc2efdecb))
+* match the release branch by prefix, not by exact name ([#43](https://github.com/AraneaDev/Momus-MCP/issues/43)) ([74f7573](https://github.com/AraneaDev/Momus-MCP/commit/74f7573610e56acc295c4363be4a8cf17f881cbd))
+* move off the actions still running on Node 20 ([#36](https://github.com/AraneaDev/Momus-MCP/issues/36)) ([46d2e2f](https://github.com/AraneaDev/Momus-MCP/commit/46d2e2f2824bb27d8b4cc744aba31bdc22cf826d))
+* **release:** list the changelog sections the other tools use ([#45](https://github.com/AraneaDev/Momus-MCP/issues/45)) ([968a9ff](https://github.com/AraneaDev/Momus-MCP/commit/968a9ff5f90d96c225cb0df5721224218062fa5d))
+* scope the concurrency group to the pull request, not the base branch ([#41](https://github.com/AraneaDev/Momus-MCP/issues/41)) ([012e489](https://github.com/AraneaDev/Momus-MCP/commit/012e489e80479ec42cc443ae2fe24db393305a23))
+* skip re-verification steps on release-please PRs ([#42](https://github.com/AraneaDev/Momus-MCP/issues/42)) ([88680ec](https://github.com/AraneaDev/Momus-MCP/commit/88680ec15ab2ec8b15f2825e2a6b6220e9e79efe))
+
 ## [0.0.11](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.10...v0.0.11) (2026-08-19)
 
 
