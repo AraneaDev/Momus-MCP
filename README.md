@@ -274,4 +274,5 @@ you exactly what is wrong. Politely is not in the job description.
 
 ---
 
-Built by [Aranea Development](https://aranea-development.nl).
+Built by [Tim Schipper](https://tim-schipper.nl/en) and released as open source under
+[Aranea Development](https://aranea-development.nl).
