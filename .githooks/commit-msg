@@ -1,9 +1,16 @@
 #!/bin/sh
-# Reject commit messages that carry the Codebuff attribution footer.
-# The repository must never contain "Generated with Codebuff" / "Co-Authored-By: Codebuff".
+# One rule for a commit subject, shared with the pull request title check in
+# .github/workflows/pr-title.yml. Both call the same script, so neither can
+# drift from the other.
+#
+# Deliberate exception (a fixup you intend to squash away):
+#     git commit --no-verify
+
+# The repository must never contain the Codebuff attribution footer.
 if grep -qEi 'Generated with Codebuff|Co-Authored-By: Codebuff' "$1"; then
-  echo 'commit-msg: rejected — the message contains the Codebuff attribution footer.' >&2
+  echo 'commit-msg: rejected, the message contains the Codebuff attribution footer.' >&2
   echo 'This footer must never be added to the repository. Remove it and commit again.' >&2
   exit 1
 fi
-exit 0
+
+exec bash "$(dirname "$0")/../scripts/check-commit-style.sh" --file "$1"
