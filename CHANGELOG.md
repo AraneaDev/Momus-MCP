@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.13](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.12...v0.0.13) (2026-09-16)
+
+
+### Fixes
+
+* ignore release configuration changes ([#54](https://github.com/AraneaDev/Momus-MCP/issues/54)) ([a302fc9](https://github.com/AraneaDev/Momus-MCP/commit/a302fc9adc67c6117f2225fdaf4dc4aebca48962))
+
+
+### Documentation
+
+* refresh README and release filters ([#52](https://github.com/AraneaDev/Momus-MCP/issues/52)) ([c6b8ad0](https://github.com/AraneaDev/Momus-MCP/commit/c6b8ad002f406729db6a62bbe1f4bc5b97832518))
+
 ## [0.0.12](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.11...v0.0.12) (2026-09-16)
 
 
