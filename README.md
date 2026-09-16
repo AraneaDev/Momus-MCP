@@ -22,12 +22,12 @@
 > was finally thrown off Olympus for doing it too well. His name translates literally as
 > **"blame"** or **"censure"**.
 
-Momus-MCP is a **local-first, deterministic, read-only** MCP server and CLI that audits test
-suites the way Momus audited the gods: ruthlessly, and with no tolerance for things that pass
-while proving nothing. It hunts **false-green tests**, suites that go green because of
-tautological assertions, mock-contract drift, and mock-hygiene problems rather than because the
-code works. The name is doubly apt: Momus is the god of *mockery*, and mock objects are exactly
-what this tool scrutinises.
+**TL;DR:** Momus-MCP finds tests that pass without proving the production code works. It reads
+test and production source, builds a symbol graph, and checks assertions, mocks, spies, and
+contracts for tautologies, drift, and hygiene problems.
+
+Momus-MCP is a **local-first, deterministic, read-only** MCP server and CLI. It never executes
+your code, talks to the network, or writes to your workspace.
 
 > **Status:** pre-release. Momus-MCP is **not yet published to npm**. The publish step in the
 > release workflow is deliberately dormant (credential-blocked). The source is public, so
