@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.13](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.12...v0.0.13) (2026-11-04)
+
+
+### Fixes
+
+* audit large and mixed TS/JS repositories without crashing or false positives ([#60](https://github.com/AraneaDev/Momus-MCP/issues/60)) ([1c75fe8](https://github.com/AraneaDev/Momus-MCP/commit/1c75fe8a11ac40442c812595ef65c8c56b9025a2))
+* ignore release configuration changes ([#54](https://github.com/AraneaDev/Momus-MCP/issues/54)) ([a302fc9](https://github.com/AraneaDev/Momus-MCP/commit/a302fc9adc67c6117f2225fdaf4dc4aebca48962))
+
 ## [0.0.12](https://github.com/AraneaDev/Momus-MCP/compare/v0.0.11...v0.0.12) (2026-09-16)
 
 
