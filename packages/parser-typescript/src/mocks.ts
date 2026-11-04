@@ -135,15 +135,20 @@ export function detectMocks(sf: ts.SourceFile, ctx: MockDetectionContext): MockD
       // return { ...actual, key: vi.fn() }; }` (block body returning an object literal).
       // In both, the object literal's explicit keys are the mock's stubbed exports; a
       // `...actual` spread just re-exports the real module and is not a stub.
-      let factoryBody: ts.ObjectLiteralExpression | undefined =
+      // Any other body (`() => stub('x')`, `() => shared`) is opaque: its keys are unknown,
+      // so that mock contributes no factory keys and the rest of the file is still audited.
+      const exprBody =
         factory && ts.isArrowFunction(factory) && factory.body && !ts.isBlock(factory.body)
-          ? (unwrap(factory.body) as ts.ObjectLiteralExpression)
+          ? unwrap(factory.body)
           : undefined;
+      let factoryBody: ts.ObjectLiteralExpression | undefined =
+        exprBody && ts.isObjectLiteralExpression(exprBody) ? exprBody : undefined;
       if (
         !factoryBody &&
         factory &&
         (ts.isArrowFunction(factory) || ts.isFunctionExpression(factory)) &&
-        factory.body
+        factory.body &&
+        ts.isBlock(factory.body)
       ) {
         const returned = findReturnedObjectLiteral(factory.body);
         if (returned) factoryBody = returned;

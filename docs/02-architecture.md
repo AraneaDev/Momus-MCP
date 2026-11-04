@@ -548,14 +548,18 @@ protecting. Both halves are asserted in `test/integration/mcp.test.ts`.
 
 | Code | Meaning | Severity |
 |---|---|---|
-| `SYS-001` | Parse error in file (syntax) | error (diagnostic, not issue) |
+| `SYS-001` | Parse error in file (syntax) | error (diagnostic; also an error issue when the file is a requested test file) |
 | `SYS-002` | File/workspace over size caps, skipped | info |
 | `SYS-003` | Unresolvable import/type — type-aware checks downgraded | info |
 | `SYS-004` | Performance budget exceeded, degraded mode | info |
 | `SYS-005` | Configuration error (bad `.momusrc`) — tool returns error result | n/a |
+| `SYS-006` | Heap guard stopped the audit near the V8 heap limit — partial result | error (diagnostic + issue) |
 
 System diagnostics never count toward "issues found" for exit-code purposes, but they are
-surfaced in every report so agents know analysis was degraded.
+surfaced in every report so agents know analysis was degraded. Two exceptions keep a degraded
+run from reading as clean: a requested test file that could not be parsed is also reported as a
+`SYS-001` error issue, and a heap-guard stop is reported as a `SYS-006` error issue. Both count
+in `summary.filesFailed` and fail the exit code.
 
 ---
 

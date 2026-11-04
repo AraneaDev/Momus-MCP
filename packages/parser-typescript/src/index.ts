@@ -2,7 +2,7 @@
 import * as ts from 'typescript';
 import type { ImportIR, LanguageParser, MockFramework, ModuleIR, ParseContext, ParseDiagnostic } from '@momus/core';
 import { span } from '@momus/core';
-import { getProgram, resolveImport as resolveImportTs } from './program.ts';
+import { getProgram, invalidateProgramCache, resolveImport as resolveImportTs } from './program.ts';
 
 export { invalidateProgramCache, getProgram } from './program.ts';
 export { tsReturnExample, tsReturnExampleChecked, promiseTypeArg } from './types.ts';
@@ -20,6 +20,10 @@ export class TypeScriptParser implements LanguageParser {
 
   resolveImport(specifier: string, fromFile: string): string | null {
     return resolveImportTs(specifier, fromFile);
+  }
+
+  releaseMemory(): void {
+    invalidateProgramCache();
   }
 
   parseModule(path: string, source: string, _ctx: ParseContext): ModuleIR {
@@ -44,7 +48,7 @@ export class TypeScriptParser implements LanguageParser {
     const isTest = /\.(test|spec)\.[cm]?[jt]sx?$/.test(path) || path.includes('__tests__');
     const imports = extractImports(sf);
     const framework = detectFramework(imports);
-    const { symbols, exports } = extractSymbols(sf);
+    const { symbols, exports, exportsOpen } = extractSymbols(sf);
     const { mocks, instanceIds } = detectMocks(sf, {
       framework: framework ?? 'manual',
       typeAware,
@@ -61,6 +65,7 @@ export class TypeScriptParser implements LanguageParser {
       imports,
       symbols,
       exports,
+      ...(exportsOpen ? { exportsOpen } : {}),
       mocks,
       assertions,
       functions,

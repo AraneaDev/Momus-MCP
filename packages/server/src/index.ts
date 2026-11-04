@@ -443,7 +443,7 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
     { ...ANN, title: 'Detect Tautological Assertions' },
     async ({ paths, maxIssues }) => {
       const result = runAudit({ paths, maxIssues });
-      const filtered = filterResult(result, (i) => i.rule.startsWith('TAUT'));
+      const filtered = filterResult(result, (i) => i.rule.startsWith('TAUT') || i.rule.startsWith('SYS'));
       return respond('detect_tautological_assertions', filtered, paths?.join(', ') || 'workspace');
     },
   );
@@ -483,7 +483,7 @@ export function createMomusServer(opts: MomusServerOptions): McpServer {
         }
       }
       const result = new AuditEngine({ root, parser, config, cache, paths, includeUnresolved, maxIssues, diff }).run();
-      const filtered = filterResult(result, (i) => i.rule.startsWith('DRIFT'));
+      const filtered = filterResult(result, (i) => i.rule.startsWith('DRIFT') || i.rule.startsWith('SYS'));
       return respond('verify_mock_drift', filtered, `${scope}${baseRef ? ' vs ' + baseRef : ''}`);
     },
   );
