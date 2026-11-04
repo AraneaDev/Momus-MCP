@@ -30,4 +30,8 @@ export class CompositeParser implements LanguageParser {
     if (!parser) throw new Error(`no parser claims '${path}'`);
     return parser.parseModule(path, source, ctx);
   }
+
+  releaseMemory(): void {
+    for (const parser of this.parsers) parser.releaseMemory?.();
+  }
 }

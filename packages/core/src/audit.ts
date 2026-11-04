@@ -1,6 +1,7 @@
 /** Audit pipeline (spec docs/02 §2.1): discover → parse → index → rules → format. */
 import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { getHeapStatistics } from 'node:v8';
 import { relative, resolve, join } from 'node:path';
 import { anyMatch } from './glob.ts';
 import { IR_SCHEMA_VERSION, type AuditResult, type ModuleIR, type Issue, type ParseDiagnostic } from './ir.ts';
@@ -34,6 +35,19 @@ export interface AuditOptions {
   cache?: ParseCache;
   /** Per-file parse budget in ms (§2.7); parses over it emit a SYS-004 info diagnostic. */
   parseBudgetMs?: number;
+  /**
+   * Heap guard (issue #56). Before each uncached parse the used heap is compared with the V8
+   * heap limit: above `release` the parser drops its memoized programs; above `stop` parsing
+   * ends and the audit returns a partial result with a SYS-006 error instead of letting the
+   * process die. Ratios of the heap limit; `heapUsage` is injectable for tests.
+   */
+  heapGuard?: { release?: number; stop?: number; heapUsage?: () => number };
+}
+
+/** Fraction of the V8 heap limit currently in use. */
+function defaultHeapUsage(): number {
+  const h = getHeapStatistics();
+  return h.used_heap_size / h.heap_size_limit;
 }
 
 export class AuditEngine {
@@ -67,6 +81,12 @@ export class AuditEngine {
       message: s.reason,
     }));
     const pathFilter = this.pathFilter();
+    // Requested test files that were not audited: they must not read as a clean result.
+    const requested = (rel: string): boolean =>
+      anyMatch(this.config.testFilePatterns, rel) && (!pathFilter || pathFilter(rel));
+    const relOf = (abs: string): string => relative(root, abs).replace(/\\/g, '/');
+    const failedTests: Issue[] = [];
+    let missedTests = 0; // requested test files never parsed because the heap guard stopped the audit
 
     // Pass 1: read + content-hash every claimable file so the workspace digest (which the
     // cache key depends on) can be computed before any parse is served from cache.
@@ -91,11 +111,31 @@ export class AuditEngine {
     const workspaceHash = hashOf(digestParts.sort().join('\n'));
     const cache = this.opts.cache;
 
-    for (const { f, source, hash } of candidates) {
+    const heapUsage = this.opts.heapGuard?.heapUsage ?? defaultHeapUsage;
+    const releaseAt = this.opts.heapGuard?.release ?? 0.75;
+    const stopAt = this.opts.heapGuard?.stop ?? 0.92;
+    let released = false;
+    let unparsed: string[] = [];
+    for (let ci = 0; ci < candidates.length; ci++) {
+      const { f, source, hash } = candidates[ci]!;
       // Production files are ALWAYS indexed (rules need the workspace symbol graph);
       // the path filter restricts which TEST files get audited.
       let module = cache?.get(f.path, hash, workspaceHash);
       if (!module) {
+        const usage = heapUsage();
+        if (usage > releaseAt && !released) {
+          parser.releaseMemory?.();
+          released = true;
+        }
+        if (usage > stopAt) {
+          unparsed = candidates.slice(ci).map((c) => c.f.path);
+          diagnostics.push({
+            severity: 'error',
+            span: { file: f.path, startLine: 1, startCol: 1, endLine: 1, endCol: 1 },
+            message: `SYS-006: heap at ${Math.round(usage * 100)}% of limit; audit stopped, ${unparsed.length} files not parsed`,
+          });
+          break;
+        }
         const parseT0 = Date.now();
         try {
           module = parser.parseModule(f.path, source, {
@@ -103,11 +143,24 @@ export class AuditEngine {
             resolveImport: (spec) => parser.resolveImport(spec, f.path),
           });
         } catch (e) {
+          const failSpan = { file: f.path, startLine: 1, startCol: 1, endLine: 1, endCol: 1 };
           diagnostics.push({
             severity: 'error',
-            span: { file: f.path, startLine: 1, startCol: 1, endLine: 1, endCol: 1 },
+            span: failSpan,
             message: `SYS-001: parse error: ${(e as Error).message}`.slice(0, 120),
           });
+          // A requested test file that could not be audited becomes an error-severity issue,
+          // so the summary and exit code reflect it (issue #58).
+          if (requested(relOf(f.path))) {
+            failedTests.push({
+              id: `SYS-001:${f.path}`,
+              rule: 'SYS-001',
+              severity: 'error',
+              span: failSpan,
+              message: `parse-error: file not audited (${(e as Error).message})`.slice(0, 80),
+              tokens: 0,
+            });
+          }
           continue;
         }
         const parseMs = Date.now() - parseT0;
@@ -173,12 +226,33 @@ export class AuditEngine {
       }
     }
 
+    if (unparsed.length > 0) {
+      // A partial index cannot vouch for anything: report the stop as an error issue anchored on
+      // the first requested test file that was not reached (or the first unparsed file).
+      const firstTest = unparsed.findIndex((p) => requested(relOf(p)));
+      const anchor = unparsed[firstTest >= 0 ? firstTest : 0]!;
+      missedTests = unparsed.filter((p) => requested(relOf(p))).length;
+      failedTests.push({
+        id: `SYS-006:${anchor}`,
+        rule: 'SYS-006',
+        severity: 'error',
+        span: { file: anchor, startLine: 1, startCol: 1, endLine: 1, endCol: 1 },
+        message: `out-of-memory: audit stopped early, ${unparsed.length} files not parsed`.slice(0, 80),
+        tokens: 0,
+      });
+    }
+    for (const failed of failedTests) {
+      failed.tokens = issueTokens(failed, root);
+      issues.push(failed);
+    }
+    const filesFailed = failedTests.filter((i) => i.rule === 'SYS-001').length + missedTests;
     const sorted = sortIssues(issues);
     const truncated = sorted.length > limit;
     const shown = truncated ? sorted.slice(0, limit) : sorted;
     const count = (list: Issue[], sev: Issue['severity']) => list.filter((i) => i.severity === sev).length;
     const summary = {
       filesAudited: selected.length + production.length,
+      ...(filesFailed > 0 ? { filesFailed } : {}),
       issues: shown.length,
       errors: count(shown, 'error'),
       warnings: count(shown, 'warning'),

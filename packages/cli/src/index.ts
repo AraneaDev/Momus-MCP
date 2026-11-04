@@ -315,7 +315,7 @@ export function runDrift(root: string, argv: string[]): number {
     diff,
   });
   const result = engine.run();
-  const drift = filterResult(result, (i) => i.rule.startsWith('DRIFT'));
+  const drift = filterResult(result, (i) => i.rule.startsWith('DRIFT') || i.rule.startsWith('SYS'));
   if (json) {
     process.stdout.write(
       JSON.stringify(buildJsonEnvelope(drift, { tool: 'verify_mock_drift', workspaceRoot: root }), null, 2) + '\n',
@@ -432,7 +432,7 @@ export function runPrecommit(root: string, argv: string[]): number {
     diff: { baseRef, changedPaths },
   });
   const result = engine.run();
-  const drift = filterResult(result, (i) => i.rule.startsWith('DRIFT'));
+  const drift = filterResult(result, (i) => i.rule.startsWith('DRIFT') || i.rule.startsWith('SYS'));
   if (json) {
     process.stdout.write(
       JSON.stringify(buildJsonEnvelope(drift, { tool: 'verify_mock_drift', workspaceRoot: root }), null, 2) + '\n',
@@ -474,7 +474,7 @@ export function runHook(root: string, argv: string[]): number {
     diff: { baseRef: 'HEAD', changedPaths: staged },
   });
   const result = engine.run();
-  const drift = filterResult(result, (i) => i.rule.startsWith('DRIFT'));
+  const drift = filterResult(result, (i) => i.rule.startsWith('DRIFT') || i.rule.startsWith('SYS'));
   if (json) {
     process.stdout.write(
       JSON.stringify(buildJsonEnvelope(drift, { tool: 'verify_mock_drift', workspaceRoot: root }), null, 2) + '\n',

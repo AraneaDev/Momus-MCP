@@ -59,11 +59,16 @@ function parseGitignoreLine(raw: string): GitignoreRule | null {
   return { pattern: line, negated, dirOnly, anchored };
 }
 
-function readGitignore(root: string): GitignoreRule[] {
-  const gi = join(root, '.gitignore');
-  if (!existsSync(gi)) return [];
+function readIgnoreFile(path: string): GitignoreRule[] {
+  if (!existsSync(path)) return [];
   const rules: GitignoreRule[] = [];
-  for (const raw of readFileSync(gi, 'utf8').split('\n')) {
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    return [];
+  }
+  for (const raw of text.split('\n')) {
     const rule = parseGitignoreLine(raw);
     if (rule) rules.push(rule);
   }
@@ -96,14 +101,34 @@ function ruleMatches(rule: GitignoreRule, rel: string, isDir: boolean): boolean 
   return false;
 }
 
-/** Returns true when a path is excluded by .gitignore (negations honored, last match wins). */
+/**
+ * Returns true when a path is excluded by git's ignore files: `.git/info/exclude`, the root
+ * `.gitignore`, and every nested `.gitignore` between the root and the path (a sub-project's
+ * `frontend/.gitignore` listing `dist-visual` must keep that build output out of the index).
+ * Each file's patterns match relative to its own directory; the deepest file wins, and within
+ * a file the last matching rule wins (negations honored).
+ */
 function gitignorePredicate(root: string): (rel: string, isDir: boolean) => boolean {
-  const rules = readGitignore(root);
-  if (rules.length === 0) return () => false;
+  const byDir = new Map<string, GitignoreRule[]>();
+  const rulesFor = (dirRel: string): GitignoreRule[] => {
+    let rules = byDir.get(dirRel);
+    if (!rules) {
+      rules = readIgnoreFile(join(root, dirRel, '.gitignore'));
+      if (dirRel === '') rules = [...readIgnoreFile(join(root, '.git', 'info', 'exclude')), ...rules];
+      byDir.set(dirRel, rules);
+    }
+    return rules;
+  };
   return (rel, isDir) => {
+    const dirs = ['', ...pathAncestors(rel).reverse()];
     let ignored = false;
-    for (const rule of rules) {
-      if (ruleMatches(rule, rel, isDir)) ignored = !rule.negated;
+    for (const dir of dirs) {
+      const rules = rulesFor(dir);
+      if (rules.length === 0) continue;
+      const sub = dir === '' ? rel : rel.slice(dir.length + 1);
+      for (const rule of rules) {
+        if (ruleMatches(rule, sub, isDir)) ignored = !rule.negated;
+      }
     }
     return ignored;
   };

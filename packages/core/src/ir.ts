@@ -10,7 +10,7 @@ import type { Language } from './languages.ts';
  * invalidates cached modules even when the audited workspace is unchanged. Bump whenever the
  * ModuleIR shape or any parser's extraction changes in a way that would make cached IR stale.
  */
-export const IR_SCHEMA_VERSION = '23'; // 23: TS `new` production calls, config-arg hand-off, dynamic-import + local-helper provenance
+export const IR_SCHEMA_VERSION = '24'; // 24: TS default/CommonJS exports + exportsOpen; opaque vi.mock factories
 
 export type { Language };
 export type Severity = 'error' | 'warning' | 'info';
@@ -35,7 +35,8 @@ export type RuleId =
   | 'SYS-002'
   | 'SYS-003'
   | 'SYS-004'
-  | 'SYS-005';
+  | 'SYS-005'
+  | 'SYS-006';
 
 export interface SourceSpan {
   file: string; // absolute path
@@ -90,6 +91,9 @@ export interface ModuleIR {
   imports: ImportIR[];
   symbols: SymbolIR[];
   exports: string[]; // exported names of this module
+  /** True when `exports` is known to be incomplete (`export *`, `export =`, opaque `module.exports`),
+   *  so a name missing from it is not evidence that the module lacks that export. */
+  exportsOpen?: boolean;
   mocks: MockIR[];
   assertions: AssertionIR[];
   functions: TestFnIR[]; // test functions/blocks (TAUT-004 / MOCK-001 stats)
@@ -305,6 +309,8 @@ export interface Issue {
 
 export interface Summary {
   filesAudited: number;
+  /** Requested test files that could not be parsed (each also reported as a SYS-001 error issue). */
+  filesFailed?: number;
   issues: number; // shown (post-truncation)
   errors: number;
   warnings: number;

@@ -29,4 +29,6 @@ export interface LanguageParser {
   /** Parse a file into a language-neutral ModuleIR. Never throws for bad code:
    *  syntax errors become diagnostics. */
   parseModule(path: string, source: string, ctx: ParseContext): ModuleIR;
+  /** Drop memoized state (compiler programs, indexes) under memory pressure. Optional. */
+  releaseMemory?(): void;
 }

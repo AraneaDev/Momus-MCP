@@ -15,6 +15,14 @@ interface ProgramHandle {
 }
 
 const cache = new Map<string, ProgramHandle>();
+/**
+ * Declaration files (`lib.*.d.ts`, `node_modules/@types/**`) parsed once and shared by every
+ * program. Without this each tsconfig-less directory got its own program holding a private copy
+ * of the DOM lib and every `@types` package, which exhausted the heap on mid-sized repositories
+ * (issue #56). Sharing parsed source files across programs is what TypeScript's own
+ * DocumentRegistry does; the key includes the parse options so differing targets never collide.
+ */
+const sharedDeclarations = new Map<string, ts.SourceFile>();
 
 export function getProgram(fromFile: string): ProgramHandle {
   let dir = dirname(fromFile);
@@ -58,6 +66,9 @@ export function getProgram(fromFile: string): ProgramHandle {
         module: ts.ModuleKind.ESNext,
         moduleResolution: ts.ModuleResolutionKind.Bundler,
       };
+  // Without a tsconfig nothing asked for ambient `@types`; including every installed package
+  // per directory is what made config-less programs expensive. Imports still resolve normally.
+  const programOptions: ts.CompilerOptions = configPath ? options : { ...options, types: [] };
 
   const parsed = new Map<string, ts.SourceFile>();
   const host = ts.createCompilerHost(options, true);
@@ -66,16 +77,26 @@ export function getProgram(fromFile: string): ProgramHandle {
     const key = ts.sys.resolvePath ? ts.sys.resolvePath(fileName) : fileName;
     const hitSf = parsed.get(key);
     if (hitSf) return hitSf;
+    const isDeclaration = /\.d\.[cm]?ts$/.test(key);
+    const sharedKey = isDeclaration ? `${key}\u0000${parseOptionsKey(languageVersion)}` : undefined;
+    const sharedSf = sharedKey ? sharedDeclarations.get(sharedKey) : undefined;
+    if (sharedSf) {
+      parsed.set(key, sharedSf);
+      return sharedSf;
+    }
     const text = ts.sys.readFile(key);
     const sf =
       text !== undefined
-        ? ts.createSourceFile(key, text, languageVersion as ts.ScriptTarget, true)
+        ? ts.createSourceFile(key, text, languageVersion, true)
         : orig(fileName, languageVersion, onError, shouldCreateNewSourceFile);
-    if (sf) parsed.set(key, sf);
+    if (sf) {
+      parsed.set(key, sf);
+      if (sharedKey) sharedDeclarations.set(sharedKey, sf);
+    }
     return sf;
   };
 
-  const program = ts.createProgram(files, options, host);
+  const program = ts.createProgram(files, programOptions, host);
   const handle = { program, options, rootDir, hasConfig: configPath !== undefined };
   cache.set(rootDir, handle);
   return handle;
@@ -84,6 +105,12 @@ export function getProgram(fromFile: string): ProgramHandle {
 /** Clear the memoized program cache so watch-mode audits reflect on-disk changes. */
 export function invalidateProgramCache(): void {
   cache.clear();
+  sharedDeclarations.clear();
+}
+
+function parseOptionsKey(v: ts.ScriptTarget | ts.CreateSourceFileOptions): string {
+  if (typeof v !== 'object') return String(v);
+  return `${v.languageVersion}:${v.impliedNodeFormat ?? ''}:${v.jsDocParsingMode ?? ''}`;
 }
 
 export function resolveImport(specifier: string, fromFile: string): string | null {

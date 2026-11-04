@@ -15,7 +15,7 @@ export type RuleId =
   | 'TAUT-001' | 'TAUT-002' | 'TAUT-003' | 'TAUT-004' | 'TAUT-005' | 'TAUT-006'
   | 'DRIFT-000' | 'DRIFT-001' | 'DRIFT-002' | 'DRIFT-003' | 'DRIFT-004' | 'DRIFT-005' | 'DRIFT-006'
   | 'MOCK-001' | 'MOCK-002'
-  | 'SYS-001' | 'SYS-002' | 'SYS-003' | 'SYS-004' | 'SYS-005';
+  | 'SYS-001' | 'SYS-002' | 'SYS-003' | 'SYS-004' | 'SYS-005' | 'SYS-006';
 
 export type Severity = 'error' | 'warning' | 'info';
 
